@@ -3,7 +3,7 @@
 """
 相机实时取流器 (Camera Streamer)
 ================================
-统一取流服务 CameraService 的流式外观 (Facade)，保持历史 API：
+统一取流服务 CameraService 的流式外观 (Facade)，保持简洁 API：
 - 自动检测并优先连接 Intel RealSense D435 物理硬件 (1080P/720P 回退链)
 - 未插相机或硬件异常时自动优雅切入高保真 AprilTag 仿真视频流 (Mock 模式)
 - 保持低延迟、稳定帧率与 FPS 统计，适配 GUI 实时主循环与连拍归档
@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from src.calibration.camera_service import CameraService
+from src.hardware.camera_service import CameraService
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

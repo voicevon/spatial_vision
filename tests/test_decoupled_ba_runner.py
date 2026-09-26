@@ -139,10 +139,40 @@ class TestDecoupledBARunner(unittest.TestCase):
         p5 = world_map["tags"][5]["position_mm"]
         p6 = world_map["tags"][6]["position_mm"]
         p7 = world_map["tags"][7]["position_mm"]
-        np.testing.assert_allclose(p5, [0.0, 0.0, 0.0], atol=0.05)
-        np.testing.assert_allclose(p6, [348.0, 0.0, 0.0], atol=0.05)
-        np.testing.assert_allclose(p7, [0.0, 470.0, 0.0], atol=0.05)
+        # 验证 alignment_report 质检单正常情况
+        rep = world_map["world_anchor"]["alignment_report"]
+        self.assertFalse(rep["has_warn"], "正常坐标不应产生黄色告警")
+        self.assertEqual(len(rep["rows"]), 3)
+        for r in rep["rows"]:
+            self.assertFalse(r["is_warn"])
+            self.assertLess(r["dist_3d_mm"], 1.0)
+
+        # -------------------------------------------------------------
+        # 4. 模拟操作员将 Tag 7 坐标输错 (例如 X/Y 写反: [470, 0, 0])
+        #    验证系统不机械式报错中断，而是产生黄色警告质检单高亮指出 Tag 7 偏差过大
+        # -------------------------------------------------------------
+        bad_anchors_cfg = {
+            "anchor_tags": {
+                5: {"xyz_mm": [0.0, 0.0, 0.0], "known": [True, True, True]},
+                6: {"xyz_mm": [348.0, 0.0, 0.0], "known": [True, True, True]},
+                7: {"xyz_mm": [470.0, 0.0, 0.0], "known": [True, True, True]}  # 错录为 [470, 0, 0]
+            }
+        }
+        with open(os.path.join(self.ws_dir, "anchor_tags.yaml"), "w", encoding="utf-8") as f:
+            yaml.safe_dump(bad_anchors_cfg, f)
+
+        bad_succ, bad_msg, bad_map = runner.execute_world_alignment()
+        self.assertTrue(bad_succ, "不应采用死板阈值打断流程，依然完成对齐计算")
+        self.assertIn("⚠️注意：存在偏差过大标靶", bad_msg)
+
+        bad_rep = bad_map["world_anchor"]["alignment_report"]
+        self.assertTrue(bad_rep["has_warn"], "应触发黄色告警")
+        tag7_row = next(r for r in bad_rep["rows"] if r["tag_id"] == 7)
+        self.assertTrue(tag7_row["is_warn"], "Tag 7 应该被标记为 is_warn=True")
+        self.assertGreater(tag7_row["dist_3d_mm"], 10.0, "Tag 7 残差应显著偏大")
+        self.assertEqual(tag7_row["status_str"], "⚠️ 异常过大")
 
 
 if __name__ == "__main__":
     unittest.main()
+

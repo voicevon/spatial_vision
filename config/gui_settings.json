@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-26 21:17:33"
+    "updated_at": "2026-09-26 21:35:59"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -38,7 +38,7 @@
     "hub_state": {
       "selected_workspace_id": "20260923_204026_Workspace_5",
       "selected_workspace_name": "Workspace_5",
-      "updated_at": "2026-09-26 21:15:43"
+      "updated_at": "2026-09-26 22:17:18"
     }
   },
   "hardware_config": {

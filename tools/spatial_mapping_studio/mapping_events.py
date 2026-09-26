@@ -118,14 +118,8 @@ class MappingEventMixin:
             self.start_async_bundle_adjustment()
         elif btn_id == "ALIGN_WORLD_DATUM":
             self.align_current_workspace_world_datum()
-        elif btn_id == "RECOMPUTE_METRICS":
-            self.refresh_all_frame_metrics()
-            self.set_toast("已全量重算并刷新所有帧残差指标")
         elif btn_id == "EXPORT_REPORT":
             self.export_verification_report()
-        elif btn_id == "SAVE_MAP":
-            ManifestRepository.save_map(self.tags_map_data, self.map_path)
-            self.set_toast(f"空间立体地图已成功保存至 {self.map_path}")
         elif btn_id == "TOGGLE_WORKSPACE_DROPDOWN":
             self.active_dropdown = None if self.active_dropdown == "WORKSPACE_DROPDOWN" else "WORKSPACE_DROPDOWN"
         elif btn_id == "TOGGLE_BA_VIEW_DROPDOWN":
@@ -206,12 +200,6 @@ class MappingEventMixin:
                 self.set_toast(f"帧 {bname} 超精重提取完成并已原子持久化: 检出 {cnt} 个标靶")
         elif btn_id == "SUPER_EXTRACT_ALL":
             self.start_async_super_extract_all()
-        elif btn_id == "RESET_MAP":
-            self.reset_map()
-            self.set_toast("立体地图已复位清空 (备份为 .bak)，恢复为纯观测模式")
-        elif btn_id == "RESET_KEEP_ALL":
-            restored = self.reset_all_keep_status()
-            self.set_toast(f"已一键复位所有观测有效状态 (恢复 {restored} 个标靶)")
         elif btn_id == "DIAGNOSE_FRAME":
             self.toggle_frame_diagnostics()
         elif btn_id == "LAUNCH_TRACKER":
@@ -232,3 +220,10 @@ class MappingEventMixin:
             self.dismiss_toast()
         elif btn_id == "COPY_TOAST":
             self.copy_toast()
+        elif btn_id == "CLOSE_ALIGN_REPORT":
+            self.alignment_report = None
+        elif btn_id == "TOGGLE_ALIGN_REPORT_SORT":
+            self.alignment_report_sort = "err_desc" if getattr(self, "alignment_report_sort", "id") == "id" else "id"
+        elif btn_id == "COPY_ALIGN_REPORT":
+            self.copy_alignment_report()
+

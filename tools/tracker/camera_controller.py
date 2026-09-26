@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Robot 在线跟踪 - 相机硬件控制器:
 类型/分辨率 GUI 状态机 (下拉选项/持久化字段), 硬件启停/帧读取/内参刷新全部委托
-统一取流服务 src/calibration/camera_service.py 的 CameraService。
+统一取流服务 src/hardware/camera_service.py 的 CameraService。
 任务互斥、Toast 提示、世界系联动等业务编排仍在主控制器 RobotOnlineTracker。
 """
 
@@ -10,7 +10,7 @@ import os
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
-from src.calibration.camera_service import CameraService
+from src.hardware.camera_service import CameraService
 
 
 class CameraController:

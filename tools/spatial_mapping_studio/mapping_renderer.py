@@ -67,22 +67,6 @@ HOVER_TOOLTIPS: Dict[str, List[str]] = {
         "  • 修改锚点后随时单独点击，无需重跑平差！",
         "快捷键: [C]",
     ],
-    "SAVE_MAP": [
-        "【保存地图】",
-        "",
-        "将当前工作站 BA 全局平差后的 Tag 空间立体地图",
-        "原子保存至当前工位沙盒 tags_map.yaml。",
-        "",
-        "地图内容包含:",
-        "  • 每个 Tag 的世界坐标系位姿 (x, y, z, 四元数)",
-        "  • 观测置信度、重投影误差统计、参与帧数",
-        "  • 全局 RMSE / 物理偏差 / 迭代次数等元信息",
-        "",
-        "下游 (capture_wizard / spatial_mapping_studio / robot_tracker)",
-        "在指定该工位时会自动加载该工位地图作为空间基准。",
-        "",
-        "快捷键: [M]  建议每次 BA 平差后立即保存",
-    ],
     "RUN_AUTO_PRUNE_BA": [
         "【智能残差剪枝平差 (A)】",
         "",
@@ -91,24 +75,6 @@ HOVER_TOOLTIPS: Dict[str, List[str]] = {
         "",
         "剪枝依据: 单帧残差 / 单 Tag 离群 / 共视拓扑连通性",
         "快捷键: [A]",
-    ],
-    "RECOMPUTE_METRICS": [
-        "【全量体检重算 (P)】",
-        "",
-        "重新计算所有帧 / 所有 Tag 的精度体检指标:",
-        "  • RMSE 重投影误差",
-        "  • 空间物理偏差 (mm)",
-        "  • 清晰度 / 对比度 / 亮度 / 畸变",
-        "快捷键: [P]",
-    ],
-    "EXPORT_REPORT": [
-        "【导出质检报告 (R)】",
-        "",
-        "将当前工作站的标定结果导出为 Markdown 报告:",
-        "  • 收敛曲线 / 残差分布图 / 三维位姿",
-        "  • 各项精度指标汇总",
-        "  • 质检结论 (是否达标)",
-        "快捷键: [R]",
     ],
 }
 
@@ -177,6 +143,10 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         if getattr(app, 'toast_sticky', False) and app.status_toast:
             self.render_toast(app, canvas, w, h, bot_h)
 
+        # 5b. 世界坐标系对齐质检单浮层 (像报告一样的 Toast 卡片)
+        if getattr(app, 'alignment_report', None):
+            self.render_alignment_report_toast(app, canvas, w, h, bot_h)
+
         # 6. 置顶悬浮下拉列表
         if app.active_dropdown and app.active_dropdown in app.dropdown_boxes:
             dd_info = app.dropdown_boxes[app.active_dropdown]
@@ -225,63 +195,29 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         app.gui_buttons.append(("SUPER_EXTRACT_ALL", (bx, btn_y_top, bx + ext_w, btn_y_bot), "SUPER_EXTRACT_ALL"))
         bx += ext_w + 5
 
-        # 2. [B] 全局平差
-        ba_w = 88
+        # 2. [B] 阶段一：纯视觉自由平差
+        ba_w = 98
         draw_dashboard_button(canvas, (bx, btn_y_top, bx + ba_w, btn_y_bot),
-                              "平差中..." if app.is_ba_running else "全局平差",
+                              "平差中..." if app.is_ba_running else "自由平差 (B)",
                               mouse_pos=(mx, my), is_running=app.is_ba_running)
         app.gui_buttons.append(("RUN_BA", (bx, btn_y_top, bx + ba_w, btn_y_bot), "RUN_BA"))
         bx += ba_w + 5
 
-        # 3. [A] 智能残差剪枝平差
-        prune_w = 88
-        is_prune = getattr(app, "is_auto_pruning", False)
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + prune_w, btn_y_bot),
-                              "剪枝中..." if is_prune else "剪枝平差",
-                              mouse_pos=(mx, my), is_running=is_prune)
-        app.gui_buttons.append(("RUN_AUTO_PRUNE_BA", (bx, btn_y_top, bx + prune_w, btn_y_bot), "RUN_AUTO_PRUNE_BA"))
-        bx += prune_w + 5
-
-        # 3b. [C] 阶段二: 校准世界系 (独立解耦, 毫秒级)
-        align_w = 98
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + align_w, btn_y_bot), "校准世界系",
+        # 3. [C] 阶段二：独立校准世界系 (Umeyama 3D 刚体对齐, 毫秒级)
+        align_w = 112
+        draw_dashboard_button(canvas, (bx, btn_y_top, bx + align_w, btn_y_bot), "校准世界系 (C)",
                               mouse_pos=(mx, my), accent=(210, 110, 255))
         app.gui_buttons.append(("ALIGN_WORLD_DATUM", (bx, btn_y_top, bx + align_w, btn_y_bot), "ALIGN_WORLD_DATUM"))
         bx += align_w + 5
 
-        # 4. [M] 保存工位地图
-        s_w = 86
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + s_w, btn_y_bot), "保存地图",
-                              mouse_pos=(mx, my), accent=(0, 215, 90))
-        app.gui_buttons.append(("SAVE_MAP", (bx, btn_y_top, bx + s_w, btn_y_bot), "SAVE_MAP"))
-        bx += s_w + 5
+        # 4. [A] 智能残差剪枝平差
+        prune_w = 98
+        is_prune = getattr(app, "is_auto_pruning", False)
+        draw_dashboard_button(canvas, (bx, btn_y_top, bx + prune_w, btn_y_bot),
+                              "剪枝中..." if is_prune else "剪枝平差 (A)",
+                              mouse_pos=(mx, my), is_running=is_prune)
+        app.gui_buttons.append(("RUN_AUTO_PRUNE_BA", (bx, btn_y_top, bx + prune_w, btn_y_bot), "RUN_AUTO_PRUNE_BA"))
 
-        # 5. [P] 全程/全量精度体检重算
-        p_w = 86
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + p_w, btn_y_bot), "全量体检",
-                              mouse_pos=(mx, my))
-        app.gui_buttons.append(("RECOMPUTE_METRICS", (bx, btn_y_top, bx + p_w, btn_y_bot), "RECOMPUTE_METRICS"))
-        bx += p_w + 5
-
-        # 6. [R] 导出质检报告
-        r_w = 86
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + r_w, btn_y_bot), "导出报告",
-                              mouse_pos=(mx, my))
-        app.gui_buttons.append(("EXPORT_REPORT", (bx, btn_y_top, bx + r_w, btn_y_bot), "EXPORT_REPORT"))
-        bx += r_w + 5
-
-        # 7. 复位保留 (一键恢复所有剔除的观测为有效)
-        rst_keep_w = 76
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + rst_keep_w, btn_y_bot), "复位保留",
-                              mouse_pos=(mx, my))
-        app.gui_buttons.append(("RESET_KEEP_ALL", (bx, btn_y_top, bx + rst_keep_w, btn_y_bot), "RESET_KEEP_ALL"))
-        bx += rst_keep_w + 5
-
-        # 8. 复位地图 (清空已知平差地图)
-        rst_map_w = 76
-        draw_dashboard_button(canvas, (bx, btn_y_top, bx + rst_map_w, btn_y_bot), "复位地图",
-                              mouse_pos=(mx, my), accent=(70, 60, 210))
-        app.gui_buttons.append(("RESET_MAP", (bx, btn_y_top, bx + rst_map_w, btn_y_bot), "RESET_MAP"))
 
         # 9. 右侧 [Q] 退出工作台 (最右侧退出不动)
         exit_w = 85
@@ -464,6 +400,143 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 2, cv2.LINE_AA)
         # 注册点击区域
         app.gui_buttons.append(("DISMISS_TOAST", (close_x1, close_y1, close_x2, close_y2), None))
+
+    def render_alignment_report_toast(self, app: Any, canvas: np.ndarray, w: int, h: int, bot_h: int):
+        """像报告一样的世界坐标系对齐质检单浮层 (列举所有锚点物理残差，支持按 ID/残差排序与异常黄色高亮)"""
+        rep = getattr(app, "alignment_report", None)
+        if not rep or not isinstance(rep, dict):
+            return
+
+        rows = list(rep.get("rows", []))
+        if not rows:
+            return
+
+        sort_mode = getattr(app, "alignment_report_sort", "id")
+        if sort_mode == "err_desc":
+            rows = sorted(rows, key=lambda r: r.get("dist_3d_mm", 0.0), reverse=True)
+        else:
+            rows = sorted(rows, key=lambda r: r.get("tag_id", 0))
+
+        has_warn = rep.get("has_warn", False)
+        card_w = 780
+        row_h = 24
+        header_h = 36
+        sum_h = 24
+        thead_h = 24
+        card_h = header_h + sum_h + thead_h + len(rows) * row_h + 12
+
+        cx1 = (w - card_w) // 2
+        cx2 = cx1 + card_w
+        cy2 = h - bot_h - 16
+        cy1 = cy2 - card_h
+        if cy1 < 50:
+            cy1 = max(40, (h - card_h) // 2)
+            cy2 = cy1 + card_h
+
+        # 半透明深色质感卡片背景
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (cx1, cy1), (cx2, cy2), (20, 24, 32), -1)
+        cv2.addWeighted(overlay, 0.94, canvas, 0.06, 0, canvas)
+
+        # 外边框 (异常时醒目黄色，正常时典雅青绿色)
+        border_color = (0, 190, 255) if has_warn else (0, 210, 150)
+        cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), border_color, 2)
+
+        # 1. 顶部操作栏
+        if has_warn:
+            title_txt = "⚠️ 世界坐标系对齐质检单 (注意：检测到标靶物理残差偏大)"
+            title_col = (0, 215, 255)
+        else:
+            title_txt = "✅ 世界坐标系对齐质检单 (各已知锚点高精吻合)"
+            title_col = (0, 255, 170)
+        put_text(canvas, title_txt, (cx1 + 16, cy1 + 24), cv2.FONT_HERSHEY_SIMPLEX, 0.48, title_col, 2, cv2.LINE_AA)
+
+        # 右侧操作按钮: [关闭 X]
+        close_w = 28
+        close_x1 = cx2 - close_w - 10
+        close_x2 = cx2 - 10
+        btn_y1 = cy1 + 7
+        btn_y2 = cy1 + 29
+        cv2.rectangle(canvas, (close_x1, btn_y1), (close_x2, btn_y2), (45, 50, 62), -1)
+        cv2.rectangle(canvas, (close_x1, btn_y1), (close_x2, btn_y2), (70, 78, 95), 1)
+        put_text(canvas, "X", (close_x1 + 8, btn_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (200, 210, 225), 2, cv2.LINE_AA)
+        app.gui_buttons.append(("CLOSE_ALIGN_REPORT", (close_x1, btn_y1, close_x2, btn_y2), None))
+
+        # [📋 复制报告] 按钮
+        copy_w = 78
+        copy_x1 = close_x1 - copy_w - 8
+        copy_x2 = copy_x1 + copy_w
+        cv2.rectangle(canvas, (copy_x1, btn_y1), (copy_x2, btn_y2), (35, 45, 60), -1)
+        cv2.rectangle(canvas, (copy_x1, btn_y1), (copy_x2, btn_y2), (60, 80, 110), 1)
+        put_text(canvas, "复制报告", (copy_x1 + 10, btn_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (180, 220, 255), 1, cv2.LINE_AA)
+        app.gui_buttons.append(("COPY_ALIGN_REPORT", (copy_x1, btn_y1, copy_x2, btn_y2), None))
+
+        # [排序: ...] 切换按钮
+        sort_label = "排序: 残差降序 ▾" if sort_mode == "err_desc" else "排序: Tag ID ▾"
+        sort_w = 110
+        sort_x1 = copy_x1 - sort_w - 8
+        sort_x2 = sort_x1 + sort_w
+        cv2.rectangle(canvas, (sort_x1, btn_y1), (sort_x2, btn_y2), (32, 40, 52), -1)
+        cv2.rectangle(canvas, (sort_x1, btn_y1), (sort_x2, btn_y2), (55, 70, 92), 1)
+        put_text(canvas, sort_label, (sort_x1 + 8, btn_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (200, 230, 255), 1, cv2.LINE_AA)
+        app.gui_buttons.append(("TOGGLE_ALIGN_REPORT_SORT", (sort_x1, btn_y1, sort_x2, btn_y2), None))
+
+        # 2. 摘要信息行
+        solver = rep.get("solver_type", "Umeyama 3D")
+        mean_mm = rep.get("mean_mm", 0.0)
+        max_mm = rep.get("max_mm", 0.0)
+        warn_th = rep.get("warn_threshold_mm", 3.0)
+        sum_str = f"解算算法: {solver}  |  锚点总数: {len(rows)} 枚  |  均值物理残差: {mean_mm:.2f} mm  |  最大残差: {max_mm:.2f} mm  |  告警阈值: > {warn_th:.1f} mm"
+        put_text(canvas, sum_str, (cx1 + 16, cy1 + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (165, 178, 195), 1, cv2.LINE_AA)
+
+        # 3. 表头栏
+        th_y1 = cy1 + 58
+        th_y2 = th_y1 + thead_h
+        cv2.rectangle(canvas, (cx1 + 10, th_y1), (cx2 - 10, th_y2), (28, 34, 46), -1)
+        put_text(canvas, "标靶", (cx1 + 16, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+        put_text(canvas, "设定世界坐标 (X, Y, Z) mm", (cx1 + 85, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+        put_text(canvas, "实测对齐坐标 (X, Y, Z) mm", (cx1 + 265, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+        put_text(canvas, "分轴偏差 (dx, dy, dz) mm", (cx1 + 445, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+        put_text(canvas, "3D 物理残差", (cx1 + 600, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+        put_text(canvas, "质检状态", (cx1 + 695, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (140, 155, 175), 1, cv2.LINE_AA)
+
+        # 4. 数据行渲染
+        curr_y = th_y2 + 2
+        for i, row in enumerate(rows):
+            is_warn = row.get("is_warn", False)
+            ry1 = curr_y
+            ry2 = curr_y + row_h
+            if is_warn:
+                # 异常行: 黄色告警条纹背景 + 左侧黄色强调线
+                cv2.rectangle(canvas, (cx1 + 10, ry1), (cx2 - 10, ry2), (28, 48, 68), -1)
+                cv2.rectangle(canvas, (cx1 + 10, ry1), (cx1 + 13, ry2), (0, 200, 255), -1)
+                t_color = (0, 225, 255)
+            else:
+                bg_col = (22, 26, 35) if i % 2 == 0 else (17, 21, 29)
+                cv2.rectangle(canvas, (cx1 + 10, ry1), (cx2 - 10, ry2), bg_col, -1)
+                t_color = (220, 230, 240)
+
+            # 各列文字
+            tid_str = f"⚠️ Tag #{row['tag_id']}" if is_warn else f"Tag #{row['tag_id']}"
+            t_vals = [f"{v:.1f}" if v is not None else "--" for v in row.get("target_xyz", [])]
+            tgt_str = f"({', '.join(t_vals)})"
+            f_vals = [f"{v:.1f}" if v is not None else "--" for v in row.get("fitted_xyz", [])]
+            fit_str = f"({', '.join(f_vals)})"
+            d_vals = [str(v) if v is not None else "--" for v in row.get("delta_xyz", [])]
+            delta_str = f"({', '.join(d_vals)})"
+            dist_str = f"{row.get('dist_3d_mm', 0.0):.2f} mm"
+            stat_str = "⚠️ 偏差过大" if is_warn else "🟢 吻合"
+            stat_col = (0, 215, 255) if is_warn else (0, 255, 170)
+
+            put_text(canvas, tid_str, (cx1 + 16, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, t_color, 1, cv2.LINE_AA)
+            put_text(canvas, tgt_str, (cx1 + 85, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, t_color, 1, cv2.LINE_AA)
+            put_text(canvas, fit_str, (cx1 + 265, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, t_color, 1, cv2.LINE_AA)
+            put_text(canvas, delta_str, (cx1 + 445, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, t_color, 1, cv2.LINE_AA)
+            put_text(canvas, dist_str, (cx1 + 600, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, t_color, 1, cv2.LINE_AA)
+            put_text(canvas, stat_str, (cx1 + 695, ry1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, stat_col, 1, cv2.LINE_AA)
+
+            curr_y += row_h
+
 
     def render_dropdown_popup(
         self,

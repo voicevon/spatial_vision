@@ -221,6 +221,10 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         self.status_toast_time = time.time()
         self.toast_sticky = True  # True = 持久显示, 仅用户点击 ❌ 才关闭
 
+        # 7b. 世界坐标系对齐质检单报告卡片数据
+        self.alignment_report: Optional[Dict[str, Any]] = None
+        self.alignment_report_sort: str = "id"  # "id" 或 "err_desc"
+
         # 8. GUI 交互按钮注册表
         self.gui_buttons: List[Tuple[str, Tuple[int, int, int, int], Any]] = []
         self.mouse_pos = (-1, -1)
@@ -340,6 +344,48 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             self.set_toast(f"已复制到剪贴板: {text}")
         except Exception as e:
             log.warning(f"[SPATIAL_MAPPING] 复制到剪贴板失败: {e}")
+
+    def copy_alignment_report(self):
+        """将当前世界坐标系对齐质检单复制为 Markdown 文本到系统剪贴板"""
+        if not self.alignment_report:
+            return
+        rep = self.alignment_report
+        lines = [
+            "# 世界坐标系对齐质检单 (World Datum Alignment Report)",
+            f"- **解算算法**: `{rep.get('solver_type', 'Umeyama 3D')}`",
+            f"- **均值物理残差**: `{rep.get('mean_mm', 0.0):.2f} mm`",
+            f"- **最大物理残差**: `{rep.get('max_mm', 0.0):.2f} mm`",
+            f"- **整体质检结论**: {'⚠️ 存在超标标靶 (请核对输入坐标)' if rep.get('has_warn') else '🟢 全部标靶优良吻合'}",
+            "",
+            "| 标靶 ID | 设定世界坐标 (X, Y, Z) mm | 实测对齐坐标 (X, Y, Z) mm | 分轴偏差 (ΔX, ΔY, ΔZ) mm | 3D 绝对残差 | 质检状态 |",
+            "| :---: | :--- | :--- | :--- | :---: | :---: |"
+        ]
+        rows = list(rep.get("rows", []))
+        if self.alignment_report_sort == "err_desc":
+            rows = sorted(rows, key=lambda r: r.get("dist_3d_mm", 0.0), reverse=True)
+        else:
+            rows = sorted(rows, key=lambda r: r.get("tag_id", 0))
+
+        for row in rows:
+            tag_str = f"Tag #{row['tag_id']}"
+            t_vals = [f"{v:.1f}" if v is not None else "--" for v in row.get("target_xyz", [])]
+            tgt = f"({', '.join(t_vals)})"
+            f_vals = [f"{v:.1f}" if v is not None else "--" for v in row.get("fitted_xyz", [])]
+            fit = f"({', '.join(f_vals)})"
+            delta = f"({', '.join(str(v) for v in row.get('delta_xyz', []))})"
+            dist = f"{row.get('dist_3d_mm', 0.0):.2f} mm"
+            stat = "⚠️ 偏差过大" if row.get("is_warn") else "🟢 吻合"
+            lines.append(f"| {tag_str} | {tgt} | {fit} | {delta} | {dist} | {stat} |")
+
+        text = "\n".join(lines)
+        try:
+            import subprocess
+            process = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=True)
+            process.communicate(text.encode('utf-16-le'))
+            self.set_toast("已将世界系对齐质检单复制到剪贴板！")
+        except Exception as e:
+            log.warning(f"[SPATIAL_MAPPING] 复制质检单失败: {e}")
+
 
     @property
     def toast_msg(self) -> str:
@@ -807,6 +853,13 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                     elif key == 27:      # ESC 键 -> 撤销还原
                         self.undo_prune_results()
                         continue
+
+                # 优先拦截世界系对齐质检单浮层按键交互
+                if getattr(self, "alignment_report", None) is not None:
+                    if key in (27, 10, 13):  # ESC / Enter -> 关闭质检单
+                        self.alignment_report = None
+                        continue
+
 
                 # 运行中支持空格急停
                 if self.ba_runner.is_auto_pruning:

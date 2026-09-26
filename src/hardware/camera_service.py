@@ -3,7 +3,7 @@
 """
 统一相机取流服务 (CameraService)
 ================================
-收编三处重复的相机硬件管理 (tools/tracker/camera_controller、src/calibration/camera_streamer、
+收编重复的相机硬件管理 (tools/tracker/camera_controller、src/hardware/camera_streamer、
 tools/capture/capture_wizard)：
   - RealSense D435 / USB 摄像头 / Mock 仿真 三后端统一启停与帧读取；
   - 分级回退链 (帧率/分辨率逐级降级) 与 Mock 优雅降级；

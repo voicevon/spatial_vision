@@ -19,6 +19,7 @@ from src.calibration.workspace_manager import (
     load_workspace_anchor_tags,
     load_workspace_tag_anchors,
 )
+from src.calibration.world_datum_aligner import WorldDatumAligner
 from tools.spatial_mapping_studio.mapping_state import MappingDataManager
 from src.utils.logger import get_logger
 
@@ -208,8 +209,9 @@ class MappingBARunner:
             return False, "工位未配置已知世界锚点！请在白名单或 anchor_tags.yaml 录入>=3 枚标靶物理坐标。", None
 
         try:
-            # 3. 独立求解世界系刚体变换
-            world_map = self.optimizer.align_relative_map_to_world(
+            # 3. 独立求解世界系刚体变换 (纯 3D 几何，完全解耦自视觉平差求解器)
+            aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
+            world_map = aligner.align_relative_map_to_world(
                 relative_map=rel_map,
                 anchor_tags=self.anchor_tags,
                 origin_tag_id=self.origin_tag_id,
@@ -231,8 +233,13 @@ class MappingBARunner:
         w_info = world_map.get("world_anchor", {})
         res = w_info.get("anchor_residual_mm", {})
         mean_res = res.get("mean_mm", 0.0)
+        max_res = res.get("max_mm", 0.0)
+        has_warn = res.get("has_warn", False)
         solver = w_info.get("solver_type", "3D")
-        msg = f"世界坐标系校准成功！[{solver}] 锚点残差均值: {mean_res:.2f} mm，生产地图已更新。"
+        if has_warn:
+            msg = f"世界系校准完成(⚠️注意：存在偏差过大标靶)：[{solver}] 均值残差: {mean_res:.2f}mm, 最大偏差: {max_res:.2f}mm"
+        else:
+            msg = f"世界坐标系校准成功！[{solver}] 锚点残差均值: {mean_res:.2f} mm，生产地图已更新。"
         self._notify(msg)
         log.info(f"[SPATIAL_MAPPING] {msg}")
         return True, msg, world_map

@@ -37,7 +37,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.calibration.workspace_manager import WorkspaceManager, Workspace
-from src.calibration.camera_service import CameraService
+from src.hardware.camera_service import CameraService
 from src.utils.text_rendering import draw_text
 from src.utils.logger import get_logger
 from src.utils.base_cv_app import BaseCvApp

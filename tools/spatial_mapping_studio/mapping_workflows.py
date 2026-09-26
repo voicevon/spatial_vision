@@ -195,5 +195,9 @@ class MappingWorkflowMixin:
 
     def align_current_workspace_world_datum(self):
         """【阶段二交互入口】独立执行世界坐标系校准，毫秒级生效"""
-        succ, msg, _ = self.ba_runner.execute_world_alignment()
+        succ, msg, world_map = self.ba_runner.execute_world_alignment()
+        if succ and world_map:
+            rep = world_map.get("world_anchor", {}).get("alignment_report")
+            if rep:
+                self.alignment_report = rep
         self.set_toast(msg)

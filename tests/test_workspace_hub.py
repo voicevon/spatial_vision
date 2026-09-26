@@ -17,7 +17,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.calibration.workspace_manager import WorkspaceManager
-from src.calibration.camera_streamer import CameraStreamer
+from src.hardware.camera_streamer import CameraStreamer
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_renderer import HubRenderer, HELP_MODAL_W, HELP_MODAL_H
 from tools.workspace_hub.app import WorkspaceHubApp

@@ -282,6 +282,10 @@ flux_vision_3d/
 │   │   ├── offline_engine.py      #      离线纯几何计算引擎 (PnP / IPPE / 正深度校验)
 │   │   ├── verification_reporter.py #    Per-Tag/Per-Frame 稳健统计与体检报告器
 │   │   ├── verification_visualizer.py #  3D 双四棱柱位姿对比与 2D 残差矢量渲染管线
+│   │   └── world_datum_aligner.py #      世界基准对齐与空间尺度相似变换解算器
+│   │
+│   ├── hardware/                  #    硬件抽象层 (HAL 外设驱动与仿真)
+│   │   ├── camera_service.py      #      统一相机服务 (RealSense / USB / Mock 优雅回退链)
 │   │   └── camera_streamer.py     #      跨设备高帧率相机取流与连拍适配器
 │   │
 │   ├── vision/                    #    实时视觉感知与抓取引擎
