@@ -92,6 +92,51 @@ GEOM_MODAL_SAVE = (GEOM_MODAL_X + 190, GEOM_MODAL_Y + GEOM_MODAL_H - 52, 120, 36
 GEOM_MODAL_CANCEL = (GEOM_MODAL_X + 370, GEOM_MODAL_Y + GEOM_MODAL_H - 52, 120, 36)
 GEOM_MODAL_CLOSE = (GEOM_MODAL_X + GEOM_MODAL_W - 46, GEOM_MODAL_Y + 12, 34, 30)
 
+# 坐标系外参操作按钮
+FRAME_PARAM_BTN_UNKNOWN = (GEOM_MODAL_X + GEOM_MODAL_W - 270, GEOM_MODAL_Y + 56 + 128 + 8, 115, 26)
+FRAME_PARAM_BTN_EDIT6D = (GEOM_MODAL_X + GEOM_MODAL_W - 145, GEOM_MODAL_Y + 56 + 128 + 8, 125, 26)
+
+# ==================== 6DoF 位姿与约束独立模态弹窗几何常量 ====================
+P6_MODAL_W = 620
+P6_MODAL_H = 550
+P6_MODAL_X = (960 - P6_MODAL_W) // 2  # 170
+P6_MODAL_Y = (720 - P6_MODAL_H) // 2  # 85
+
+# 顶部预设按钮
+P6_BTN_UNKNOWN_ALL = (P6_MODAL_X + 24, P6_MODAL_Y + 62, 170, 28)
+P6_BTN_KNOWN_ALL = (P6_MODAL_X + 204, P6_MODAL_Y + 62, 110, 28)
+P6_BTN_PLANAR = (P6_MODAL_X + 324, P6_MODAL_Y + 62, 272, 28)
+
+def pose6d_row_rect(axis_idx: int) -> tuple[int, int, int, int]:
+    """6 轴位姿行矩形 (0~2: 平移 X, Y, Z; 3~5: 旋转 Roll, Pitch, Yaw)"""
+    col = 0 if axis_idx < 3 else 1
+    row = axis_idx % 3
+    x = P6_MODAL_X + 24 if col == 0 else P6_MODAL_X + 316
+    y = P6_MODAL_Y + 118 + row * 44
+    return (x, y, 280, 38)
+
+def pose6d_clear_rect(axis_idx: int) -> tuple[int, int, int, int]:
+    """6 轴行内 [设为未知] 切换按钮矩形"""
+    rx, ry, rw, rh = pose6d_row_rect(axis_idx)
+    return (rx + rw - 72, ry + 6, 64, rh - 12)
+
+# 15 键软键盘 (5 列 x 3 行: 1~5 / 6~0 / . -/+ 清空 退格 确认)
+P6_PAD_LABELS = [
+    "1", "2", "3", "4", "5",
+    "6", "7", "8", "9", "0",
+    ".", "-/+", "清空", "退格", "确认"
+]
+
+def pose6d_padkey_rect(idx: int) -> tuple[int, int, int, int]:
+    row, col = divmod(idx, 5)
+    kx = P6_MODAL_X + 24 + col * 116
+    ky = P6_MODAL_Y + 262 + row * 46
+    return (kx, ky, 108, 38)
+
+P6_BTN_SAVE = (P6_MODAL_X + 150, P6_MODAL_Y + P6_MODAL_H - 50, 150, 36)
+P6_BTN_CANCEL = (P6_MODAL_X + 320, P6_MODAL_Y + P6_MODAL_H - 50, 150, 36)
+
+
 def frame_btn_add_rect() -> tuple[int, int, int, int]:
     return (824, 98, 108, 24)
 
@@ -339,7 +384,9 @@ class HubRenderer:
         self._render_footer(canvas, state)
 
         # 6. 如果打开了结构化弹窗，最高优先级置顶展示
-        if state.marker_size_modal_open:
+        if getattr(state, "pose6d_modal_open", False):
+            self.modals.render_pose6d_modal(canvas, state)
+        elif state.marker_size_modal_open:
             self.modals.render_marker_size_modal(canvas, state)
         elif state.frame_modal_open:
             self.modals.render_frame_modal(canvas, state)
@@ -351,7 +398,8 @@ class HubRenderer:
             self.modals.render_help_modal(canvas, state)
 
         # 7. 悬浮 Tooltip 气泡提示 (置于最顶层，无遮挡呈现)
-        if not (state.marker_size_modal_open or state.frame_modal_open or state.roi_modal_open or state.anchor_modal_open or state.is_help_modal_open):
+        if not (getattr(state, "pose6d_modal_open", False) or state.marker_size_modal_open or state.frame_modal_open or state.roi_modal_open or state.anchor_modal_open or state.is_help_modal_open):
+
             if state.active_tab == HubState.TAB_FRAME_POSE_TAGS and state.view_mode == HubState.VIEW_STANDARD:
                 mpos = (state.mouse_x, state.mouse_y)
                 if self._should_show_tag_bound_tooltip(state, mpos):
@@ -585,7 +633,8 @@ class HubRenderer:
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (24, 28, 38), -1)
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (42, 52, 70), 1)
 
-        if cur_frame.type == "world":
+        is_world_datum = (cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id)
+        if is_world_datum:
             type_desc = "工位绝对世界基准 (world)"
         elif cur_frame.type == "fixed_transform":
             type_desc = "固定刚体外参 (fixed_transform)"
@@ -606,7 +655,7 @@ class HubRenderer:
         draw_text(canvas, "(?) 动标定义说明", (help_btn_x + 8, help_btn_y + 4), font_size=11,
                   color=(0, 255, 220) if is_hover_help else (140, 185, 195), bold=is_hover_help)
 
-        if cur_frame.type == "world":
+        if is_world_datum:
             w_box_y = c1_y + 60
             cv2.rectangle(canvas, (card_x + 16, w_box_y), (card_x + card_w - 16, w_box_y + 62), (18, 22, 32), -1)
             cv2.rectangle(canvas, (card_x + 16, w_box_y), (card_x + card_w - 16, w_box_y + 62), (38, 48, 65), 1)
@@ -614,20 +663,36 @@ class HubRenderer:
             draw_text(canvas, "位姿特性: 恒为单位阵 Identity 4x4 (空间测量全局绝对基准原点，无需外参)", (card_x + 24, w_box_y + 33), font_size=12, color=(160, 180, 200))
 
         elif cur_frame.type == "fixed_transform":
-            tx, ty, tz = cur_frame.translation_xyz_mm
-            rx, ry, rz = getattr(cur_frame, "rotation_rpy_deg", [0.0, 0.0, 0.0])
+            if cur_frame.translation_xyz_mm is None or getattr(cur_frame, "rotation_rpy_deg", None) is None:
+                unk_box_y = c1_y + 60
+                cv2.rectangle(canvas, (card_x + 16, unk_box_y), (card_x + card_w - 16, unk_box_y + 62), (18, 22, 32), -1)
+                cv2.rectangle(canvas, (card_x + 16, unk_box_y), (card_x + card_w - 16, unk_box_y + 62), (38, 48, 65), 1)
+                draw_text(canvas, "● 外参位姿约束状态: 未知 / 待解 (Unknown / To be Calibrated)", (card_x + 24, unk_box_y + 9), font_size=12, color=(140, 160, 255), bold=True)
+                draw_text(canvas, "位姿特性: 6自由度外参均处于待解状态，将在全局建图或视觉求解时进行标定", (card_x + 24, unk_box_y + 33), font_size=11, color=(160, 175, 195))
+            else:
+                k_dof = getattr(cur_frame, "known_dof", None) or [True] * 6
+                tx, ty, tz = cur_frame.translation_xyz_mm
+                rx, ry, rz = cur_frame.rotation_rpy_deg
 
-            t_box_y = c1_y + 60
-            cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (18, 22, 32), -1)
-            cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (38, 48, 65), 1)
-            draw_text(canvas, "平移 T [mm]:", (card_x + 24, t_box_y + 7), font_size=11, color=(160, 180, 200))
-            draw_text(canvas, f"X:{tx:+.1f}  Y:{ty:+.1f}  Z:{tz:+.1f}", (card_x + 120, t_box_y + 7), font_size=12, color=(0, 255, 220), bold=True)
+                tx_str = f"X:{tx:+.1f}" if k_dof[0] else "X:? (待解)"
+                ty_str = f"Y:{ty:+.1f}" if k_dof[1] else "Y:? (待解)"
+                tz_str = f"Z:{tz:+.1f}" if k_dof[2] else "Z:? (待解)"
 
-            r_box_y = c1_y + 94
-            cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (18, 22, 32), -1)
-            cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (38, 48, 65), 1)
-            draw_text(canvas, "旋转 R [deg]:", (card_x + 24, r_box_y + 7), font_size=11, color=(160, 180, 200))
-            draw_text(canvas, f"Rx:{rx:+.1f}°  Ry:{ry:+.1f}°  Rz:{rz:+.1f}°", (card_x + 120, r_box_y + 7), font_size=12, color=(255, 200, 60), bold=True)
+                rx_str = f"Rx:{rx:+.1f}°" if k_dof[3] else "Rx:? (待解)"
+                ry_str = f"Ry:{ry:+.1f}°" if k_dof[4] else "Ry:? (待解)"
+                rz_str = f"Rz:{rz:+.1f}°" if k_dof[5] else "Rz:? (待解)"
+
+                t_box_y = c1_y + 60
+                cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (18, 22, 32), -1)
+                cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (38, 48, 65), 1)
+                draw_text(canvas, "平移 T [mm]:", (card_x + 24, t_box_y + 7), font_size=11, color=(160, 180, 200))
+                draw_text(canvas, f"{tx_str}  {ty_str}  {tz_str}", (card_x + 120, t_box_y + 7), font_size=12, color=(0, 255, 220), bold=True)
+
+                r_box_y = c1_y + 94
+                cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (18, 22, 32), -1)
+                cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (38, 48, 65), 1)
+                draw_text(canvas, "旋转 R [deg]:", (card_x + 24, r_box_y + 7), font_size=11, color=(160, 180, 200))
+                draw_text(canvas, f"{rx_str}  {ry_str}  {rz_str}", (card_x + 120, r_box_y + 7), font_size=12, color=(255, 200, 60), bold=True)
 
         else:
             tag_box_y = c1_y + 60
@@ -671,8 +736,7 @@ class HubRenderer:
         cv2.line(canvas, (card_x + 10, c2_y + 44), (card_x + card_w - 10, c2_y + 44), (36, 45, 60), 1)
 
         allowed_set = set(state.get_frame_tags_status(cur_frame.frame_id))
-        wl_data = state.get_whitelist_data()
-        anchors = wl_data.get("tag_anchors", {}) if isinstance(wl_data, dict) else {}
+        anchors = state.get_anchor_map()
 
         for slot_idx in range(10):
             tag_id = tag_range[slot_idx]
@@ -934,8 +998,15 @@ class HubRenderer:
             is_res = True
             if coord_mgr:
                 _, is_res = coord_mgr.get_frame_to_world(frame.frame_id)
-            status_text = "● 已解出" if is_res else "⚠ 动标未解"
-            status_col = (0, 230, 140) if is_res else (0, 180, 255)
+            if frame.type == "fixed_transform":
+                status_text = "● 已标定" if is_res else ("⚠ 待标定" if getattr(frame, "status", "") == "unknown" else "⚠ 未求解")
+                status_col = (0, 230, 140) if is_res else (0, 180, 255)
+            elif frame.type == "tag_bound":
+                status_text = "● 已解出" if is_res else "⚠ 动标未解"
+                status_col = (0, 230, 140) if is_res else (0, 180, 255)
+            else:
+                status_text = "● 原点基准"
+                status_col = (0, 230, 140)
             draw_text(canvas, status_text, (card_x + 350, fy + 8), font_size=11, color=status_col, bold=True)
 
             # 右侧操作按钮
@@ -950,9 +1021,18 @@ class HubRenderer:
             elif frame.type == "tag_bound":
                 param_info = f"绑定 Tag {frame.tag_id} | 偏移 XYZ: {frame.offset_xyz_mm} mm"
             else:
-                t = [round(float(x), 1) for x in frame.translation_xyz_mm]
-                r = [round(float(x), 1) for x in frame.rotation_rpy_deg]
-                param_info = f"平移: {t} mm | 旋转: {r}°"
+                if frame.translation_xyz_mm is not None and frame.rotation_rpy_deg is not None:
+                    t = [round(float(x), 1) for x in frame.translation_xyz_mm]
+                    r = [round(float(x), 1) for x in frame.rotation_rpy_deg]
+                    rmse_str = f" (RMSE: {frame.calibration_metrics.get('rmse_mm', 0):.2f}mm)" if getattr(frame, "calibration_metrics", None) and "rmse_mm" in frame.calibration_metrics else ""
+                    param_info = f"平移: {t} mm | 旋转: {r}°{rmse_str}"
+                else:
+                    spec_desc = ""
+                    if getattr(frame, "calibration_spec", None):
+                        spec_method = frame.calibration_spec.get("method", "")
+                        spec_desc = f" [{spec_method}]"
+                    param_info = f"外参待解{spec_desc} (BA后自动标定)"
+
             draw_text(canvas, f"{parent_info}  |  {param_info}", (card_x + 22, fy + 38), font_size=11, color=(160, 175, 195))
 
         # -------------------------------------------------------------------------

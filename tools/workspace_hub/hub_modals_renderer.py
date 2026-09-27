@@ -92,8 +92,10 @@ class HubModalsRenderer:
         canvas: np.ndarray,
         rect: Tuple[int, int, int, int],
         text: str,
-        mouse_pos: Tuple[int, int]
+        mouse_pos: Tuple[int, int],
+        text_col: Optional[Tuple[int, int, int]] = None
     ) -> bool:
+
         """统一绘制高可编辑感知的输入框 (深暗内凹底色 + 科技发光边框 + 铅笔修改图标 ✎)"""
         bx, by, bw, bh = rect
         mx, my = mouse_pos
@@ -101,7 +103,8 @@ class HubModalsRenderer:
 
         bg_col = (14, 18, 25) if not is_hover else (22, 32, 44)
         border_col = (0, 255, 180) if is_hover else (45, 65, 75)
-        text_col = (0, 255, 220) if is_hover else (220, 235, 235)
+        if text_col is None:
+            text_col = (0, 255, 220) if is_hover else (220, 235, 235)
 
         cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), bg_col, -1)
         cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), border_col, 2 if is_hover else 1)
@@ -134,6 +137,23 @@ class HubModalsRenderer:
         draw_text(canvas, row_label, label_pos, font_size=13, color=GuiTheme.WHITE)
         for rect, axis_name, val in zip(rects, axis_names, values):
             self.draw_text_input(canvas, rect, f"{axis_name}: {val:.1f}", mouse_pos)
+
+    def draw_custom_vector3_row(
+        self,
+        canvas: np.ndarray,
+        row_label: str,
+        label_pos: Tuple[int, int],
+        rects: List[Tuple[int, int, int, int]],
+        axis_names: List[str],
+        values_str: List[str],
+        mouse_pos: Tuple[int, int]
+    ):
+        """统一绘制 3 轴向量显示行 (支持未知状态自定义文字与色彩)"""
+        draw_text(canvas, row_label, label_pos, font_size=13, color=GuiTheme.WHITE)
+        for rect, axis_name, val_str in zip(rects, axis_names, values_str):
+            col = (0, 210, 240) if "?" in val_str else None
+            self.draw_text_input(canvas, rect, f"{axis_name}: {val_str}", mouse_pos, text_col=col)
+
 
     def draw_dropdown_trigger(
         self,
@@ -255,17 +275,55 @@ class HubModalsRenderer:
         cv2.rectangle(canvas, (mx + 20, param_y), (mx + mw - 20, param_y + 155), (45, 55, 75), 1)
 
         if cur_type == "fixed_transform":
+            from tools.workspace_hub.hub_renderer import (
+                FRAME_PARAM_BTN_UNKNOWN, FRAME_PARAM_BTN_EDIT6D
+            )
             draw_text(canvas, "固定外参变换矩阵 (相对于父级坐标系):", (mx + 32, param_y + 12), font_size=13, color=(0, 240, 220), bold=True)
+            
+            st = d.get("status", "unknown")
+            k_dof = d.get("known_dof", [False]*6)
+            n_known = sum(1 for b in k_dof if b)
+            is_unknown = (st == "unknown" or n_known == 0)
+
+            # 右侧操作按钮
+            unk_btn_col = (180, 100, 30) if is_unknown else (90, 60, 35)
+            self.r._draw_button(canvas, FRAME_PARAM_BTN_UNKNOWN, "设为全未知", mpos, theme_color=unk_btn_col)
+            self.r._draw_button(canvas, FRAME_PARAM_BTN_EDIT6D, "6DoF位姿编辑", mpos, theme_color=(0, 200, 180))
+
             t = d.get("translation_xyz_mm", [0, 0, 0])
             r = d.get("rotation_rpy_deg", [0, 0, 0])
 
+            # 状态提示条
+            if is_unknown:
+                st_text = "⚠ 外参待定 (未知) · 等待 BA 平差后通过绑定的标靶自动反推"
+                st_col = (0, 210, 255)
+            elif n_known == 6:
+                st_text = "● 外参已全部人工指定 (6/6 轴已知硬约束)"
+                st_col = (0, 230, 140)
+            else:
+                st_text = f"◐ 部分已知先验约束 ({n_known}/6 轴已知，其余待BA最优化)"
+                st_col = (255, 180, 50)
+            draw_text(canvas, st_text, (mx + 32, param_y + 30), font_size=11, color=st_col)
+
             # 平移 X, Y, Z
-            t_rects = [(mx + 125, param_y + 42, 130, 28), (mx + 265, param_y + 42, 130, 28), (mx + 405, param_y + 42, 130, 28)]
-            self.draw_vector3_input_row(canvas, "平移 (mm):", (mx + 32, param_y + 48), t_rects, ["X", "Y", "Z"], t, mpos)
+            t_rects = [(mx + 125, param_y + 48, 130, 28), (mx + 265, param_y + 48, 130, 28), (mx + 405, param_y + 48, 130, 28)]
+            t_disp = []
+            for i in range(3):
+                if k_dof[i] and not is_unknown and t is not None:
+                    t_disp.append(f"{t[i]:.1f}")
+                else:
+                    t_disp.append("? (待解)")
+            self.draw_custom_vector3_row(canvas, "平移 (mm):", (mx + 32, param_y + 54), t_rects, ["X", "Y", "Z"], t_disp, mpos)
 
             # 旋转 Roll, Pitch, Yaw
-            r_rects = [(mx + 125, param_y + 92, 130, 28), (mx + 265, param_y + 92, 130, 28), (mx + 405, param_y + 92, 130, 28)]
-            self.draw_vector3_input_row(canvas, "旋转 (°):", (mx + 32, param_y + 98), r_rects, ["Roll", "Pitch", "Yaw"], r, mpos)
+            r_rects = [(mx + 125, param_y + 94, 130, 28), (mx + 265, param_y + 94, 130, 28), (mx + 405, param_y + 94, 130, 28)]
+            r_disp = []
+            for i in range(3):
+                if k_dof[i+3] and not is_unknown and r is not None:
+                    r_disp.append(f"{r[i]:.1f}")
+                else:
+                    r_disp.append("? (待解)")
+            self.draw_custom_vector3_row(canvas, "旋转 (°):", (mx + 32, param_y + 100), r_rects, ["Roll", "Pitch", "Yaw"], r_disp, mpos)
         else:
             draw_text(canvas, "AprilTag 动标绑定配置:", (mx + 32, param_y + 12), font_size=13, color=(0, 210, 255), bold=True)
             tid = d.get("tag_id", 0)
@@ -277,6 +335,7 @@ class HubModalsRenderer:
 
             off_rects = [(mx + 185, param_y + 92, 120, 28), (mx + 315, param_y + 92, 120, 28), (mx + 445, param_y + 92, 120, 28)]
             self.draw_vector3_input_row(canvas, "局部偏移 XYZ (mm):", (mx + 32, param_y + 98), off_rects, ["dx", "dy", "dz"], off, mpos)
+
 
         # 5. 顶层渲染活跃下拉浮层
         self.render_active_dropdown(canvas, state)
@@ -440,8 +499,123 @@ class HubModalsRenderer:
         self.r._draw_button(canvas, WL_ANCHOR_CANCEL, "取消", mpos)
         self.r._draw_button(canvas, WL_ANCHOR_DELETE, "清除锚点", mpos, theme_color=(180, 60, 60))
 
+    def render_pose6d_modal(self, canvas: np.ndarray, state: HubState):
+        """渲染 6DoF 外参位姿与先验约束独立模态编辑器"""
+        from tools.workspace_hub.hub_renderer import (
+            P6_MODAL_W, P6_MODAL_H, P6_MODAL_X, P6_MODAL_Y,
+            P6_BTN_UNKNOWN_ALL, P6_BTN_KNOWN_ALL, P6_BTN_PLANAR,
+            P6_PAD_LABELS, pose6d_row_rect, pose6d_clear_rect, pose6d_padkey_rect,
+            P6_BTN_SAVE, P6_BTN_CANCEL, point_in_rect
+        )
+        MX, MY, MW, MH = P6_MODAL_X, P6_MODAL_Y, P6_MODAL_W, P6_MODAL_H
+        mpos = (state.mouse_x, state.mouse_y)
+
+        # 1. 半透明黑色遮罩
+        mask = canvas.copy()
+        cv2.rectangle(mask, (0, 0), (self.r.canvas_w, self.r.canvas_h), (0, 0, 0), -1)
+        cv2.addWeighted(mask, 0.65, canvas, 0.35, 0, canvas)
+
+        # 2. 弹窗底板与科技边框
+        cv2.rectangle(canvas, (MX, MY), (MX + MW, MY + MH), (20, 25, 34), -1)
+        cv2.rectangle(canvas, (MX, MY), (MX + MW, MY + MH), (0, 230, 200), 2)
+        cv2.rectangle(canvas, (MX + 3, MY + 3), (MX + MW - 3, MY + MH - 3), (40, 52, 68), 1)
+
+        # 3. 标题与状态提示
+        fid = state.frame_modal_data.get("name") or state.frame_modal_data.get("frame_id", "坐标系")
+        draw_text(canvas, f"编辑 6DoF 外参位姿与约束: 【{fid}】", (MX + 20, MY + 14),
+                  font_size=15, color=GuiTheme.WHITE, bold=True)
+
+        n_known = sum(1 for b in state.pose6d_modal_known if b)
+        if n_known == 0:
+            st_desc, st_col = "全未知模式 (外参全由视觉标靶经 BA 平差自动反推)", (0, 210, 255)
+        elif n_known == 6:
+            st_desc, st_col = "全已知模式 (6 自由度全部人工确知硬约束)", (0, 230, 140)
+        else:
+            st_desc, st_col = f"部分已知模式 ({n_known}/6 轴已知约束，其余由算法最优化解算)", (255, 180, 50)
+        draw_text(canvas, f"当前状态: {st_desc}", (MX + 20, MY + 38), font_size=12, color=st_col)
+
+        # 4. 快捷预设按钮组
+        self.r._draw_button(canvas, P6_BTN_UNKNOWN_ALL, "设为全未知 (BA反推)", mpos, theme_color=(180, 100, 30))
+        self.r._draw_button(canvas, P6_BTN_KNOWN_ALL, "设为全已知", mpos, theme_color=(30, 120, 90))
+        self.r._draw_button(canvas, P6_BTN_PLANAR, "水平面约束 (Roll=0°, Pitch=0°)", mpos, theme_color=(40, 90, 140))
+
+        # 5. 分栏标题
+        draw_text(canvas, "平移维度 (Translation mm):", (MX + 24, MY + 98), font_size=12, color=(160, 180, 205), bold=True)
+        draw_text(canvas, "旋转维度 (Rotation deg):", (MX + 316, MY + 98), font_size=12, color=(160, 180, 205), bold=True)
+
+        # 6. 6 轴位姿行
+        axis_names = [
+            "X (前向)", "Y (横向)", "Z (垂向)",
+            "Roll (翻滚)", "Pitch (俯仰)", "Yaw (偏航)"
+        ]
+        axis_units = ["mm", "mm", "mm", "°", "°", "°"]
+
+        for axis in range(6):
+            rx, ry, rw, rh = pose6d_row_rect(axis)
+            is_sel = (state.pose6d_modal_axis_sel == axis)
+            is_known = bool(state.pose6d_modal_known[axis])
+            hov = point_in_rect(mpos[0], mpos[1], (rx, ry, rw, rh))
+
+            row_bg = (34, 44, 58) if is_sel else ((32, 38, 48) if hov else (24, 28, 36))
+            cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh), row_bg, -1)
+            cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh), (0, 230, 200) if is_sel else (55, 68, 85), 1)
+
+            # 轴名称
+            draw_text(canvas, axis_names[axis], (rx + 10, ry + 11), font_size=12,
+                      color=(0, 255, 200) if is_known else (150, 165, 185), bold=True)
+
+            # 数值或状态
+            if is_sel and state.pose6d_modal_axis_buf:
+                val_text, val_col = state.pose6d_modal_axis_buf + "_", GuiTheme.WHITE
+            elif is_known:
+                val_text, val_col = f"{state.pose6d_modal_vals[axis]:.1f} {axis_units[axis]}", GuiTheme.WHITE
+            else:
+                val_text, val_col = "? (待BA求解)", (0, 210, 255)
+            draw_text(canvas, val_text, (rx + 95, ry + 11), font_size=13, color=val_col, bold=True)
+
+            # 行内按钮 [设未知] / [设已知]
+            cx, cy, cw, ch = pose6d_clear_rect(axis)
+            chov = point_in_rect(mpos[0], mpos[1], (cx, cy, cw, ch))
+            if is_known:
+                btn_bg = (70, 46, 36) if chov else (58, 38, 30)
+                btn_border = (160, 90, 60)
+                btn_text = "设未知"
+                btn_col = (240, 180, 150)
+            else:
+                btn_bg = (26, 68, 50) if chov else (22, 54, 40)
+                btn_border = (0, 200, 140)
+                btn_text = "设已知"
+                btn_col = (140, 240, 190)
+
+            cv2.rectangle(canvas, (cx, cy), (cx + cw, cy + ch), btn_bg, -1)
+            cv2.rectangle(canvas, (cx, cy), (cx + cw, cy + ch), btn_border, 1)
+            draw_text(canvas, btn_text, (cx + 8, cy + 6), font_size=11, color=btn_col)
+
+        # 7. 15 键软键盘
+        for idx, label in enumerate(P6_PAD_LABELS):
+            kx, ky, kw, kh = pose6d_padkey_rect(idx)
+            hov = point_in_rect(mpos[0], mpos[1], (kx, ky, kw, kh))
+            if label == "确认":
+                bg = (26, 92, 64) if hov else (22, 74, 52)
+                border, col = (0, 230, 150), (140, 255, 210)
+            elif label in ("退格", "清空"):
+                bg = (72, 48, 38) if hov else (60, 40, 32)
+                border, col = (160, 95, 65), (240, 175, 145)
+            else:
+                bg = (42, 52, 68) if hov else (32, 40, 52)
+                border, col = (95, 110, 140), (220, 230, 245)
+            cv2.rectangle(canvas, (kx, ky), (kx + kw, ky + kh), bg, -1)
+            cv2.rectangle(canvas, (kx, ky), (kx + kw, ky + kh), border, 1)
+            est_w = 8 * len(label) if label.isascii() else 14 * len(label)
+            draw_text(canvas, label, (kx + (kw - est_w) // 2, ky + 10), font_size=13, color=col, bold=True)
+
+        # 8. 底部操作按钮
+        self.r._draw_button(canvas, P6_BTN_SAVE, "确认并应用", mpos, theme_color=(0, 210, 160))
+        self.r._draw_button(canvas, P6_BTN_CANCEL, "取消", mpos)
+
     def render_help_modal(self, canvas: np.ndarray, state: HubState):
         """渲染工位沙盒与生产机制业务架构说明弹窗"""
+
         from tools.workspace_hub.hub_renderer import HELP_MODAL_W, HELP_MODAL_H
         modal_w, modal_h = HELP_MODAL_W, HELP_MODAL_H
         mx = (self.r.canvas_w - modal_w) // 2

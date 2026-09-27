@@ -10,6 +10,7 @@
 """
 
 import os
+import time
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Tuple, Any
 import numpy as np
@@ -53,17 +54,49 @@ class FrameDefinition:
     name: str                                      # 友好别名，如 绝对世界坐标系, 主输送机坐标系
     parent_frame_id: Optional[str] = None          # 父坐标系 ID (world 为根节点, 值为 None)
     type: str = "fixed_transform"                  # 类型: "world" | "fixed_transform" | "tag_bound"
+    status: str = "unknown"                        # 状态: "unknown" (默认未知/待反推) | "calibrated" (已平差求解) | "manual" (手动录入)
     description: str = ""                          # 说明备注
 
-    # 针对 fixed_transform 类型的参数
-    translation_xyz_mm: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    rotation_rpy_deg: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    # 针对 fixed_transform 类型的参数 (状态为 unknown 时为 None)
+    translation_xyz_mm: Optional[List[float]] = None
+    rotation_rpy_deg: Optional[List[float]] = None
+    # 逐轴已知掩码 [X, Y, Z, Roll, Pitch, Yaw]，True 为已知约束，False 为待解
+    known_dof: Optional[List[bool]] = None
+
+    # 外参反推标定规范 (声明如何由视觉标靶/几何约束反推该坐标系)
+    calibration_spec: Optional[Dict[str, Any]] = None
+    # 标定质检指标 (反推求解残差、时间戳等)
+    calibration_metrics: Optional[Dict[str, Any]] = None
 
     # 针对 tag_bound 类型的参数 (支持多动标列表)
     tag_id: Optional[int] = None
     tag_ids: List[int] = field(default_factory=list)
     offset_xyz_mm: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     offset_rpy_deg: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+
+    def __post_init__(self):
+        if self.type == "world":
+            self.status = "calibrated"
+            self.parent_frame_id = None
+            self.known_dof = [True] * 6
+        elif self.type == "tag_bound":
+            self.status = "calibrated"
+            self.known_dof = [True] * 6
+        elif self.type == "fixed_transform":
+            if self.known_dof is None:
+                if self.status == "manual":
+                    self.known_dof = [True] * 6
+                elif self.status == "calibrated":
+                    self.known_dof = [True] * 6
+                else:
+                    self.known_dof = [False] * 6
+            # 若调用方显式传入了平移与旋转数值，且 status 仍是初始 "unknown"，自动根据 known_dof 判定
+            if self.translation_xyz_mm is not None and self.rotation_rpy_deg is not None and self.status == "unknown":
+                if all(self.known_dof):
+                    self.status = "manual"
+                elif any(self.known_dof):
+                    self.status = "partial"
+
 
     def get_tag_ids(self) -> List[int]:
         """获取动标绑定的 Tag ID 列表 (兼容单动标与多动标冗余组)"""
@@ -88,13 +121,20 @@ class FrameDefinition:
             "name": self.name,
             "parent_frame_id": self.parent_frame_id,
             "type": self.type,
+            "status": self.status,
             "description": self.description,
         }
         if self.type == "fixed_transform":
             d["transform"] = {
-                "translation_xyz_mm": [float(x) for x in self.translation_xyz_mm],
-                "rotation_rpy_deg": [float(x) for x in self.rotation_rpy_deg],
+                "translation_xyz_mm": [float(x) for x in self.translation_xyz_mm] if self.translation_xyz_mm is not None else None,
+                "rotation_rpy_deg": [float(x) for x in self.rotation_rpy_deg] if self.rotation_rpy_deg is not None else None,
             }
+            if self.known_dof is not None:
+                d["transform"]["known_dof"] = [bool(b) for b in self.known_dof]
+            if self.calibration_spec:
+                d["calibration_spec"] = self.calibration_spec
+            if self.calibration_metrics:
+                d["calibration_metrics"] = self.calibration_metrics
         elif self.type == "tag_bound":
             t_ids = self.get_tag_ids()
             d["tag_binding"] = {
@@ -112,20 +152,28 @@ class FrameDefinition:
         name = data.get("name", fid)
         parent_fid = data.get("parent_frame_id")
         ftype = data.get("type", "fixed_transform")
+        status = data.get("status")
         desc = data.get("description", "")
 
-        t_xyz = [0.0, 0.0, 0.0]
-        r_rpy = [0.0, 0.0, 0.0]
+        t_xyz = None
+        r_rpy = None
+        known_dof = None
+        calib_spec = data.get("calibration_spec")
+        calib_metrics = data.get("calibration_metrics")
+
         tag_id = None
         tag_ids: List[int] = []
         off_xyz = [0.0, 0.0, 0.0]
         off_rpy = [0.0, 0.0, 0.0]
 
-        if ftype == "fixed_transform":
-            trans_block = data.get("transform", {})
-            t_xyz = trans_block.get("translation_xyz_mm", [0.0, 0.0, 0.0])
-            r_rpy = trans_block.get("rotation_rpy_deg", [0.0, 0.0, 0.0])
+        if ftype == "world" or fid == "world" or not parent_fid:
+            ftype = "world"
+            status = "calibrated"
+            t_xyz = [0.0, 0.0, 0.0]
+            r_rpy = [0.0, 0.0, 0.0]
+            known_dof = [True] * 6
         elif ftype == "tag_bound":
+            status = "calibrated"
             bind_block = data.get("tag_binding", {})
             tag_id = bind_block.get("tag_id")
             raw_ids = bind_block.get("tag_ids")
@@ -141,15 +189,40 @@ class FrameDefinition:
                 tag_id = tag_ids[0]
             off_xyz = bind_block.get("offset_xyz_mm", [0.0, 0.0, 0.0])
             off_rpy = bind_block.get("offset_rpy_deg", [0.0, 0.0, 0.0])
+        elif ftype == "fixed_transform":
+            trans_block = data.get("transform", {})
+            raw_t = trans_block.get("translation_xyz_mm")
+            raw_r = trans_block.get("rotation_rpy_deg")
+            raw_k = trans_block.get("known_dof")
+            if raw_t is not None:
+                t_xyz = [float(x) for x in raw_t]
+            if raw_r is not None:
+                r_rpy = [float(x) for x in raw_r]
+            if raw_k is not None and isinstance(raw_k, list):
+                known_dof = [bool(b) for b in raw_k]
+
+            if not status:
+                # 兼容旧配置: 若有非空数值且不是全 0，视为 manual，否则默认 unknown
+                if t_xyz is not None and r_rpy is not None and (any(t_xyz) or any(r_rpy)):
+                    status = "manual"
+                else:
+                    status = "unknown"
+                    if t_xyz == [0.0, 0.0, 0.0] and r_rpy == [0.0, 0.0, 0.0] and not calib_metrics:
+                        t_xyz = None
+                        r_rpy = None
 
         return cls(
             frame_id=fid,
             name=name,
             parent_frame_id=parent_fid,
             type=ftype,
+            status=status or "unknown",
             description=desc,
             translation_xyz_mm=t_xyz,
             rotation_rpy_deg=r_rpy,
+            known_dof=known_dof,
+            calibration_spec=calib_spec,
+            calibration_metrics=calib_metrics,
             tag_id=tag_id,
             tag_ids=tag_ids,
             offset_xyz_mm=off_xyz,
@@ -261,6 +334,31 @@ class CoordinateTreeManager:
     def get_frame(self, frame_id: str) -> Optional[FrameDefinition]:
         return self._frames.get(frame_id)
 
+    def update_frame_solved_extrinsic(
+        self,
+        frame_id: str,
+        translation_xyz_mm: List[float],
+        rotation_rpy_deg: List[float],
+        rmse_mm: Optional[float] = None,
+        method: str = ""
+    ) -> bool:
+        """更新并固化由视觉反推求解得出的子坐标系外参"""
+        if frame_id not in self._frames:
+            return False
+        frame = self._frames[frame_id]
+        frame.translation_xyz_mm = [float(x) for x in translation_xyz_mm]
+        frame.rotation_rpy_deg = [float(x) for x in rotation_rpy_deg]
+        frame.status = "calibrated"
+        metrics: Dict[str, Any] = {
+            "calibrated_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        if rmse_mm is not None:
+            metrics["rmse_mm"] = float(rmse_mm)
+        if method:
+            metrics["method"] = str(method)
+        frame.calibration_metrics = metrics
+        return True
+
     def list_frames(self) -> List[FrameDefinition]:
         """返回按层级拓扑排序的坐标系列表"""
         # world 始终第一
@@ -309,9 +407,12 @@ class CoordinateTreeManager:
             return np.eye(4, dtype=np.float64), True
 
         if frame.type == "fixed_transform":
+            if frame.status in ("unknown", "partial") or frame.translation_xyz_mm is None or frame.rotation_rpy_deg is None:
+                return np.eye(4, dtype=np.float64), False
             R_mat = rpy_deg_to_rot_mat(frame.rotation_rpy_deg)
             T = make_transform_matrix(R_mat, frame.translation_xyz_mm)
             return T, True
+
 
         if frame.type == "tag_bound":
             # 动标绑定类型 (支持多动标冗余跟踪与回退)

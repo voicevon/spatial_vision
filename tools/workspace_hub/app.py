@@ -101,6 +101,11 @@ class WorkspaceHubApp(BaseCvApp):
 
     def on_click(self, x: int, y: int):
         """处理鼠标左键单击与双击交互"""
+        # =================== 1.8 6DoF 外参位姿与约束独立模态窗 ===================
+        if getattr(self.state, "pose6d_modal_open", False):
+            self._handle_pose6d_modal_click(x, y)
+            return
+
         # =================== 1.9 标靶物理边长模态窗优先交互 ===================
         if self.state.marker_size_modal_open:
             self._handle_marker_size_modal_click(x, y)
@@ -110,6 +115,7 @@ class WorkspaceHubApp(BaseCvApp):
         if self.state.anchor_modal_open:
             self._handle_anchor_modal_click(x, y)
             return
+
 
         # =================== 2.5 坐标系与 3D ROI 结构化弹窗交互 ===================
         if self.state.frame_modal_open:
@@ -768,14 +774,24 @@ class WorkspaceHubApp(BaseCvApp):
                 d["frame_id"] = new_id_clean
                 self.state.set_toast(f"已设置坐标系唯一 ID 为: {new_id_clean} (点击[保存]后正式生效并级联更新)")
             return
+        if hit == "frame_set_unknown":
+            d["status"] = "unknown"
+            d["known_dof"] = [False] * 6
+            d["translation_xyz_mm"] = [0.0, 0.0, 0.0]
+            d["rotation_rpy_deg"] = [0.0, 0.0, 0.0]
+            self.state.set_toast("已将坐标系外参标记为【全未知】，BA平差时将自动通过绑定的标靶反向求解！")
+            return
+        if hit == "frame_open_pose6d":
+            self.state.open_pose6d_modal(0)
+            return
         if isinstance(hit, tuple) and hit[0] == "frame_field_num":
             field_category, axis_idx = hit[1], hit[2]
             if field_category == "translation":
-                axis_name = ["X (前向)", "Y (横向)", "Z (垂向)"][axis_idx]
-                self._prompt_vector_axis(f"平移 {axis_name}", "请输入平移数值 (mm):", d, "translation_xyz_mm", axis_idx, [0.0, 0.0, 0.0], unit="mm")
+                self.state.open_pose6d_modal(axis_idx)
+                return
             elif field_category == "rotation":
-                axis_name = ["Roll 翻滚", "Pitch 俯仰", "Yaw 偏航"][axis_idx]
-                self._prompt_vector_axis(f"旋转 {axis_name}", "请输入欧拉角 (°):", d, "rotation_rpy_deg", axis_idx, [0.0, 0.0, 0.0], unit="°")
+                self.state.open_pose6d_modal(axis_idx + 3)
+                return
             elif field_category == "tag_id":
                 curr_val = d.get("tag_id", 0)
                 val_str = prompt_input_text(
@@ -794,6 +810,59 @@ class WorkspaceHubApp(BaseCvApp):
             elif field_category == "offset":
                 axis_name = ["dx (前向)", "dy (横向)", "dz (垂向)"][axis_idx]
                 self._prompt_vector_axis(f"动标局部偏移 {axis_name}", "请输入局部偏移数值 (mm):", d, "offset_xyz_mm", axis_idx, [0.0, 0.0, 0.0], unit="mm")
+
+    def _handle_pose6d_modal_click(self, x: int, y: int):
+        """处理 6DoF 外参位姿与约束独立模态窗交互 (纯画布交互，无 OS 弹窗)"""
+        state = self.state
+        from tools.workspace_hub.hub_renderer import (
+            P6_BTN_UNKNOWN_ALL, P6_BTN_KNOWN_ALL, P6_BTN_PLANAR,
+            P6_PAD_LABELS, pose6d_row_rect, pose6d_clear_rect, pose6d_padkey_rect,
+            P6_BTN_SAVE, P6_BTN_CANCEL, point_in_rect
+        )
+
+        # 1. 顶部预设快捷按钮
+        if point_in_rect(x, y, P6_BTN_UNKNOWN_ALL):
+            state.pose6d_set_all_unknown()
+            state.set_toast("已切换为: 【全未知模式】(等待 BA 平差自动反推)")
+            return
+        if point_in_rect(x, y, P6_BTN_KNOWN_ALL):
+            state.pose6d_set_all_known()
+            state.set_toast("已切换为: 【全已知人工指定】")
+            return
+        if point_in_rect(x, y, P6_BTN_PLANAR):
+            state.pose6d_set_planar_preset()
+            state.set_toast("已应用快捷约束: Roll=0°, Pitch=0° (水平面运动)")
+            return
+
+        # 2. 6 轴位姿行: [设未知] 按钮优先
+        for axis in range(6):
+            if point_in_rect(x, y, pose6d_clear_rect(axis)):
+                state.pose6d_toggle_axis(axis)
+                name = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"][axis]
+                st = "已知" if state.pose6d_modal_known[axis] else "未知 (待BA解算)"
+                state.set_toast(f"{name} 轴已切换为: {st}")
+                return
+
+        for axis in range(6):
+            if point_in_rect(x, y, pose6d_row_rect(axis)):
+                state.pose6d_select_axis(axis)
+                return
+
+        # 3. 15 键软键盘
+        for idx, label in enumerate(P6_PAD_LABELS):
+            if point_in_rect(x, y, pose6d_padkey_rect(idx)):
+                state.pose6d_pad_key(label)
+                return
+
+        # 4. 底部操作按钮
+        if point_in_rect(x, y, P6_BTN_SAVE):
+            state.save_pose6d_modal()
+            return
+        if point_in_rect(x, y, P6_BTN_CANCEL):
+            state.close_pose6d_modal()
+            state.set_toast("已取消 6DoF 外参编辑。")
+            return
+
 
     def _handle_roi_modal_click(self, x: int, y: int):
         """处理 3D ROI 空间物件表单弹窗交互"""
@@ -876,8 +945,44 @@ class WorkspaceHubApp(BaseCvApp):
         """
         state = self.state
 
+        # 0.0 6DoF 外参位姿与约束编辑模态窗独占键盘输入
+        if getattr(state, "pose6d_modal_open", False):
+            if key == 27:  # ESC 取消
+                state.close_pose6d_modal()
+                state.set_toast("已取消 6DoF 外参编辑。")
+                return True
+            if key in (13, 10):  # Enter 保存并应用
+                state.save_pose6d_modal()
+                return True
+            if key == 9:  # Tab: 切换到下一个输入轴 (0~5 循环)
+                state.pose6d_select_axis((state.pose6d_modal_axis_sel + 1) % 6)
+                return True
+            if key in (8, 127):  # Backspace 退格
+                state.pose6d_pad_key("退格")
+                return True
+            if key in (ord('c'), ord('C')):  # 清空当前轴缓冲
+                state.pose6d_pad_key("清空")
+                return True
+            if key in (ord('?'), ord('u'), ord('U')):  # 设为未知
+                cur_axis = state.pose6d_modal_axis_sel
+                state.pose6d_clear_axis(cur_axis)
+                name = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"][cur_axis]
+                state.set_toast(f"{name} 轴已标记为未知。")
+                return True
+            if key == ord('.'):  # 小数点
+                state.pose6d_pad_key(".")
+                return True
+            if key in (ord('-'), ord('+')):  # 正负翻转
+                state.pose6d_pad_key("-/+")
+                return True
+            if ord('0') <= key <= ord('9'):  # 数字 0~9
+                state.pose6d_pad_key(chr(key))
+                return True
+            return True
+
         # 0.0 标靶物理边长专属模态窗 (marker_size_modal) 独占键盘输入
         if state.marker_size_modal_open:
+
             if key == 27:  # ESC 取消
                 state.cancel_marker_size_modal()
                 state.set_toast("已取消标靶边长编辑。")

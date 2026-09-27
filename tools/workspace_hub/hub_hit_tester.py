@@ -169,18 +169,26 @@ class HubHitTester:
             d = state.frame_modal_data
             cur_type = d.get("type", "fixed_transform")
             if cur_type == "fixed_transform":
-                if point_in_rect(mx, my, (mx_box + 125, param_y + 42, 130, 28)):
+                from tools.workspace_hub.hub_renderer import (
+                    FRAME_PARAM_BTN_UNKNOWN, FRAME_PARAM_BTN_EDIT6D
+                )
+                if point_in_rect(mx, my, FRAME_PARAM_BTN_UNKNOWN):
+                    return "frame_set_unknown"
+                if point_in_rect(mx, my, FRAME_PARAM_BTN_EDIT6D):
+                    return "frame_open_pose6d"
+                if point_in_rect(mx, my, (mx_box + 125, param_y + 48, 130, 28)):
                     return ("frame_field_num", "translation", 0)
-                if point_in_rect(mx, my, (mx_box + 265, param_y + 42, 130, 28)):
+                if point_in_rect(mx, my, (mx_box + 265, param_y + 48, 130, 28)):
                     return ("frame_field_num", "translation", 1)
-                if point_in_rect(mx, my, (mx_box + 405, param_y + 42, 130, 28)):
+                if point_in_rect(mx, my, (mx_box + 405, param_y + 48, 130, 28)):
                     return ("frame_field_num", "translation", 2)
-                if point_in_rect(mx, my, (mx_box + 125, param_y + 92, 130, 28)):
+                if point_in_rect(mx, my, (mx_box + 125, param_y + 94, 130, 28)):
                     return ("frame_field_num", "rotation", 0)
-                if point_in_rect(mx, my, (mx_box + 265, param_y + 92, 130, 28)):
+                if point_in_rect(mx, my, (mx_box + 265, param_y + 94, 130, 28)):
                     return ("frame_field_num", "rotation", 1)
-                if point_in_rect(mx, my, (mx_box + 405, param_y + 92, 130, 28)):
+                if point_in_rect(mx, my, (mx_box + 405, param_y + 94, 130, 28)):
                     return ("frame_field_num", "rotation", 2)
+
             else:
                 if point_in_rect(mx, my, (mx_box + 165, param_y + 42, 160, 28)):
                     return ("frame_field_num", "tag_id", 0)

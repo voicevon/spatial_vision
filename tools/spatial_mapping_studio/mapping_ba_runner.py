@@ -46,6 +46,7 @@ class MappingBARunner:
         self.optimizer = optimizer
         self.manifest_repo = manifest_repo
         self.map_path = map_path
+        self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "tags_map_raw.yaml") if self.map_path else ""
         self.manifest_path = manifest_path
         self.marker_size_mm = marker_size_mm
         self.on_status_change = on_status_change
@@ -85,6 +86,8 @@ class MappingBARunner:
         Tag 数据已 100% 下沉至工位沙盒, 全局 config.yaml 不再持有任何 Tag ID/世界坐标.
         工位两源全空 → BA 后续将抛错终止.
         """
+        if self.map_path:
+            self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "tags_map_raw.yaml")
         try:
             import yaml
             cfg_path = os.path.join(PROJECT_ROOT, "config", "config.yaml")
@@ -122,7 +125,6 @@ class MappingBARunner:
             log.warning(f"[SPATIAL_MAPPING] 读取对齐标靶配置异常: {e}")
             self.anchor_tags = None
 
-        self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "tags_map_raw.yaml")
 
     def _notify(self, msg: str):
         if self.on_status_change is not None:
@@ -230,19 +232,50 @@ class MappingBARunner:
             self.data_mgr.set_marker_size_mm(world_map["marker_size_mm"])
         self.data_mgr.refresh_all_frame_metrics()
 
+        # 5. 【阶段三: 子坐标系外参反推与固化】
+        solved_frames = self._calibrate_sub_frames(world_map)
+
         w_info = world_map.get("world_anchor", {})
         res = w_info.get("anchor_residual_mm", {})
         mean_res = res.get("mean_mm", 0.0)
         max_res = res.get("max_mm", 0.0)
         has_warn = res.get("has_warn", False)
         solver = w_info.get("solver_type", "3D")
+        sub_tip = f" | 反推子坐标系: {len(solved_frames)}个" if solved_frames else ""
         if has_warn:
-            msg = f"世界系校准完成(⚠️注意：存在偏差过大标靶)：[{solver}] 均值残差: {mean_res:.2f}mm, 最大偏差: {max_res:.2f}mm"
+            msg = f"世界系校准完成(⚠️注意：存在偏差过大标靶)：[{solver}] 均值残差: {mean_res:.2f}mm, 最大偏差: {max_res:.2f}mm{sub_tip}"
         else:
-            msg = f"世界坐标系校准成功！[{solver}] 锚点残差均值: {mean_res:.2f} mm，生产地图已更新。"
+            msg = f"世界坐标系校准成功！[{solver}] 锚点残差均值: {mean_res:.2f} mm，生产地图已更新。{sub_tip}"
         self._notify(msg)
         log.info(f"[SPATIAL_MAPPING] {msg}")
         return True, msg, world_map
+
+    def _calibrate_sub_frames(self, world_map: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        【阶段三核心】反推工位内所有待定 (unknown) 子坐标系的外参，并原子写穿 frames.yaml。
+        """
+        ws = self.workspace
+        if not ws:
+            return {}
+        try:
+            from src.calibration.workspace_manager import load_workspace_coordinate_manager
+            from src.calibration.frame_extrinsic_solver import FrameExtrinsicSolver
+
+            coord_mgr = load_workspace_coordinate_manager(ws)
+            if not coord_mgr:
+                return {}
+
+            solver = FrameExtrinsicSolver(tags_map=world_map)
+            solved_summary = solver.solve_all_unknown_frames(coord_mgr)
+
+            succ_count = sum(1 for item in solved_summary.values() if item.get("success"))
+            if succ_count > 0:
+                coord_mgr.save()
+                log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_count} 个成功) 并已写穿 frames.yaml: {list(solved_summary.keys())}")
+            return solved_summary
+        except Exception as e:
+            log.warning(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推异常 (跳过): {e}")
+            return {}
 
     def start(self) -> bool:
         """

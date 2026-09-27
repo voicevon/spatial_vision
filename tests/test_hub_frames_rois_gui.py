@@ -73,6 +73,8 @@ def test_hub_frames_rois_end_to_end():
         state.frame_modal_data["frame_id"] = "frame_flange"
         state.frame_modal_data["name"] = "机械臂末端法兰"
         state.frame_modal_data["type"] = "fixed_transform"
+        state.frame_modal_data["status"] = "manual"
+        state.frame_modal_data["known_dof"] = [True] * 6
         state.frame_modal_data["translation_xyz_mm"] = [150.0, 30.0, -80.0]
         state.frame_modal_data["rotation_rpy_deg"] = [0.0, 45.0, 0.0]
 
@@ -96,8 +98,76 @@ def test_hub_frames_rois_end_to_end():
         assert saved_f.translation_xyz_mm == [150.0, 30.0, -80.0]
 
         # -----------------------------------------------------------------
+        # 3.5 验证 6DoF 外参位姿与先验约束独立编辑器 (全未知/部分已知/全已知)
+        # -----------------------------------------------------------------
+        state.open_frame_modal("frame_flange")
+        assert state.frame_modal_open is True
+
+        # (1) 打开 6DoF 模态窗
+        state.open_pose6d_modal(0)
+        assert state.pose6d_modal_open is True
+        canvas_p6 = renderer.render(state)
+        assert canvas_p6.shape == (720, 960, 3)
+
+        # (2) 测试一键设为全未知 (待BA平差反向求解)
+        state.pose6d_set_all_unknown()
+        assert sum(1 for b in state.pose6d_modal_known if b) == 0
+        state.save_pose6d_modal()
+        assert state.pose6d_modal_open is False
+        assert state.frame_modal_data["status"] == "unknown"
+
+        # 保存并验证底层为 unknown 且外参数值为 None，拓扑严格阻断
+        ok_save_unk, _ = state.save_frame_modal()
+        assert ok_save_unk is True
+        f_unk = state.coord_mgr.get_frame("frame_flange")
+        assert f_unk.status == "unknown"
+        assert f_unk.translation_xyz_mm is None
+        assert f_unk.rotation_rpy_deg is None
+        _, is_res_unk = state.coord_mgr.get_relative_transform_to_parent("frame_flange")
+        assert is_res_unk is False
+
+        # (3) 测试水平面运动先验约束 (部分已知 partial 模式: Roll=0°, Pitch=0°)
+        state.open_frame_modal("frame_flange")
+        state.open_pose6d_modal(0)
+        state.pose6d_set_planar_preset()
+        assert state.pose6d_modal_known[3] is True  # Roll
+        assert state.pose6d_modal_known[4] is True  # Pitch
+        assert state.pose6d_modal_known[0] is False # X 未知
+        state.save_pose6d_modal()
+        assert state.frame_modal_data["status"] == "partial"
+        ok_save_part, _ = state.save_frame_modal()
+        assert ok_save_part is True
+        f_part = state.coord_mgr.get_frame("frame_flange")
+        assert f_part.status == "partial"
+        _, is_res_part = state.coord_mgr.get_relative_transform_to_parent("frame_flange")
+        assert is_res_part is False  # 部分已知在BA平差前仍然保持未解阻断
+
+        # (4) 测试软键盘输入与一键全已知 (manual 模式)
+        state.open_frame_modal("frame_flange")
+        state.open_pose6d_modal(0)
+        state.pose6d_set_all_known()
+        # 选中 X 轴并用软键盘输入 200.5
+        state.pose6d_select_axis(0)
+        state.pose6d_pad_key("清空")
+        for ch in "200.5":
+            state.pose6d_pad_key(ch)
+        state.pose6d_pad_key("确认")
+        assert abs(state.pose6d_modal_vals[0] - 200.5) < 1e-4
+
+        state.save_pose6d_modal()
+        assert state.frame_modal_data["status"] == "manual"
+        ok_save_man, _ = state.save_frame_modal()
+        assert ok_save_man is True
+        f_man = state.coord_mgr.get_frame("frame_flange")
+        assert f_man.status == "manual"
+        assert abs(f_man.translation_xyz_mm[0] - 200.5) < 1e-4
+        _, is_res_man = state.coord_mgr.get_relative_transform_to_parent("frame_flange")
+        assert is_res_man is True  # 全已知正常放行
+
+        # -----------------------------------------------------------------
         # 4. 验证新建 3D ROI 空间物件弹窗 & 强 Schema 校验
         # -----------------------------------------------------------------
+
         state.open_roi_modal()
         assert state.roi_modal_open is True
 
@@ -195,6 +265,13 @@ def test_hub_frames_rois_end_to_end():
         canvas_roi_modal = renderer.render(state)
         cv2.imwrite(os.path.join(PROJECT_ROOT, "data", "test_roi_modal.png"), canvas_roi_modal)
         state.close_roi_modal()
+
+        # 7.4 渲染标靶位姿与坐标系页面 (frame_pose_tags) 包含 unknown / partial 外参
+        state.current_page = "frame_pose_tags"
+        canvas_pose_tags = renderer.render(state)
+        assert canvas_pose_tags is not None
+        cv2.imwrite(os.path.join(PROJECT_ROOT, "data", "test_frame_pose_tags_page.png"), canvas_pose_tags)
+        state.current_page = "frames_rois"
 
         # -----------------------------------------------------------------
         # 8. 删除操作写穿验证

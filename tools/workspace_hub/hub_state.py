@@ -134,6 +134,14 @@ class HubState:
         self.frame_modal_orig_id: str | None = None
         self.roi_modal_orig_id: str | None = None
 
+        # 6DoF 外参位姿与约束独立模态弹窗
+        self.pose6d_modal_open: bool = False
+        self.pose6d_modal_vals: list[float] = [0.0] * 6     # [X, Y, Z, Roll, Pitch, Yaw]
+        self.pose6d_modal_known: list[bool] = [False] * 6  # 逐轴已知掩码
+        self.pose6d_modal_axis_sel: int = 0          # 0~5
+        self.pose6d_modal_axis_buf: str = ""
+
+
         # Tag 白名单缓存 (按文件 mtime 自动感知外部编辑并刷新)
         self._whitelist_cache: dict = {}
         self._whitelist_cache_mtime: float = -1.0
@@ -751,6 +759,11 @@ class HubState:
             m = load_anchor_tags(self.anchor_config_path)
         self.anchor_map = m or {}
 
+    def get_anchor_map(self) -> dict:
+        """获取当前工位完整的 AprilTag 物理锚点映射表 (优先取 anchor_tags.yaml，回退 tag_whitelist.yaml)"""
+        self._reload_anchor_map()
+        return self.anchor_map or {}
+
     def _persist_anchor_map(self) -> bool:
         """写穿当前工位锚点文件并同步写穿 tag_whitelist.yaml (统一采用标准结构)"""
         from src.calibration.workspace_manager import save_workspace_anchor_tags
@@ -1187,13 +1200,27 @@ class HubState:
             self.frame_modal_orig_id = f.frame_id
             b_tags = f.get_tag_ids() if hasattr(f, "get_tag_ids") else ([f.tag_id] if f.tag_id is not None else [])
             tag_str = ",".join(str(x) for x in b_tags) if b_tags else str(f.tag_id or 0)
+            
+            st = getattr(f, "status", "unknown")
+            k_dof = getattr(f, "known_dof", None)
+            if k_dof is None:
+                if st in ("manual", "calibrated"):
+                    k_dof = [True] * 6
+                else:
+                    k_dof = [False] * 6
+
+            t_val = [float(x) for x in f.translation_xyz_mm] if f.translation_xyz_mm is not None else [0.0, 0.0, 0.0]
+            r_val = [float(x) for x in f.rotation_rpy_deg] if f.rotation_rpy_deg is not None else [0.0, 0.0, 0.0]
+
             self.frame_modal_data = {
                 "frame_id": f.frame_id,
                 "name": f.name,
                 "parent_frame_id": f.parent_frame_id or "world",
                 "type": f.type,
-                "translation_xyz_mm": [float(x) for x in f.translation_xyz_mm],
-                "rotation_rpy_deg": [float(x) for x in f.rotation_rpy_deg],
+                "status": st,
+                "known_dof": list(k_dof),
+                "translation_xyz_mm": t_val,
+                "rotation_rpy_deg": r_val,
                 "tag_id": tag_str,
                 "offset_xyz_mm": [float(x) for x in f.offset_xyz_mm],
                 "offset_rpy_deg": [float(x) for x in f.offset_rpy_deg],
@@ -1207,7 +1234,9 @@ class HubState:
                 "name": f"{idx}号机构坐标系",
                 "parent_frame_id": "world",
                 "type": "fixed_transform",
-                "translation_xyz_mm": [100.0, 0.0, 0.0],
+                "status": "unknown",
+                "known_dof": [False] * 6,
+                "translation_xyz_mm": [0.0, 0.0, 0.0],
                 "rotation_rpy_deg": [0.0, 0.0, 0.0],
                 "tag_id": 0,
                 "offset_xyz_mm": [0.0, 0.0, 0.0],
@@ -1222,6 +1251,7 @@ class HubState:
         self.frame_modal_data = {}
         self.frame_modal_orig_id = None
         self.active_dropdown = None
+        self.close_pose6d_modal()
 
     def save_frame_modal(self) -> tuple[bool, str]:
         if not self.coord_mgr or not self.frame_modal_data:
@@ -1258,13 +1288,38 @@ class HubState:
                 parsed_tag_ids.append(int(part_s))
         primary_tid = parsed_tag_ids[0] if parsed_tag_ids else 0
 
+        existing_frame = self.coord_mgr.get_frame(orig_fid) if (not self.frame_modal_is_new and orig_fid) else None
+        calib_spec = existing_frame.calibration_spec if existing_frame else None
+        calib_metrics = existing_frame.calibration_metrics if existing_frame else None
+
+        st = d.get("status", "unknown")
+        k_dof = d.get("known_dof", [False]*6)
+        n_known = sum(1 for b in k_dof if b)
+
+        if n_known == 0 and st != "calibrated":
+            final_status = "unknown"
+            t_xyz = None
+            r_rpy = None
+        elif n_known == 6:
+            final_status = "manual" if st != "calibrated" else "calibrated"
+            t_xyz = [float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])]
+            r_rpy = [float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])]
+        else:
+            final_status = "partial" if st != "calibrated" else "calibrated"
+            t_xyz = [float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])]
+            r_rpy = [float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])]
+
         frame = FrameDefinition(
             frame_id=fid,
             name=str(d.get("name", fid)).strip(),
             parent_frame_id=parent,
             type=ftype,
-            translation_xyz_mm=[float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])],
-            rotation_rpy_deg=[float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])],
+            status=final_status,
+            known_dof=k_dof,
+            translation_xyz_mm=t_xyz,
+            rotation_rpy_deg=r_rpy,
+            calibration_spec=calib_spec,
+            calibration_metrics=calib_metrics,
             tag_id=primary_tid,
             tag_ids=parsed_tag_ids,
             offset_xyz_mm=[float(x) for x in d.get("offset_xyz_mm", [0, 0, 0])],
@@ -1280,6 +1335,148 @@ class HubState:
         self.close_frame_modal()
         self.set_toast(f"已成功保存坐标系: 【{frame.name}】")
         return True, "保存成功"
+
+    # ---------------- 6DoF 外参位姿与约束独立模态弹窗方法 ----------------
+    def open_pose6d_modal(self, axis_idx: int = 0):
+        """打开 6DoF 外参位姿与约束编辑模态窗"""
+        d = self.frame_modal_data
+        t = d.get("translation_xyz_mm", [0.0, 0.0, 0.0]) or [0.0, 0.0, 0.0]
+        r = d.get("rotation_rpy_deg", [0.0, 0.0, 0.0]) or [0.0, 0.0, 0.0]
+        st = d.get("status", "unknown")
+        default_known = [True]*6 if st in ("manual", "calibrated") else [False]*6
+        k_dof = list(d.get("known_dof", default_known))
+        if len(k_dof) < 6:
+            k_dof = k_dof + [False]*(6 - len(k_dof))
+
+        self.pose6d_modal_vals = [float(t[0]), float(t[1]), float(t[2]), float(r[0]), float(r[1]), float(r[2])]
+        self.pose6d_modal_known = [bool(b) for b in k_dof]
+        self.pose6d_modal_axis_sel = max(0, min(5, axis_idx))
+        self.pose6d_modal_axis_buf = ""
+        self.pose6d_modal_open = True
+
+    def close_pose6d_modal(self):
+        """关闭 6DoF 模态窗"""
+        self.pose6d_modal_open = False
+        self.pose6d_modal_axis_buf = ""
+
+    def pose6d_select_axis(self, axis_idx: int):
+        """选中指定轴并提交之前轴的输入缓冲区"""
+        if self.pose6d_modal_axis_buf:
+            try:
+                v = float(self.pose6d_modal_axis_buf)
+                self.pose6d_modal_vals[self.pose6d_modal_axis_sel] = v
+                self.pose6d_modal_known[self.pose6d_modal_axis_sel] = True
+            except ValueError:
+                pass
+            self.pose6d_modal_axis_buf = ""
+        self.pose6d_modal_axis_sel = max(0, min(5, axis_idx))
+
+    def pose6d_clear_axis(self, axis_idx: int):
+        """将指定轴标记为未知"""
+        if self.pose6d_modal_axis_sel == axis_idx:
+            self.pose6d_modal_axis_buf = ""
+        self.pose6d_modal_known[axis_idx] = False
+
+    def pose6d_toggle_axis(self, axis_idx: int):
+        """切换指定轴的已知/未知状态"""
+        self.pose6d_modal_known[axis_idx] = not self.pose6d_modal_known[axis_idx]
+
+    def pose6d_set_all_unknown(self):
+        """一键设为全未知 (待BA平差反向求解)"""
+        self.pose6d_modal_known = [False] * 6
+        self.pose6d_modal_axis_buf = ""
+
+    def pose6d_set_all_known(self):
+        """一键设为全已知"""
+        self.pose6d_modal_known = [True] * 6
+        self.pose6d_modal_axis_buf = ""
+
+    def pose6d_set_planar_preset(self):
+        """快捷应用水平面运动约束: Roll=0.0°, Pitch=0.0° 已知，其余轴保持"""
+        self.pose6d_modal_vals[3] = 0.0
+        self.pose6d_modal_known[3] = True
+        self.pose6d_modal_vals[4] = 0.0
+        self.pose6d_modal_known[4] = True
+        self.pose6d_modal_axis_buf = ""
+
+    def pose6d_pad_key(self, label: str):
+        """处理 15 键软键盘按键输入"""
+        axis = self.pose6d_modal_axis_sel
+        buf = self.pose6d_modal_axis_buf
+
+        if label == "确认":
+            if buf:
+                try:
+                    v = float(buf)
+                    self.pose6d_modal_vals[axis] = v
+                    self.pose6d_modal_known[axis] = True
+                except ValueError:
+                    pass
+                self.pose6d_modal_axis_buf = ""
+            self.pose6d_modal_axis_sel = (axis + 1) % 6
+            return
+
+        if label == "清空":
+            self.pose6d_modal_axis_buf = ""
+            return
+
+        if label == "退格":
+            if buf:
+                self.pose6d_modal_axis_buf = buf[:-1]
+            return
+
+        if label == "-/+":
+            if buf.startswith("-"):
+                self.pose6d_modal_axis_buf = buf[1:]
+            else:
+                self.pose6d_modal_axis_buf = "-" + buf
+            return
+
+        if label == ".":
+            if "." not in buf:
+                self.pose6d_modal_axis_buf = (buf if buf else "0") + "."
+            return
+
+        if label.isdigit():
+            if buf == "0":
+                self.pose6d_modal_axis_buf = label
+            else:
+                self.pose6d_modal_axis_buf = buf + label
+            try:
+                self.pose6d_modal_vals[axis] = float(self.pose6d_modal_axis_buf)
+                self.pose6d_modal_known[axis] = True
+            except ValueError:
+                pass
+
+    def save_pose6d_modal(self):
+        """保存 6DoF 位姿与约束回 frame_modal_data"""
+        if self.pose6d_modal_axis_buf:
+            try:
+                v = float(self.pose6d_modal_axis_buf)
+                self.pose6d_modal_vals[self.pose6d_modal_axis_sel] = v
+                self.pose6d_modal_known[self.pose6d_modal_axis_sel] = True
+            except ValueError:
+                pass
+            self.pose6d_modal_axis_buf = ""
+
+        d = self.frame_modal_data
+        d["translation_xyz_mm"] = [round(float(x), 2) for x in self.pose6d_modal_vals[:3]]
+        d["rotation_rpy_deg"] = [round(float(x), 2) for x in self.pose6d_modal_vals[3:]]
+        d["known_dof"] = list(self.pose6d_modal_known)
+
+        n_known = sum(1 for b in self.pose6d_modal_known if b)
+        if n_known == 0:
+            d["status"] = "unknown"
+            self.set_toast("已应用外参配置: 【全未知】(待 BA 平差反向求解)")
+        elif n_known == 6:
+            d["status"] = "manual"
+            self.set_toast("已应用外参配置: 【全已知人工指定】")
+        else:
+            d["status"] = "partial"
+            self.set_toast(f"已应用外参配置: 【部分已知先验约束】(已知 {n_known}/6 轴)")
+
+        self.close_pose6d_modal()
+
 
     def delete_frame(self, frame_id: str) -> tuple[bool, str]:
         if not self.coord_mgr:

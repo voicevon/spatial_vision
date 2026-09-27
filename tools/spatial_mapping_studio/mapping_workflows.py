@@ -194,10 +194,13 @@ class MappingWorkflowMixin:
             log.warning(f"导出质检报告异常: {e}")
 
     def align_current_workspace_world_datum(self):
-        """【阶段二交互入口】独立执行世界坐标系校准，毫秒级生效"""
+        """【阶段二/三交互入口】执行世界坐标系校准与子坐标系外参逆解，毫秒级生效"""
         succ, msg, world_map = self.ba_runner.execute_world_alignment()
         if succ and world_map:
             rep = world_map.get("world_anchor", {}).get("alignment_report")
             if rep:
                 self.alignment_report = rep
+            if hasattr(self, "_load_workspace_geometry"):
+                self._load_workspace_geometry()
         self.set_toast(msg)
+

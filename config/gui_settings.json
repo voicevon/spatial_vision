@@ -7,13 +7,13 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-26 21:35:59"
+    "updated_at": "2026-09-27 20:29:34"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-25 17:53:22",
+    "updated_at": "2026-09-27 17:11:35",
     "viewer_state": {
       "workspace_id": "20260916_145246_Home_real",
       "camera_type": "realsense",
@@ -31,14 +31,14 @@
     "updated_at": "2026-09-19 07:33:36"
   },
   "workspace_hub": {
-    "scale_pct": 140,
-    "canvas_w": 1344,
-    "canvas_h": 1007,
-    "updated_at": "2026-09-26 20:49:14",
+    "scale_pct": 120,
+    "canvas_w": 1152,
+    "canvas_h": 864,
+    "updated_at": "2026-09-27 18:47:11",
     "hub_state": {
-      "selected_workspace_id": "20260923_204026_Workspace_5",
-      "selected_workspace_name": "Workspace_5",
-      "updated_at": "2026-09-26 22:57:01"
+      "selected_workspace_id": "20260916_145246_Home_real",
+      "selected_workspace_name": "Home_real",
+      "updated_at": "2026-09-27 18:46:58"
     }
   },
   "hardware_config": {
@@ -84,7 +84,7 @@
     "scale_pct": 120,
     "canvas_w": 1366,
     "canvas_h": 705,
-    "updated_at": "2026-09-23 21:00:14",
+    "updated_at": "2026-09-27 20:34:59",
     "studio_state": {
       "pipeline_key": "feng_green_axis_v2",
       "selected_sample_name": "view_0010.png",
