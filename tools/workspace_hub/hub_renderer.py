@@ -52,9 +52,10 @@ GRID_ROWS = 3
 HELP_MODAL_W = 860
 HELP_MODAL_H = 490
 
-# ==================== 工位大盘看板卡片内嵌按钮几何常量 (单源标准) ====================
+# 工位大盘看板卡片内嵌按钮几何常量 (单源标准)
 WS_BTN_RENAME = (864, 68, 74, 26)
 WS_BTN_OPEN_DIR = (864, 96, 74, 26)
+WS_BTN_TOGGLE_PROD_MODE = (864, 124, 74, 26)
 WS_BTN_EDIT_DESC = (864, 152, 74, 26)
 WS_BTN_SYNC_DATA = (372, 192, 132, 28)
 WS_BTN_CLONE = (512, 192, 80, 28)
@@ -85,16 +86,31 @@ WL_ANCHOR_DELETE = (678, 572, 120, 30)
 
 # ==================== 坐标系与 ROI 结构化编辑表单弹窗几何常量 ====================
 GEOM_MODAL_W = 680
-GEOM_MODAL_H = 480
+GEOM_MODAL_H = 560
 GEOM_MODAL_X = (960 - GEOM_MODAL_W) // 2   # 140
-GEOM_MODAL_Y = (720 - GEOM_MODAL_H) // 2   # 120
-GEOM_MODAL_SAVE = (GEOM_MODAL_X + 190, GEOM_MODAL_Y + GEOM_MODAL_H - 52, 120, 36)
-GEOM_MODAL_CANCEL = (GEOM_MODAL_X + 370, GEOM_MODAL_Y + GEOM_MODAL_H - 52, 120, 36)
+GEOM_MODAL_Y = (720 - GEOM_MODAL_H) // 2   # 80
+GEOM_MODAL_SAVE = (GEOM_MODAL_X + 180, GEOM_MODAL_Y + GEOM_MODAL_H - 48, 140, 36)
+GEOM_MODAL_CANCEL = (GEOM_MODAL_X + 360, GEOM_MODAL_Y + GEOM_MODAL_H - 48, 140, 36)
 GEOM_MODAL_CLOSE = (GEOM_MODAL_X + GEOM_MODAL_W - 46, GEOM_MODAL_Y + 12, 34, 30)
 
 # 坐标系外参操作按钮
 FRAME_PARAM_BTN_UNKNOWN = (GEOM_MODAL_X + GEOM_MODAL_W - 270, GEOM_MODAL_Y + 56 + 128 + 8, 115, 26)
 FRAME_PARAM_BTN_EDIT6D = (GEOM_MODAL_X + GEOM_MODAL_W - 145, GEOM_MODAL_Y + 56 + 128 + 8, 125, 26)
+
+# Smart ROI 专属交互按钮 (工艺角色、动作意图与槽位绑定)
+ROI_ROLE_BTN_SOURCE = (GEOM_MODAL_X + 115, GEOM_MODAL_Y + 154, 120, 26)
+ROI_ROLE_BTN_DEST = (GEOM_MODAL_X + 245, GEOM_MODAL_Y + 154, 130, 26)
+ROI_ROLE_BTN_KEEPOUT = (GEOM_MODAL_X + 385, GEOM_MODAL_Y + 154, 120, 26)
+ROI_ROLE_BTN_GENERAL = (GEOM_MODAL_X + 515, GEOM_MODAL_Y + 154, 125, 26)
+
+ROI_INTENT_BTN_PICK = (GEOM_MODAL_X + 115, GEOM_MODAL_Y + 188, 120, 26)
+ROI_INTENT_BTN_COUNT = (GEOM_MODAL_X + 245, GEOM_MODAL_Y + 188, 130, 26)
+ROI_INTENT_BTN_OCC = (GEOM_MODAL_X + 385, GEOM_MODAL_Y + 188, 120, 26)
+ROI_INTENT_BTN_GEN = (GEOM_MODAL_X + 515, GEOM_MODAL_Y + 188, 125, 26)
+
+ROI_BIND_SLOT_BTN = (GEOM_MODAL_X + 115, GEOM_MODAL_Y + 222, 125, 26)
+ROI_BIND_CAP_BTN = (GEOM_MODAL_X + 250, GEOM_MODAL_Y + 222, 125, 26)
+ROI_BIND_CONF_BTN = (GEOM_MODAL_X + 385, GEOM_MODAL_Y + 222, 120, 26)
 
 # ==================== 6DoF 位姿与约束独立模态弹窗几何常量 ====================
 P6_MODAL_W = 620
@@ -847,6 +863,27 @@ class HubRenderer:
             title = f"{r.name} ({r.roi_id})"
             draw_text(canvas, title, (rx + 86, ry + 13), font_size=14, color=self.COLOR_WHITE, bold=True)
 
+            # Smart ROI 语义徽章
+            r_role = getattr(r, "role", "source") or "source"
+            r_intent = getattr(r, "target_intent", "pose_pick") or "pose_pick"
+            slot_info = f"#{r.binding.get('slot_index', 0)}" if getattr(r, "binding", None) and "slot_index" in r.binding else ""
+            role_labels = {
+                "source": ("★进料源", (0, 255, 140)),
+                "destination": (f"▼落料{slot_info}", (0, 220, 255)),
+                "keepout": ("⛔禁行区", (255, 80, 80)),
+                "general": ("◌通用", (180, 180, 180)),
+            }
+            role_txt, role_col = role_labels.get(r_role, ("◌通用", (180, 180, 180)))
+            intent_labels = {
+                "pose_pick": "位姿抓取",
+                "piece_count": "根数统计",
+                "occupancy": "在席检测",
+                "general": "通用意图",
+            }
+            intent_txt = intent_labels.get(r_intent, r_intent)
+            badge_str = f"[{role_txt} · {intent_txt}]"
+            draw_text(canvas, badge_str, (rx + 310, ry + 14), font_size=12, color=role_col, bold=True)
+
             cx, cy, cz = r.center_xyz_mm
             sx, sy, sz = r.size_xyz_mm
             rx_d, ry_d, rz_d = getattr(r, "rotation_rpy_deg", [0.0, 0.0, 0.0])
@@ -1075,9 +1112,17 @@ class HubRenderer:
                 cv2.rectangle(canvas, (card_x + 240, ry + 6), (card_x + 315, ry + 26), bgr, 1)
                 cat_map = {"belt": "同步带", "wheel": "驱动轮", "tray": "料盘", "general": "通用"}
                 cat_label = f"[{cat_map.get(roi.category, roi.category)}]"
-                draw_text(canvas, cat_label, (card_x + 246, ry + 8), font_size=11, color=bgr, bold=True)
-
-                draw_text(canvas, f"所属: {roi.frame_id}", (card_x + 330, ry + 8), font_size=12, color=(0, 220, 255))
+                # Smart ROI 角色指示
+                r_role = getattr(roi, "role", "source") or "source"
+                slot_info = f"#{roi.binding.get('slot_index', 0)}" if getattr(roi, "binding", None) and "slot_index" in roi.binding else ""
+                role_labels = {
+                    "source": ("★进料源", (0, 255, 140)),
+                    "destination": (f"▼落料{slot_info}", (0, 220, 255)),
+                    "keepout": ("⛔禁行区", (255, 80, 80)),
+                    "general": ("◌通用", (180, 180, 180)),
+                }
+                role_txt, role_col = role_labels.get(r_role, ("◌通用", (180, 180, 180)))
+                draw_text(canvas, f"所属: {roi.frame_id}  |  {role_txt}", (card_x + 325, ry + 8), font_size=11, color=role_col, bold=True)
 
                 # 右侧操作按钮
                 self._draw_button(canvas, roi_row_edit_rect(i), "编辑", mpos)
@@ -1351,12 +1396,19 @@ class HubRenderer:
         draw_text(canvas, sc.workspace_id, (card_x + 16, c1_y + 39), font_size=12, color=self.COLOR_GRAY)
         self._draw_button(canvas, WS_BTN_OPEN_DIR, "打开", mpos)
 
-        # 行 3: 纯创建日期 (独立成行)
-        draw_text(canvas, f"日期:  {sc.created_at or '未知'}", (card_x + 16, c1_y + 68), font_size=12, color=self.COLOR_DARK_GRAY)
+        # 行 3: 生产工作流模式 (Smart Production) 与 [切换模式] 按钮
+        prod_cfg = getattr(sc, "production", {}) or {}
+        prod_name = prod_cfg.get("name", "SCARA 智能分选生产线")
+        prod_mode = prod_cfg.get("mode", "scara_sorting")
+        prod_pipe = prod_cfg.get("active_pipeline", "asparagus_studio")
+        draw_text(canvas, f"工作流:  {prod_name}  ({prod_mode} · {prod_pipe})",
+                  (card_x + 16, c1_y + 68), font_size=12, color=(0, 255, 200), bold=True)
+        self._draw_button(canvas, WS_BTN_TOGGLE_PROD_MODE, "切换模式", mpos, theme_color=(0, 200, 220))
 
         # 行 4: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
         desc_text = getattr(sc, "description", "") or "暂无备注"
-        draw_text(canvas, f"备注:  {desc_text}", (card_x + 16, c1_y + 95), font_size=12, color=(240, 215, 140))
+        created_str = f"建于 {sc.created_at}" if sc.created_at else ""
+        draw_text(canvas, f"备注:  {desc_text}  {created_str}", (card_x + 16, c1_y + 95), font_size=12, color=(240, 215, 140))
         self._draw_button(canvas, WS_BTN_EDIT_DESC, "修改", mpos)
 
         # 行 5: 分割线与底部纯净按钮栏 ([更新元数据] 移至左侧，[克隆工位] 与 [删除] 紧随其后)
@@ -1445,13 +1497,14 @@ class HubRenderer:
         frames_desc = f"{len(frames)} 个 (1 绝对世界系 / {len(rel_frames)} 相对系: {rel_names})"
         draw_text(canvas, f"• 机构多坐标系拓扑树   : {frames_desc}", (card_x + 18, c4_y + 91), font_size=12, color=(0, 230, 255), bold=True)
 
-        # 3D ROI 空间物件集合统计
+        # 3D ROI 空间物件集合统计 (包含 Smart ROI 工艺角色分布)
         rois = state.get_roi_spaces()
         if rois:
-            roi_brief = ", ".join(f"{r.name}[{r.category}]" for r in rois[:2])
-            if len(rois) > 2:
-                roi_brief += f" 等{len(rois)}个"
-            roi_desc = f"{len(rois)} 个 3D 空间物件 ({roi_brief})"
+            n_src = sum(1 for r in rois if getattr(r, "role", "") == "source")
+            n_dst = sum(1 for r in rois if getattr(r, "role", "") == "destination")
+            n_kpo = sum(1 for r in rois if getattr(r, "role", "") == "keepout")
+            n_gen = len(rois) - (n_src + n_dst + n_kpo)
+            roi_desc = f"{len(rois)} 个 Smart ROI (★{n_src}源头进料 / ▼{n_dst}落料槽 / ⛔{n_kpo}禁区 / ◌{n_gen}通用)"
             roi_col = (0, 255, 180)
         else:
             roi_desc = "0 个 (可于工位 rois.yaml 中按部件配置)"

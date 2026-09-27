@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-27 20:29:34"
+    "updated_at": "2026-09-27 21:59:10"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -32,13 +32,13 @@
   },
   "workspace_hub": {
     "scale_pct": 120,
-    "canvas_w": 1152,
-    "canvas_h": 864,
-    "updated_at": "2026-09-27 18:47:11",
+    "canvas_w": 1366,
+    "canvas_h": 705,
+    "updated_at": "2026-09-27 21:47:55",
     "hub_state": {
-      "selected_workspace_id": "20260916_145246_Home_real",
-      "selected_workspace_name": "Home_real",
-      "updated_at": "2026-09-27 18:46:58"
+      "selected_workspace_id": "20260923_204026_Workspace_5",
+      "selected_workspace_name": "Workspace_5",
+      "updated_at": "2026-09-27 22:09:34"
     }
   },
   "hardware_config": {
@@ -82,12 +82,12 @@
   },
   "asparagus_pose_studio": {
     "scale_pct": 120,
-    "canvas_w": 1366,
-    "canvas_h": 705,
-    "updated_at": "2026-09-27 20:34:59",
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-09-27 21:45:25",
     "studio_state": {
       "pipeline_key": "feng_green_axis_v2",
-      "selected_sample_name": "view_0010.png",
+      "selected_sample_name": "view_0009.png",
       "pipeline_params": {
         "feng_green_axis": {
           "canny_hi": 500,
@@ -142,5 +142,11 @@
     "gen_tag_count": 30,
     "gen_pixel_size": 800,
     "active_tab": "generator"
+  },
+  "scara_production": {
+    "scale_pct": 100,
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-09-27 21:59:38"
   }
 }

@@ -108,7 +108,7 @@ class HubHitTester:
             GEOM_MODAL_CLOSE, GEOM_MODAL_SAVE, GEOM_MODAL_CANCEL,
             HELP_MODAL_W, HELP_MODAL_H,
             BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H,
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_EDIT_DESC,
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME,
             FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
             FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN, FRAME_ROI_SCROLL_TRACK,
@@ -203,6 +203,11 @@ class HubHitTester:
             return "frame_modal_body"
 
         if state.roi_modal_open:
+            from tools.workspace_hub.hub_renderer import (
+                ROI_ROLE_BTN_SOURCE, ROI_ROLE_BTN_DEST, ROI_ROLE_BTN_KEEPOUT, ROI_ROLE_BTN_GENERAL,
+                ROI_INTENT_BTN_PICK, ROI_INTENT_BTN_COUNT, ROI_INTENT_BTN_OCC, ROI_INTENT_BTN_GEN,
+                ROI_BIND_SLOT_BTN, ROI_BIND_CAP_BTN, ROI_BIND_CONF_BTN
+            )
             mx_box, my_box = GEOM_MODAL_X, GEOM_MODAL_Y
             mw, mh = GEOM_MODAL_W, GEOM_MODAL_H
 
@@ -228,39 +233,72 @@ class HubHitTester:
                 return "roi_modal_save"
             if point_in_rect(mx, my, GEOM_MODAL_CANCEL):
                 return "roi_modal_cancel"
-            form_y = my_box + 54
-            if point_in_rect(mx, my, (mx_box + 115, form_y, 220, 28)):
+            
+            form_y = my_box + 46
+            # 1. 名称与 ID
+            if point_in_rect(mx, my, (mx_box + 110, form_y, 220, 28)):
                 return "roi_field_name"
-            if point_in_rect(mx, my, (mx_box + 430, form_y, 220, 28)):
+            if point_in_rect(mx, my, (mx_box + 425, form_y, 225, 28)):
                 return "roi_field_id"
 
-            cat_y = form_y + 40
-            if point_in_rect(mx, my, (mx_box + 115, cat_y, 360, 28)):
+            # 2. 下拉框触发条 (并排)
+            cat_y = form_y + 36
+            if point_in_rect(mx, my, (mx_box + 110, cat_y, 220, 28)):
                 return ("dropdown_toggle", "roi_category")
-
-            parent_y = form_y + 80
-            if point_in_rect(mx, my, (mx_box + 115, parent_y, 360, 28)):
+            if point_in_rect(mx, my, (mx_box + 425, cat_y, 225, 28)):
                 return ("dropdown_toggle", "roi_frame")
 
-            geom_y = form_y + 128
-            if point_in_rect(mx, my, (mx_box + 155, geom_y + 36, 115, 28)):
+            # 3. Smart ROI 工业生产语义与工艺角色交互
+            # 3.1 工艺角色 (Role)
+            if point_in_rect(mx, my, ROI_ROLE_BTN_SOURCE):
+                return ("roi_set_role", "source")
+            if point_in_rect(mx, my, ROI_ROLE_BTN_DEST):
+                return ("roi_set_role", "destination")
+            if point_in_rect(mx, my, ROI_ROLE_BTN_KEEPOUT):
+                return ("roi_set_role", "keepout")
+            if point_in_rect(mx, my, ROI_ROLE_BTN_GENERAL):
+                return ("roi_set_role", "general")
+
+            # 3.2 动作意图 (Target Intent)
+            if point_in_rect(mx, my, ROI_INTENT_BTN_PICK):
+                return ("roi_set_intent", "pose_pick")
+            if point_in_rect(mx, my, ROI_INTENT_BTN_COUNT):
+                return ("roi_set_intent", "piece_count")
+            if point_in_rect(mx, my, ROI_INTENT_BTN_OCC):
+                return ("roi_set_intent", "occupancy")
+            if point_in_rect(mx, my, ROI_INTENT_BTN_GEN):
+                return ("roi_set_intent", "general")
+
+            # 3.3 设备绑定与容量门限 (Binding)
+            if point_in_rect(mx, my, ROI_BIND_SLOT_BTN):
+                return "roi_field_slot"
+            if point_in_rect(mx, my, ROI_BIND_CAP_BTN):
+                return "roi_field_capacity"
+            if point_in_rect(mx, my, ROI_BIND_CONF_BTN):
+                return "roi_field_conf"
+
+            # 4. 3D 有向长方体空间几何
+            smart_y = form_y + 72
+            geom_y = smart_y + 148
+            if point_in_rect(mx, my, (mx_box + 155, geom_y + 34, 115, 26)):
                 return ("roi_field_num", "center", 0)
-            if point_in_rect(mx, my, (mx_box + 280, geom_y + 36, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 280, geom_y + 34, 115, 26)):
                 return ("roi_field_num", "center", 1)
-            if point_in_rect(mx, my, (mx_box + 405, geom_y + 36, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 405, geom_y + 34, 115, 26)):
                 return ("roi_field_num", "center", 2)
-            if point_in_rect(mx, my, (mx_box + 155, geom_y + 76, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 155, geom_y + 70, 115, 26)):
                 return ("roi_field_num", "size", 0)
-            if point_in_rect(mx, my, (mx_box + 280, geom_y + 76, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 280, geom_y + 70, 115, 26)):
                 return ("roi_field_num", "size", 1)
-            if point_in_rect(mx, my, (mx_box + 405, geom_y + 76, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 405, geom_y + 70, 115, 26)):
                 return ("roi_field_num", "size", 2)
-            if point_in_rect(mx, my, (mx_box + 155, geom_y + 116, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 155, geom_y + 106, 115, 26)):
                 return ("roi_field_num", "rotation", 0)
-            if point_in_rect(mx, my, (mx_box + 280, geom_y + 116, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 280, geom_y + 106, 115, 26)):
                 return ("roi_field_num", "rotation", 1)
-            if point_in_rect(mx, my, (mx_box + 405, geom_y + 116, 115, 28)):
+            if point_in_rect(mx, my, (mx_box + 405, geom_y + 106, 115, 26)):
                 return ("roi_field_num", "rotation", 2)
+
             if mx < mx_box or mx > mx_box + mw or my < my_box or my > my_box + mh:
                 return "roi_modal_mask"
             return "roi_modal_body"
@@ -342,6 +380,8 @@ class HubHitTester:
                 return "ws_rename"
             if point_in_rect(mx, my, WS_BTN_OPEN_DIR):
                 return "ws_open_dir"
+            if point_in_rect(mx, my, WS_BTN_TOGGLE_PROD_MODE):
+                return "ws_toggle_prod_mode"
             if point_in_rect(mx, my, WS_BTN_EDIT_DESC):
                 return "ws_edit_desc"
             if point_in_rect(mx, my, WS_BTN_SYNC_DATA):

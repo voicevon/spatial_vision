@@ -39,9 +39,16 @@ class RoiDefinition:
     # 3D 渲染颜色 [R, G, B] 0~255
     visual_color_rgb: List[int] = field(default_factory=lambda: [0, 255, 128])
 
+    # Smart ROI 生产意图与工艺角色扩展
+    role: str = "general"                        # 角色: source(来料抓取源), destination(落料目标), keepout(防撞禁区), general(通用)
+    target_intent: str = "general"               # 感知意图: pose_pick(位姿抓取), piece_count(根数统计), occupancy(有无检测), general(常规)
+    binding: Dict[str, Any] = field(default_factory=dict)  # 通信映射: 如 {"channel": "mqtt_loader", "slot_index": 0, "capacity_max": 5}
+    pipeline_override: str = ""                  # 定制视觉流水线算法 key (若为空则沿用工位全局默认流水线)
+    min_confidence: float = 0.5                  # 检出置信度门限
+
     def to_dict(self) -> Dict[str, Any]:
         """序列化为字典供 YAML 存储"""
-        return {
+        d = {
             "roi_id": self.roi_id,
             "name": self.name,
             "frame_id": self.frame_id,
@@ -55,7 +62,16 @@ class RoiDefinition:
                 "rotation_rpy_deg": [float(x) for x in self.rotation_rpy_deg],
             },
             "visual_color_rgb": [int(c) for c in self.visual_color_rgb],
+            "role": self.role,
+            "target_intent": self.target_intent,
         }
+        if self.binding:
+            d["binding"] = dict(self.binding)
+        if self.pipeline_override:
+            d["pipeline_override"] = self.pipeline_override
+        if self.min_confidence != 0.5:
+            d["min_confidence"] = float(self.min_confidence)
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RoiDefinition":
@@ -78,6 +94,11 @@ class RoiDefinition:
             size_xyz_mm=s_xyz,
             rotation_rpy_deg=r_rpy,
             visual_color_rgb=color,
+            role=data.get("role", "general"),
+            target_intent=data.get("target_intent", "general"),
+            binding=data.get("binding", {}),
+            pipeline_override=data.get("pipeline_override", ""),
+            min_confidence=float(data.get("min_confidence", 0.5)),
         )
 
 

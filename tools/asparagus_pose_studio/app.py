@@ -26,7 +26,7 @@ from src.utils.base_cv_app import BaseCvApp
 from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
 from tools.asparagus_pose_studio.data_io import (
     APP_ID, BASE_H, BASE_W, DEFAULT_DIR, REPORT_DIR, WINDOW_KEY,
-    load_system_config, scan_samples, export_gcode_file,
+    load_system_config, scan_samples,
     load_studio_settings, save_studio_settings
 )
 from tools.asparagus_pose_studio.renderer import AsparagusPoseStudioRenderer
@@ -93,7 +93,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
         self.vis_img = None
         self.mode = "3d"             # "3d" | "2d"
         self.error = ""
-        self.gcode_text = ""
 
         # 多技术路线算法流水线
         self.pipeline: Optional[BaseAsparagusPipeline] = None
@@ -215,7 +214,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
         """重新扫描样本目录 (选中样本自动立即触发识别定位)"""
         self.samples = scan_samples(self.sample_dir)
         self.sel_idx = -1
-        self.targets, self.vis_img, self.gcode_text = [], None, ""
+        self.targets, self.vis_img = [], None
         self.sel_target, self.error = 0, ""
         if auto_load and self.samples:
             target_idx = 0
@@ -292,7 +291,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
             return
         self.sel_idx = idx
         self._keep_selection_visible(idx)
-        self.targets, self.vis_img, self.gcode_text = [], None, ""
+        self.targets, self.vis_img = [], None
         self.sel_target, self.error = 0, ""
         self.viewport.reset()
         sample = self.samples[idx]
@@ -373,13 +372,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
             return
 
         if self.targets:
-            top = self.targets[self.sel_target]
-            if self.mode == "3d":
-                self.gcode_text = top.generate_gcode(
-                    safe_z=self.sys_cfg["safe_z"],
-                    drop_x=self.sys_cfg["drop_x"],
-                    drop_y=self.sys_cfg["drop_y"]
-                )
             self.set_toast(f"解算完成: 检出 {len(self.targets)} 个目标 ({self.pipeline_result.elapsed_ms:.0f}ms)", duration=2.2)
         else:
             self.set_toast(f"未检出符合规格目标 ({self.pipeline_result.elapsed_ms:.0f}ms)", duration=2.2)
@@ -512,26 +504,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
                 if self.pipeline_result:
                     self.pipeline_result.step_snapshots[self.active_step_key] = self.vis_img
 
-        t = self.targets[t_idx]
-        if self.mode == "3d":
-            self.gcode_text = t.generate_gcode(
-                safe_z=self.sys_cfg["safe_z"],
-                drop_x=self.sys_cfg["drop_x"],
-                drop_y=self.sys_cfg["drop_y"],
-            )
-
-    def export_gcode(self):
-        """导出当前选中目标的 G-code"""
-        if not self.gcode_text:
-            self.set_toast("当前无可导出的 G-code (2D 预览或未检出目标)")
-            return
-        ok, res = export_gcode_file(self.gcode_text, report_dir=REPORT_DIR)
-        if ok:
-            self.set_toast(f"G-code 已导出: {os.path.basename(res)}")
-        else:
-            self.set_toast(f"G-code 导出失败: {res}", True)
-
-    # ------------------------------ 交互与事件 ------------------------------
     # ------------------------------ 交互与事件 ------------------------------
     def set_toast(self, msg: str, sticky: bool = False, duration: float = 2.2):
         super().set_toast(msg, duration=(3600.0 if sticky else duration))
@@ -554,8 +526,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
     def _on_button(self, label: str):
         if label.startswith("识别定位"):
             self.run_analyze()
-        elif label.startswith("导出"):
-            self.export_gcode()
         elif label.startswith("退出"):
             self.stop()
 
@@ -658,9 +628,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
             return True
         elif key == " " or raw_key == 32 or raw_key in (10, 13):
             self.run_analyze()
-            return True
-        elif key == "e":
-            self.export_gcode()
             return True
         elif raw_key in (2490368, 65362, 38):      # 上方向键
             if self.sel_idx > 0:

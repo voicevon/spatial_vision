@@ -245,7 +245,7 @@ class TestGuiLauncher(unittest.TestCase):
         expected = ["1", "2", "3", "4", "5", "6", "7", "8"]
         for idx, sc in enumerate(expected):
             self.assertEqual(catalog[idx].shortcut, sc)
-        self.assertEqual(catalog[4].key_id, "robot_online_tracker")
+        self.assertEqual(catalog[4].key_id, "scara_production")
         self.assertEqual(catalog[5].key_id, "d435_live")
         self.assertEqual(catalog[6].key_id, "scara_debug")
         self.assertEqual(catalog[7].key_id, "isolate_wheels_debug")

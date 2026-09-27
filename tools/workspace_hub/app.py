@@ -247,6 +247,9 @@ class WorkspaceHubApp(BaseCvApp):
         if hit == "ws_edit_desc":
             self._handle_edit_description()
             return
+        if hit == "ws_toggle_prod_mode":
+            self.state.cycle_workspace_production_mode()
+            return
         if hit == "ws_sync_data":
             self._handle_sync_data_consistency()
             return
@@ -924,6 +927,49 @@ class WorkspaceHubApp(BaseCvApp):
                 d["roi_id"] = new_id_clean
                 self.state.set_toast(f"已设置 3D ROI 唯一 ID 为: {new_id_clean} (点击[保存]后正式生效)")
             return
+
+        # Smart ROI 生产意图与工艺角色交互
+        if isinstance(hit, tuple) and hit[0] == "roi_set_role":
+            role_val = hit[1]
+            self.state.set_roi_modal_role(role_val)
+            role_names = {"source": "★ 进料源", "destination": "▼ 落料槽", "keepout": "⛔ 禁行区", "general": "◌ 通用区"}
+            self.state.set_toast(f"已设置工艺角色为: [{role_names.get(role_val, role_val)}]")
+            return
+
+        if isinstance(hit, tuple) and hit[0] == "roi_set_intent":
+            intent_val = hit[1]
+            self.state.set_roi_modal_intent(intent_val)
+            intent_names = {"pose_pick": "🎯 位姿抓取", "piece_count": "🔢 根数统计", "occupancy": "📦 在席检测", "general": "⚙ 通用意图"}
+            self.state.set_toast(f"已设置动作意图为: [{intent_names.get(intent_val, intent_val)}]")
+            return
+
+        if hit == "roi_field_slot":
+            next_slot = self.state.cycle_roi_modal_slot()
+            self.state.set_toast(f"已切换绑定落料槽位为: #{next_slot}")
+            return
+
+        if hit == "roi_field_capacity":
+            binding = d.setdefault("binding", {})
+            cur_cap = str(binding.get("capacity_max", 20))
+            new_cap = prompt_input_text("修改落料槽最大容量", "请输入单槽最大容纳物料根数:", initial=cur_cap)
+            if new_cap and new_cap.strip().isdigit():
+                binding["capacity_max"] = max(1, int(new_cap.strip()))
+                self.state.set_toast(f"已设置落料槽最大容量为: {binding['capacity_max']} 根")
+            return
+
+        if hit == "roi_field_conf":
+            cur_conf = f"{float(d.get('min_confidence', 0.3) or 0.3):.2f}"
+            new_conf = prompt_input_text("修改识别最低置信度", "请输入识别置信度门限 (0.05 ~ 0.95):", initial=cur_conf)
+            if new_conf and new_conf.strip():
+                try:
+                    c_val = float(new_conf.strip())
+                    if 0.01 <= c_val <= 1.0:
+                        d["min_confidence"] = round(c_val, 2)
+                        self.state.set_toast(f"已设置最低置信度门限为: {d['min_confidence']:.2f}")
+                except Exception:
+                    pass
+            return
+
         if isinstance(hit, tuple) and hit[0] == "roi_field_num":
             field_category, axis_idx = hit[1], hit[2]
             if field_category == "center":

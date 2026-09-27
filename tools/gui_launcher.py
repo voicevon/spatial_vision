@@ -186,37 +186,37 @@ def build_tools_catalog() -> List[ToolCardMeta]:
             is_gui=True,
             command=[sys.executable, "-m", "tools.asparagus_pose_studio"],
             tag_color=COLOR_B,
-            summary="离线解算芦笋空间位姿，验证抓取算法并预览 SCARA 机械臂 G-code。",
+            summary="离线解算芦笋空间位姿，对比多技术路线算法流水线并精调特征参数。",
             details=[
                 "工位样本载入：优先读取当前工位 production/raw_images/ 样本",
                 "3D 空间解算：台面点云拟合、实例切分与顶层芦笋空间位姿判决",
-                "G-code 路径预览：实时计算 SCARA 机械臂抓取动作路径与坐标",
-                "批量报表导出：一键批量验证样本库并输出汇总报表"
+                "3D 抓取位姿验证：实时解算抓取中轴线、法向矢量与品质评级 (A/B/C)",
+                "多阶段步骤视图：深度对比 10+ 种脊线骨架算法并一键调参"
             ],
             inputs=["工位生产照片目录 (production/raw_images/ 或 snapshots)"],
-            outputs=["芦笋位姿检测结果、抓取 G-code 预览与批量报表"],
+            outputs=["芦笋位姿检测结果、品质指标分析与批量评估报表"],
             quick_tips="快捷键: [4] 启动 | [↑↓] 切换样本 | [B] 批量解算 | [ESC] 退出"
         ),
 
         ToolCardMeta(
-            key_id="robot_online_tracker",
+            key_id="scara_production",
             shortcut="5",
-            title="Robot 在线跟踪",
-            subtitle="实时解算世界坐标与机械臂联动",
+            title="SCARA 抓取生产",
+            subtitle="皮带感知与 SCARA 抓取闭环",
             category="B — 标定建图与生产验证",
             is_gui=True,
-            command=[sys.executable, "tools/tracker/app.py"],
+            command=[sys.executable, "-m", "tools.scara_production"],
             tag_color=COLOR_B,
-            summary="实时解算标靶空间世界坐标，联动机械臂安全跟踪并比对末端偏差。",
+            summary="实时解算进料皮带物料位姿，智能调度落料槽位并驱动 SCARA 机械臂自动抓取。",
             details=[
-                "实时世界坐标解算：基于工位顶层 tags_map.yaml 实时解算 3D 世界坐标",
-                "世界坐标系标定：锚定标靶采样滤波并一键锁定原点",
-                "机械臂安全跟踪：三段式安全路径驱动机械臂末端靠近目标",
-                "末端偏差比对：回读机械臂实际坐标与视觉解算同屏比对校准"
+                "实时工位感知：基于工位顶层 tags_map.yaml 与 Smart ROI 进料区感知物料",
+                "业务调度决策：根据品质分级 (A/B/C) 自动路由至空闲落料槽位",
+                "动态轨迹规划：调用 ScaraMotionPlanner 生成三段式防撞安全 G-code",
+                "实机串口闭环：通过 MKS Base 串口驱动 SCARA 机械臂执行闭环搬运"
             ],
-            inputs=["RealSense 或 USB 相机、工位顶层 tags_map.yaml、机械臂串口"],
-            outputs=["屏幕实时世界坐标显示、机械臂末端到位偏差统计"],
-            quick_tips="快捷键: [5] 启动 | [A] 标靶 | [L] 定原点 | [C] 连机械臂 | [T] 跟踪"
+            inputs=["当前工位顶层 tags_map.yaml、rois.yaml、机械臂串口"],
+            outputs=["实时分选调度看板、各槽位根数统计与 SCARA 搬运执行"],
+            quick_tips="快捷键: [5] 启动 | [SPACE] 启动/暂停自动生产 | [S] 单拍测试 | [R] 换箱复位"
         ),
 
         # ===== D — 硬件调试与系统运维 =====
@@ -706,7 +706,7 @@ class GuiLauncherApp:
             '2': "tag_wizard",            # B 图像采集 (双用途)
             '3': "spatial_mapping_studio", # B 空间建图工作站
             '4': "asparagus_offline",     # B 芦笋抓取位姿离线解算
-            '5': "robot_online_tracker",  # B Robot 在线跟踪
+            '5': "scara_production",      # C SCARA 抓取生产工作台
             '6': "d435_live",             # D RealSense 诊断
             '7': "scara_debug",           # D SCARA 机械臂调试
             '8': "isolate_wheels_debug",  # D Isolator WHEELS 调试

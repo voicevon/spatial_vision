@@ -180,25 +180,28 @@ class TestTagIntegration(unittest.TestCase):
             is_topmost=True
         )
 
+        from src.control.scara_motion_planner import ScaraMotionPlanner
+        planner = ScaraMotionPlanner()
+
         # uncalibrated
         base.calibration_source = "uncalibrated"
-        gcode = base.generate_gcode()
+        gcode = planner.generate_pick_gcode(base)
         self.assertIn("UNCALIBRATED", gcode)
         self.assertIn("安全警告", gcode)
 
         # tag_online
         base.calibration_source = "tag_online"
-        gcode = base.generate_gcode()
+        gcode = planner.generate_pick_gcode(base)
         self.assertIn("AprilTag 在线", gcode)
 
         # tag_cached
         base.calibration_source = "tag_cached"
-        gcode = base.generate_gcode()
+        gcode = planner.generate_pick_gcode(base)
         self.assertIn("历史缓存", gcode)
 
         # hand_eye
         base.calibration_source = "hand_eye"
-        gcode = base.generate_gcode()
+        gcode = planner.generate_pick_gcode(base)
         self.assertIn("手工标定矩阵", gcode)
 
 

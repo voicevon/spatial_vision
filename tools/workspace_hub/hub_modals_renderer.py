@@ -193,9 +193,9 @@ class HubModalsRenderer:
                     options.append((f.frame_id, f"{f.frame_id} ({f.name})"))
             return rect, cur_val, options
 
-        roi_form_y = my_box + 54
+        roi_form_y = my_box + 46
         if dd_type == "roi_category":
-            rect = (mx_box + 115, roi_form_y + 40, 360, 28)
+            rect = (mx_box + 110, roi_form_y + 36, 220, 28)
             cur_val = state.roi_modal_data.get("category", "belt")
             options = [
                 ("belt", "同步带工作面 (belt)"),
@@ -206,7 +206,7 @@ class HubModalsRenderer:
             return rect, cur_val, options
 
         if dd_type == "roi_frame":
-            rect = (mx_box + 115, roi_form_y + 80, 360, 28)
+            rect = (mx_box + 425, roi_form_y + 36, 225, 28)
             cur_val = state.roi_modal_data.get("frame_id", "world")
             frames = state.get_coordinate_frames()
             options = [("world", "world (世界基准绝对原点)")]
@@ -341,23 +341,28 @@ class HubModalsRenderer:
         self.render_active_dropdown(canvas, state)
 
     def render_roi_modal(self, canvas: np.ndarray, state: HubState):
-        """渲染 3D ROI 空间物件结构化表单弹窗"""
+        """渲染 3D ROI 空间物件结构化表单弹窗 (已深度融入 Smart ROI 生产意图与工艺角色)"""
+        from tools.workspace_hub.hub_renderer import (
+            ROI_ROLE_BTN_SOURCE, ROI_ROLE_BTN_DEST, ROI_ROLE_BTN_KEEPOUT, ROI_ROLE_BTN_GENERAL,
+            ROI_INTENT_BTN_PICK, ROI_INTENT_BTN_COUNT, ROI_INTENT_BTN_OCC, ROI_INTENT_BTN_GEN,
+            ROI_BIND_SLOT_BTN, ROI_BIND_CAP_BTN, ROI_BIND_CONF_BTN
+        )
         d = state.roi_modal_data
-        title_prefix = "新建 3D ROI 空间物件" if state.roi_modal_is_new else f"编辑 ROI 物件: 【{d.get('name', '')}】"
+        title_prefix = "新建 3D Smart ROI 空间物件" if state.roi_modal_is_new else f"编辑 Smart ROI: 【{d.get('name', '')}】"
         mx, my, mw, mh, mpos = self.render_modal_scaffold(canvas, state, title_prefix, border_col=(0, 255, 180))
 
         # 表单字段排布
-        form_y = my + 54
+        form_y = my + 46
 
-        # 1. 名称与标识行
+        # 1. 名称与唯一 ID (第一行并排)
         draw_text(canvas, "物件名称:", (mx + 24, form_y + 4), font_size=13, color=self.r.COLOR_GRAY)
-        self.draw_text_input(canvas, (mx + 115, form_y, 220, 28), str(d.get("name", "")), mpos)
+        self.draw_text_input(canvas, (mx + 110, form_y, 220, 28), str(d.get("name", "")), mpos)
 
-        draw_text(canvas, "唯一 ID:", (mx + 360, form_y + 4), font_size=13, color=self.r.COLOR_GRAY)
-        self.draw_text_input(canvas, (mx + 430, form_y, 220, 28), str(d.get("roi_id", "")), mpos)
+        draw_text(canvas, "唯一 ID:", (mx + 355, form_y + 4), font_size=13, color=self.r.COLOR_GRAY)
+        self.draw_text_input(canvas, (mx + 425, form_y, 225, 28), str(d.get("roi_id", "")), mpos)
 
-        # 2. 部件类别下拉框
-        cat_y = form_y + 40
+        # 2. 部件类别与所属坐标系下拉框 (第二行并排)
+        cat_y = form_y + 36
         draw_text(canvas, "部件类别:", (mx + 24, cat_y + 4), font_size=13, color=self.r.COLOR_GRAY)
         cur_cat = d.get("category", "belt")
         cat_map = {
@@ -367,27 +372,79 @@ class HubModalsRenderer:
             "general": "通用机构部件 (general)"
         }
         cat_label = cat_map.get(cur_cat, f"{cur_cat}")
-        self.draw_dropdown_trigger(canvas, (mx + 115, cat_y, 360, 28), cat_label, mpos,
+        self.draw_dropdown_trigger(canvas, (mx + 110, cat_y, 220, 28), cat_label, mpos,
                                    is_open=(state.active_dropdown == "roi_category"))
 
-        # 3. 所属坐标系下拉框
-        parent_y = form_y + 80
-        draw_text(canvas, "所属坐标系:", (mx + 24, parent_y + 4), font_size=13, color=self.r.COLOR_GRAY)
+        draw_text(canvas, "挂载系:", (mx + 355, cat_y + 4), font_size=13, color=self.r.COLOR_GRAY)
         cur_frame = d.get("frame_id", "world")
         frames = state.get_coordinate_frames()
-        f_name = "世界基准绝对原点" if cur_frame == "world" else ""
+        f_name = "世界基准原点" if cur_frame == "world" else ""
         for f in frames:
             if f.frame_id == cur_frame:
                 f_name = f.name
                 break
         frame_label = f"[{cur_frame}] {f_name}" if f_name else f"[{cur_frame}]"
-        self.draw_dropdown_trigger(canvas, (mx + 115, parent_y, 360, 28), frame_label, mpos,
+        self.draw_dropdown_trigger(canvas, (mx + 425, cat_y, 225, 28), frame_label, mpos,
                                    is_open=(state.active_dropdown == "roi_frame"))
 
-        # 4. 几何长方体参数区 (中心 + 尺寸 + 姿态)
-        geom_y = form_y + 128
-        cv2.rectangle(canvas, (mx + 20, geom_y), (mx + mw - 20, geom_y + 165), (28, 34, 46), -1)
-        cv2.rectangle(canvas, (mx + 20, geom_y), (mx + mw - 20, geom_y + 165), (45, 55, 75), 1)
+        # 3. ★ Smart ROI 工业生产语义与工艺属性面板 (第三行大卡片)
+        smart_y = form_y + 72
+        smart_h = 138
+        cv2.rectangle(canvas, (mx + 20, smart_y), (mx + mw - 20, smart_y + smart_h), (25, 31, 42), -1)
+        cv2.rectangle(canvas, (mx + 20, smart_y), (mx + mw - 20, smart_y + smart_h), (48, 62, 85), 1)
+
+        draw_text(canvas, "★ Smart ROI 工业生产语义与工艺属性 (产线感知与动作解耦):", (mx + 32, smart_y + 9), font_size=13, color=(0, 240, 220), bold=True)
+
+        # 3.1 工艺角色 (Role)
+        draw_text(canvas, "工艺角色:", (mx + 32, smart_y + 36), font_size=12, color=self.r.COLOR_GRAY)
+        cur_role = d.get("role", "source")
+        role_specs = [
+            (ROI_ROLE_BTN_SOURCE, "source", "★ 进料源", (0, 255, 140)),
+            (ROI_ROLE_BTN_DEST, "destination", "▼ 落料槽", (0, 220, 255)),
+            (ROI_ROLE_BTN_KEEPOUT, "keepout", "⛔ 禁行区", (255, 80, 80)),
+            (ROI_ROLE_BTN_GENERAL, "general", "◌ 通用区", (180, 190, 205)),
+        ]
+        for btn_rect, r_val, r_text, r_col in role_specs:
+            is_active = (cur_role == r_val)
+            theme = r_col if is_active else (60, 72, 90)
+            self.r._draw_button(canvas, btn_rect, r_text, mpos, theme_color=theme, enabled=True)
+
+        # 3.2 动作意图 (Target Intent)
+        draw_text(canvas, "动作意图:", (mx + 32, smart_y + 70), font_size=12, color=self.r.COLOR_GRAY)
+        cur_intent = d.get("target_intent", "pose_pick")
+        intent_specs = [
+            (ROI_INTENT_BTN_PICK, "pose_pick", "🎯 位姿抓取", (0, 255, 180)),
+            (ROI_INTENT_BTN_COUNT, "piece_count", "🔢 根数统计", (255, 200, 60)),
+            (ROI_INTENT_BTN_OCC, "occupancy", "📦 在席检测", (220, 140, 255)),
+            (ROI_INTENT_BTN_GEN, "general", "⚙ 通用意图", (180, 190, 205)),
+        ]
+        for btn_rect, i_val, i_text, i_col in intent_specs:
+            is_active = (cur_intent == i_val)
+            theme = i_col if is_active else (60, 72, 90)
+            self.r._draw_button(canvas, btn_rect, i_text, mpos, theme_color=theme, enabled=True)
+
+        # 3.3 设备绑定与容量门限 (Binding)
+        draw_text(canvas, "槽位绑定:", (mx + 32, smart_y + 104), font_size=12, color=self.r.COLOR_GRAY)
+        binding = d.get("binding", {}) or {}
+        slot_idx = int(binding.get("slot_index", 0))
+        cap_max = int(binding.get("capacity_max", 20))
+        min_conf = float(d.get("min_confidence", 0.3) or 0.3)
+
+        slot_label = f"槽位: #{slot_idx} (切换)"
+        cap_label = f"容量: {cap_max} 根"
+        conf_label = f"门限: {min_conf:.2f}"
+
+        slot_theme = (0, 220, 255) if cur_role == "destination" else (100, 115, 135)
+        self.r._draw_button(canvas, ROI_BIND_SLOT_BTN, slot_label, mpos, theme_color=slot_theme)
+        self.r._draw_button(canvas, ROI_BIND_CAP_BTN, cap_label, mpos, theme_color=(255, 180, 50))
+        self.r._draw_button(canvas, ROI_BIND_CONF_BTN, conf_label, mpos, theme_color=(120, 190, 240))
+        draw_text(canvas, "★ 生产路由调度直接读取此配置", (mx + 515, smart_y + 108), font_size=11, color=(140, 160, 185))
+
+        # 4. 几何长方体参数区 (局部中心 + 尺寸 + 姿态)
+        geom_y = smart_y + 148
+        geom_h = 150
+        cv2.rectangle(canvas, (mx + 20, geom_y), (mx + mw - 20, geom_y + geom_h), (28, 34, 46), -1)
+        cv2.rectangle(canvas, (mx + 20, geom_y), (mx + mw - 20, geom_y + geom_h), (45, 55, 75), 1)
 
         draw_text(canvas, "3D 有向长方体空间定义 (在所属局部坐标系下):", (mx + 32, geom_y + 10), font_size=13, color=(0, 240, 220), bold=True)
 
@@ -396,18 +453,18 @@ class HubModalsRenderer:
         r = d.get("rotation_rpy_deg", [0, 0, 0])
 
         # 局部中心
-        c_rects = [(mx + 155, geom_y + 36, 115, 28), (mx + 280, geom_y + 36, 115, 28), (mx + 405, geom_y + 36, 115, 28)]
-        self.draw_vector3_input_row(canvas, "局部中心 (mm):", (mx + 32, geom_y + 42), c_rects, ["X", "Y", "Z"], c, mpos)
+        c_rects = [(mx + 155, geom_y + 34, 115, 26), (mx + 280, geom_y + 34, 115, 26), (mx + 405, geom_y + 34, 115, 26)]
+        self.draw_vector3_input_row(canvas, "局部中心 (mm):", (mx + 32, geom_y + 39), c_rects, ["X", "Y", "Z"], c, mpos)
 
         # 尺寸长宽高 (强 Schema 约束)
-        s_rects = [(mx + 155, geom_y + 76, 115, 28), (mx + 280, geom_y + 76, 115, 28), (mx + 405, geom_y + 76, 115, 28)]
-        self.draw_vector3_input_row(canvas, "空间尺寸 (mm):", (mx + 32, geom_y + 82), s_rects, ["长 dx", "宽 dy", "高 dz"], s, mpos)
-        draw_text(canvas, "★ 约束: 必须 > 0", (mx + 530, geom_y + 82), font_size=11,
+        s_rects = [(mx + 155, geom_y + 70, 115, 26), (mx + 280, geom_y + 70, 115, 26), (mx + 405, geom_y + 70, 115, 26)]
+        self.draw_vector3_input_row(canvas, "空间尺寸 (mm):", (mx + 32, geom_y + 75), s_rects, ["长 dx", "宽 dy", "高 dz"], s, mpos)
+        draw_text(canvas, "★ 约束: 必须 > 0", (mx + 530, geom_y + 75), font_size=11,
                   color=(0, 255, 180) if all(x > 0 for x in s) else (0, 100, 255))
 
         # 微调姿态
-        r_rects = [(mx + 155, geom_y + 116, 115, 28), (mx + 280, geom_y + 116, 115, 28), (mx + 405, geom_y + 116, 115, 28)]
-        self.draw_vector3_input_row(canvas, "局部旋转 (°):", (mx + 32, geom_y + 122), r_rects, ["R", "P", "Y"], r, mpos)
+        r_rects = [(mx + 155, geom_y + 106, 115, 26), (mx + 280, geom_y + 106, 115, 26), (mx + 405, geom_y + 106, 115, 26)]
+        self.draw_vector3_input_row(canvas, "局部旋转 (°):", (mx + 32, geom_y + 111), r_rects, ["R", "P", "Y"], r, mpos)
 
         # 5. 顶层渲染活跃下拉浮层
         self.render_active_dropdown(canvas, state)

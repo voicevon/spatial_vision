@@ -189,6 +189,11 @@ def test_yaml_persistence_and_workspace_clone():
             roi_id="roi_test_01",
             name="测试ROI",
             frame_id="frame_custom",
+            role="source",
+            target_intent="pose_pick",
+            binding={"channel": "mqtt_loader", "slot_index": 2},
+            pipeline_override="feng_green_axis_v2",
+            min_confidence=0.75,
         ))
         roi_mgr.save()
 
@@ -198,12 +203,18 @@ def test_yaml_persistence_and_workspace_clone():
         assert os.path.exists(ws_b.frames_path)
         assert os.path.exists(ws_b.rois_path)
 
-        # 验证工位 B 是否完整继承了坐标系和 ROI
+        # 验证工位 B 是否完整继承了坐标系和 ROI (包括 Smart ROI 扩展属性)
         coord_mgr_b = load_workspace_coordinate_manager(ws_b)
         assert coord_mgr_b.get_frame("frame_custom") is not None
 
         roi_mgr_b = load_workspace_roi_manager(ws_b)
-        assert roi_mgr_b.get_roi("roi_test_01") is not None
+        roi_b = roi_mgr_b.get_roi("roi_test_01")
+        assert roi_b is not None
+        assert roi_b.role == "source"
+        assert roi_b.target_intent == "pose_pick"
+        assert roi_b.binding.get("slot_index") == 2
+        assert roi_b.pipeline_override == "feng_green_axis_v2"
+        assert abs(roi_b.min_confidence - 0.75) < 1e-4
 
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)

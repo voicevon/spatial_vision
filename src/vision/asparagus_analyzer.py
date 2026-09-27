@@ -52,38 +52,10 @@ class AsparagusTarget:
     is_topmost: bool = False             # 是否被判定为最顶层目标
     calibration_source: str = "uncalibrated"  # 标定来源: "tag_online" | "tag_cached" | "hand_eye" | "uncalibrated"
 
-    def generate_gcode(self, safe_z: float = 80.0, drop_x: float = 220.0, drop_y: float = 0.0) -> str:
-        """
-        生成规范、具备防撞防护的 SCARA 抓取 G-code 指令
-        杜绝直接输出相机 500+mm 镜头深度导致撞机的严重隐患！
-        """
-        lines = []
-        lines.append(f"; ==============================================================================")
-        lines.append(f"; SCARA 抓取指令 (物料 #{self.id} | 长:{self.length_mm}mm 直径:{self.diam_mm}mm 凸起:+{self.rel_height_mm}mm)")
-        if self.calibration_source == "uncalibrated":
-            lines.append(f"; [安全警告] 当前手眼矩阵尚未标定 (UNCALIBRATED)！")
-            lines.append(f"; 坐标模式: 传送带物理基准系 (Z 轴采用凸起高度 {self.robot_z:.1f}mm，已拦截相机 500+mm 深度)")
-            lines.append(f"; 实机运行前请完成 AprilTag 建图 (tools/calibration/tag_map_builder.py) 或在 config.yaml 写入手工标定矩阵！")
-        elif self.calibration_source == "tag_online":
-            lines.append(f"; [状态] AprilTag 在线标靶定位 (实时 PnP 外参) 转换至机械臂基座坐标系")
-        elif self.calibration_source == "tag_cached":
-            lines.append(f"; [状态] AprilTag 历史缓存外参 (标靶暂不可见，沿用上帧锁定值)")
-        elif self.calibration_source == "hand_eye":
-            lines.append(f"; [状态] 手工标定矩阵 (config.yaml T_cam_to_scara) 转换至机械臂基座坐标系")
-        else:
-            lines.append(f"; [状态] 标定来源: {self.calibration_source}")
-        lines.append(f"; ==============================================================================")
-        lines.append(f"G90                     ; 绝对坐标模式")
-        lines.append(f"G0 Z{safe_z:.1f} F4000          ; 提升至安全过渡高度 (避免平移推撞物料)")
-        lines.append(f"G0 X{self.robot_x:.2f} Y{self.robot_y:.2f} R{self.robot_r:.2f} F4000 ; 快速平移旋转对准中轴")
-        lines.append(f"M3                      ; 预先开启夹爪 (气动/伺服张开就位)")
-        lines.append(f"G1 Z{self.robot_z:.2f} F1500          ; 垂直平稳下探至抓持夹取高度")
-        lines.append(f"M4                      ; 闭合夹爪 (牢固夹持物料)")
-        lines.append(f"G4 P200                 ; 保压延时 200ms 确保稳固抓持")
-        lines.append(f"G0 Z{safe_z:.1f} F4000          ; 提起物料脱离堆叠区")
-        lines.append(f"G0 X{drop_x:.2f} Y{drop_y:.2f} R0.00 F4000 ; 移动至分级分料口上方")
-        lines.append(f"M3                      ; 释放物料落料")
-        return "\n".join(lines)
+    # 物理品质分级指标 (纯感知属性)
+    straightness_ratio: float = 1.0      # 直度/弯曲比 (中轴直线距离/实际沿线积分长度)
+    grade: str = "A"                     # 品质等级: A(一级/直且匀称), B(二级/轻微弯曲), C(次品/严重弯曲或残损)
+    confidence: float = 1.0              # 检出综合置信度 (0.0 ~ 1.0)
 
 
 class AsparagusAnalyzer:

@@ -267,7 +267,7 @@ class AsparagusPoseStudioRenderer:
         )
         buttons.append((pipeline_rect, ("toggle_dd", "PIPELINE_DROPDOWN")))
 
-        # 第一排最右侧：退出 [X] 与 导出 G-code [E]
+        # 第一排最右侧：退出 [X]
         bx = W - m["L"]
 
         # 退出按钮
@@ -276,14 +276,6 @@ class AsparagusPoseStudioRenderer:
         exit_rect = (bx, r1_y1, bx + btn_exit_w, r1_y2)
         cls.draw_button(canvas, exit_rect, "退出 [X]", app_state.mouse_pos, m, enabled=True)
         buttons.append((exit_rect, ("btn", "退出 [X]")))
-
-        # 导出 G-code 按钮
-        btn_exp_w = int(116 * m["s"])
-        bx -= btn_exp_w + int(8 * m["s"])
-        exp_rect = (bx, r1_y1, bx + btn_exp_w, r1_y2)
-        cls.draw_button(canvas, exp_rect, "导出G-code [E]", app_state.mouse_pos, m, enabled=bool(app_state.gcode_text))
-        if app_state.gcode_text:
-            buttons.append((exp_rect, ("btn", "导出G-code [E]")))
 
         # 4. 视口上方算法阶段步骤药丸视图 (分支流布局) 与悬停提示框:
         #    数据流语义: 0.原始图 → 分叉 {A 系上排 / B 系下排} → 汇合 → 主干编号步骤
@@ -579,7 +571,7 @@ class AsparagusPoseStudioRenderer:
             )
             draw_text(canvas, msg, (x1 + int(10 * m["s"]), y + int(14 * m["s"])),
                       m["fs_body"], GuiTheme.ERR if app_state.error else GuiTheme.TEXT_MUTED)
-            cls._draw_gcode_box(canvas, m, rect, app_state)
+            cls._draw_pose_detail_box(canvas, m, rect, app_state)
             return
 
         card_h = int(60 * m["s"])
@@ -612,10 +604,10 @@ class AsparagusPoseStudioRenderer:
 
             result_rows.append(((x1 + 4, ry1, x2 - 4, ry2), list_idx))
 
-        cls._draw_gcode_box(canvas, m, rect, app_state)
+        cls._draw_pose_detail_box(canvas, m, rect, app_state)
 
     @classmethod
-    def _draw_gcode_box(cls, canvas, m, rect, app_state):
+    def _draw_pose_detail_box(cls, canvas, m, rect, app_state):
         x1, _, x2, y2 = rect
         gh = int(185 * m["s"])
         gy1 = y2 - gh - int(6 * m["s"])
@@ -624,21 +616,40 @@ class AsparagusPoseStudioRenderer:
         cv2.rectangle(canvas, (x1 + int(4 * m["s"]), gy1), (x2 - int(4 * m["s"]), y2 - int(4 * m["s"])),
                       GuiTheme.BORDER, 1)
 
-        if app_state.gcode_text:
-            target_id = app_state.targets[app_state.sel_target].id if app_state.targets else 1
-            title = f"G-code 预览 (目标 #{target_id}) [E] 导出"
-            draw_text(canvas, title, (x1 + int(12 * m["s"]), gy1 + int(5 * m["s"])),
-                      m["fs_small"], GuiTheme.GOLD, bold=True)
-            yy = gy1 + int(24 * m["s"])
-            line_h = int(13 * m["s"])
-            for line in app_state.gcode_text.splitlines():
-                if yy + line_h > y2 - int(8 * m["s"]):
-                    draw_text(canvas, "... (完整内容见 [E] 导出文件)",
-                              (x1 + int(12 * m["s"]), yy), m["fs_small"], GuiTheme.TEXT_MUTED)
-                    break
-                draw_text(canvas, line, (x1 + int(12 * m["s"]), yy), m["fs_gcode"], GuiTheme.TEXT_SUB)
-                yy += line_h
+        if app_state.targets and 0 <= app_state.sel_target < len(app_state.targets):
+            t = app_state.targets[app_state.sel_target]
+            title = f"抓取位姿详情 (目标 #{t.id} · {t.grade}级品)"
+            draw_text(canvas, title, (x1 + int(12 * m["s"]), gy1 + int(8 * m["s"])),
+                      m["fs_small"], GuiTheme.ACCENT, bold=True)
+            
+            yy = gy1 + int(32 * m["s"])
+            line_h = int(18 * m["s"])
+            
+            # 世界空间坐标与夹爪姿态
+            p_text = f"拾取中心: X={t.robot_x:.1f}  Y={t.robot_y:.1f}  Z={t.robot_z:.1f} mm"
+            draw_text(canvas, p_text, (x1 + int(12 * m["s"]), yy), m["fs_body"], GuiTheme.TEXT)
+            yy += line_h
+
+            r_text = f"抓取姿态: Yaw={t.robot_r:.1f}° (主轴走向对齐)"
+            draw_text(canvas, r_text, (x1 + int(12 * m["s"]), yy), m["fs_body"], (255, 200, 80))
+            yy += line_h
+
+            # 品质与几何特征
+            q_text = f"几何品质: 直径={t.diam_mm:.1f}mm 长度={int(t.length_mm)}mm"
+            draw_text(canvas, q_text, (x1 + int(12 * m["s"]), yy), m["fs_small"], GuiTheme.TEXT_SUB)
+            yy += line_h
+
+            # 标定基准源
+            cal_map = {
+                "tag_online": "AprilTag 实时在线解算基准",
+                "tag_cached": "AprilTag 历史锁存基准",
+                "hand_eye": "手工标定外参矩阵基准",
+                "uncalibrated": "传送带物理几何相对基准",
+            }
+            src_desc = cal_map.get(t.calibration_source, t.calibration_source)
+            s_text = f"坐标基准: {src_desc}"
+            draw_text(canvas, s_text, (x1 + int(12 * m["s"]), yy), m["fs_small"], (100, 180, 255))
         else:
-            note = "2D 预览无深度, 不生成抓取 G-code" if app_state.mode == "2d" else "未检出可抓取目标"
-            draw_text(canvas, note, (x1 + int(12 * m["s"]), gy1 + int(8 * m["s"])),
+            note = "2D 预览无深度" if app_state.mode == "2d" else "未检出目标或无选中物料"
+            draw_text(canvas, note, (x1 + int(12 * m["s"]), gy1 + int(14 * m["s"])),
                       m["fs_small"], GuiTheme.TEXT_MUTED)

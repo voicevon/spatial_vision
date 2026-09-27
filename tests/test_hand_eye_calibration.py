@@ -53,7 +53,9 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
             calibration_source="uncalibrated"
         )
 
-        gcode = target.generate_gcode(safe_z=80.0, drop_x=220.0, drop_y=0.0)
+        from src.control.scara_motion_planner import ScaraMotionPlanner
+        planner = ScaraMotionPlanner(safe_z=80.0)
+        gcode = planner.generate_pick_gcode(target, drop_x=220.0, drop_y=0.0, slot_index=0)
 
         # 1. 验证包含安全未标定警告
         self.assertIn("UNCALIBRATED", gcode)
@@ -66,6 +68,7 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
 
     def test_calibrated_robot_transformation(self):
         """测试 hand_eye 兜底层级: 齐次矩阵乘法正确将相机系坐标映射至机器人基座系"""
+        from src.control.scara_motion_planner import ScaraMotionPlanner
         analyzer = AsparagusAnalyzer()
 
         # 构造平移与翻转矩阵 (例如相机沿 X 平移 200mm, Y 平移 100mm, Z 方向为 640 - Z_cam)
@@ -92,7 +95,8 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
 
         self.assertEqual(top.calibration_source, "hand_eye")
         self.assertAlmostEqual(top.robot_z, 640.0 - top.grip_z, delta=5.0)
-        gcode = top.generate_gcode()
+        planner = ScaraMotionPlanner()
+        gcode = planner.generate_pick_gcode(top)
         self.assertIn("手工标定矩阵", gcode)
 
 

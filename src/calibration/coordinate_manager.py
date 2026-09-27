@@ -84,9 +84,9 @@ class FrameDefinition:
             self.known_dof = [True] * 6
         elif self.type == "fixed_transform":
             if self.known_dof is None:
-                if self.status == "manual":
+                if self.status in ("manual", "calibrated"):
                     self.known_dof = [True] * 6
-                elif self.status == "calibrated":
+                elif self.translation_xyz_mm is not None and self.rotation_rpy_deg is not None:
                     self.known_dof = [True] * 6
                 else:
                     self.known_dof = [False] * 6

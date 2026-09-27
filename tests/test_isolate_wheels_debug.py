@@ -133,8 +133,8 @@ class TestIsolateWheelsDebug(unittest.TestCase):
 
     def test_motor_panel_clicks(self):
         """通道 Header/方向/角度步进与下拉交互"""
-        # 点击 5 号电机 (idx=4, col=7-4=3) Header
-        col = 3
+        # 点击 5 号电机 (idx=4, col=4) Header
+        col = 4
         hdr = self.app._col_header_rect(col)
         self.app.on_click(hdr[0] + hdr[2] // 2, hdr[1] + hdr[3] // 2)
         self.assertEqual(self.app.motor_sel, 5)
@@ -185,7 +185,7 @@ class TestIsolateWheelsDebug(unittest.TestCase):
     def test_multi_dropdown_interaction(self):
         """多电机下拉框: 展开/选择角度/点击外部收起"""
         self.app.motor_mode = "multi"
-        col = 7 - 2  # 3 号电机 (idx=2)
+        col = 2  # 3 号电机 (idx=2)
         box = self.app._col_angle_box(col)
         self.app.on_click(box[0] + 2, box[1] + 2)
         self.assertEqual(self.app.popup_col, col)
@@ -212,7 +212,7 @@ class TestIsolateWheelsDebug(unittest.TestCase):
     # ---------- 托架步进器交互 ----------
     def test_stepper_click_and_clamp(self):
         """[+]/[-] 点击改变托架数量且 0~9 边界钳制"""
-        col = 7 - 2
+        col = 2  # 3 号电机 (idx=2)
         minus = self.app._col_count_minus(col)
         plus = self.app._col_count_plus(col)
         self.app.on_click(plus[0] + plus[2] // 2, plus[1] + plus[3] // 2)

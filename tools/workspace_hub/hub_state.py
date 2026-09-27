@@ -1514,6 +1514,12 @@ class HubState:
                 "size_xyz_mm": [float(x) for x in r.size_xyz_mm],
                 "rotation_rpy_deg": [float(x) for x in r.rotation_rpy_deg],
                 "visual_color_rgb": [int(c) for c in (r.visual_color_rgb or [0, 255, 128])],
+                # Smart ROI 生产意图与工艺角色扩展
+                "role": getattr(r, "role", "source") or "source",
+                "target_intent": getattr(r, "target_intent", "pose_pick") or "pose_pick",
+                "binding": dict(getattr(r, "binding", {}) or {}),
+                "pipeline_override": getattr(r, "pipeline_override", None),
+                "min_confidence": float(getattr(r, "min_confidence", 0.3) or 0.3),
             }
         else:
             self.roi_modal_is_new = True
@@ -1528,6 +1534,12 @@ class HubState:
                 "size_xyz_mm": [80.0, 200.0, 30.0],
                 "rotation_rpy_deg": [0.0, 0.0, 0.0],
                 "visual_color_rgb": [0, 255, 128],
+                # Smart ROI 生产意图与工艺角色默认值
+                "role": "source",
+                "target_intent": "pose_pick",
+                "binding": {"slot_index": 0, "capacity_max": 20},
+                "pipeline_override": None,
+                "min_confidence": 0.3,
             }
         self.roi_modal_open = True
         self.frame_modal_open = False
@@ -1538,6 +1550,46 @@ class HubState:
         self.roi_modal_data = {}
         self.roi_modal_orig_id = None
         self.active_dropdown = None
+
+    def set_roi_modal_role(self, role: str):
+        """切换 ROI 工艺角色 (source / destination / keepout / general)"""
+        if not self.roi_modal_data:
+            return
+        self.roi_modal_data["role"] = role
+        # 联动优化默认意图与视觉颜色
+        if role == "source":
+            if self.roi_modal_data.get("target_intent") == "piece_count":
+                self.roi_modal_data["target_intent"] = "pose_pick"
+            self.roi_modal_data["visual_color_rgb"] = [0, 255, 128]  # 翠绿色
+        elif role == "destination":
+            self.roi_modal_data["visual_color_rgb"] = [0, 200, 255]  # 天蓝色
+            # 确保 binding 包含 slot_index
+            binding = self.roi_modal_data.setdefault("binding", {})
+            if "slot_index" not in binding:
+                binding["slot_index"] = 0
+            if "capacity_max" not in binding:
+                binding["capacity_max"] = 20
+        elif role == "keepout":
+            self.roi_modal_data["target_intent"] = "occupancy"
+            self.roi_modal_data["visual_color_rgb"] = [255, 60, 60]   # 警示红
+        elif role == "general":
+            self.roi_modal_data["visual_color_rgb"] = [200, 200, 200] # 工业灰
+
+    def set_roi_modal_intent(self, intent: str):
+        """切换 ROI 动作意图 (pose_pick / piece_count / occupancy / general)"""
+        if not self.roi_modal_data:
+            return
+        self.roi_modal_data["target_intent"] = intent
+
+    def cycle_roi_modal_slot(self):
+        """循环切换落料槽位编号 (0~7)"""
+        if not self.roi_modal_data:
+            return
+        binding = self.roi_modal_data.setdefault("binding", {})
+        cur_slot = int(binding.get("slot_index", 0))
+        next_slot = (cur_slot + 1) % 8
+        binding["slot_index"] = next_slot
+        return next_slot
 
     def save_roi_modal(self) -> tuple[bool, str]:
         if not self.roi_mgr or not self.roi_modal_data:
@@ -1569,12 +1621,44 @@ class HubState:
             size_xyz_mm=sizes,
             rotation_rpy_deg=[float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])],
             visual_color_rgb=[int(c) for c in d.get("visual_color_rgb", [0, 255, 128])],
+            # Smart ROI 关键属性写穿持久化
+            role=str(d.get("role", "source")),
+            target_intent=str(d.get("target_intent", "pose_pick")),
+            binding=dict(d.get("binding", {}) or {}),
+            pipeline_override=str(d.get("pipeline_override", "")).strip() or None,
+            min_confidence=float(d.get("min_confidence", 0.3)),
         )
         self.roi_mgr.add_roi(roi)
         self.roi_mgr.save()
         self.close_roi_modal()
-        self.set_toast(f"已成功保存 3D ROI 物件: 【{roi.name}】")
+        self.set_toast(f"已成功保存 3D ROI 物件: 【{roi.name}】 ({roi.role}/{roi.target_intent})")
         return True, "保存成功"
+
+    def cycle_workspace_production_mode(self) -> str:
+        """循环切换当前工位的生产工作流模式 (scara_sorting -> wheel_inspection -> none)"""
+        ws = self.get_selected_workspace()
+        if not ws:
+            return ""
+        modes = [
+            ("scara_sorting", "SCARA 智能分选生产线", "asparagus_studio"),
+            ("wheel_inspection", "分选轮在席质检生产线", "wheel_inspector"),
+            ("none", "通用标定观察工位", "general_viewer"),
+        ]
+        curr_mode = ws.production.get("mode", "scara_sorting")
+        cur_idx = 0
+        for i, (m, _, _) in enumerate(modes):
+            if m == curr_mode:
+                cur_idx = i
+                break
+        next_idx = (cur_idx + 1) % len(modes)
+        next_mode, next_name, next_pipe = modes[next_idx]
+        ws.production["mode"] = next_mode
+        ws.production["name"] = next_name
+        ws.production["active_pipeline"] = next_pipe
+        # 保存回 workspace.yaml
+        ws.save_meta()
+        self.set_toast(f"工位生产工作流已切换为: 【{next_name}】 ({next_mode})")
+        return next_mode
 
     def delete_roi(self, roi_id: str) -> tuple[bool, str]:
         if not self.roi_mgr:

@@ -49,6 +49,9 @@ class Workspace:
     ba_solved: bool = False
     global_rmse_px: float = 0.0
 
+    # 全局生产工作流与驱动规范
+    production: Dict[str, Any] = field(default_factory=dict)
+
     # ------------------------------ 顶层核心资产路径 ------------------------------
     @property
     def map_path(self) -> str:
@@ -249,6 +252,8 @@ class Workspace:
                 "global_rmse_px": self.global_rmse_px,
             }
         }
+        if self.production:
+            data["production"] = dict(self.production)
         with open(self.meta_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
@@ -276,6 +281,7 @@ class Workspace:
         valid_tag_ids = meta.get("valid_tag_ids", [])
         origin_tag_id = meta.get("origin_tag_id", 0)
         x_axis_tag_id = meta.get("x_axis_tag_id", 28)
+        production = meta.get("production", {})
 
         status = meta.get("status", {})
         image_count = status.get("image_count", 0)
@@ -299,7 +305,8 @@ class Workspace:
             prod_image_count=prod_image_count,
             active_image_count=active_image_count,
             ba_solved=ba_solved,
-            global_rmse_px=global_rmse_px
+            global_rmse_px=global_rmse_px,
+            production=production,
         )
 
         # 自动探测脏数据或未统计数据，自愈刷新并写回元数据
@@ -532,7 +539,12 @@ class WorkspaceManager:
             name=display_name,
             workspace_dir=ws_dir,
             description=description,
-            created_at=time.strftime("%Y-%m-%d %H:%M:%S")
+            created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+            production={
+                "mode": "scara_sorting",
+                "name": "SCARA 智能分选生产线",
+                "active_pipeline": "asparagus_studio"
+            }
         )
         ws.ensure_directories()
         ws.save_meta()
