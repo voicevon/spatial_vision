@@ -46,7 +46,8 @@ except ImportError:
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.pnp_solver import PnpSolver
+from src.calibration.tag_detector import TagDetector
 from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
 from src.calibration.verification_reporter import VerificationReporter
 from src.calibration.verification_visualizer import VerificationVisualizer
@@ -154,12 +155,13 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         # 2. 相机内参与领域模型装配
         self.camera_matrix, self.dist_coeffs = self._load_camera_intrinsics()
 
-        self.engine = OfflineVerificationEngine(
+        self.pnp_solver = PnpSolver(
             tags_map={},
             camera_matrix=self.camera_matrix,
             dist_coeffs=self.dist_coeffs,
             marker_size_mm=self.marker_size_mm
         )
+        self.tag_detector = TagDetector()
         self.visualizer = VerificationVisualizer(
             camera_matrix=self.camera_matrix,
             dist_coeffs=self.dist_coeffs
@@ -176,14 +178,14 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             map_path=self.map_path,
             image_dir=self.image_dir,
             manifest_path=self.manifest_path,
-            engine=self.engine,
-            marker_size_mm=self.marker_size_mm
+            pnp_solver=self.pnp_solver,
+            marker_size_mm=self.marker_size_mm,
+            tag_detector=self.tag_detector
         )
 
         # 视口显示双独立正交模式 (用户指定默认 3d)
         self.ba_view_mode: str = "3d"    # BA 理论值: "3d" (翡翠绿棱柱), "2d" (投影框), "off" (隐藏)
         self.obs_view_mode: str = "3d"   # 实测识别值: "3d" (天蓝棱柱), "2d" (实测角点框), "off" (隐藏)
-        self.view_mode: str = "3d"       # 兼容器
 
         # 下拉菜单展开态标识 ("FILTER_DROPDOWN", "SORT_DROPDOWN", "BA_VIEW_DROPDOWN", "OBS_VIEW_DROPDOWN" 或 None)
         self.active_dropdown: Optional[str] = None
@@ -907,7 +909,6 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                             break
                     next_idx = (curr_idx + 1) % len(presets)
                     self.ba_view_mode, self.obs_view_mode, desc = presets[next_idx]
-                    self.view_mode = self.ba_view_mode
                     self.set_toast(f"视口模式: {desc}")
                 elif key in (ord('z'), ord('Z'), ord('0')):  # Z / 0 键 -> 重置缩放
                     self.reset_viewport_zoom()

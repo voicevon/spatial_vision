@@ -456,7 +456,7 @@ class TrackerRenderer:
         半透明填充 + 棱线描边 + 顶面中心点; is_theory=True 翡翠绿(BA理论) / False 科技天蓝(实测);
         目标 Tag 额外绘制底面中心点与中心生长轴 (至固定高顶面中心)。
         """
-        K, dist = self.tr.engine.camera_matrix, self.tr.engine.dist_coeffs
+        K, dist = self.tr.pnp_solver.camera_matrix, self.tr.pnp_solver.dist_coeffs
         proj = draw_prism(canvas, K, dist, rvec, tvec,
                           half_w=PRISM_HW_MM, height=PRISM_HEIGHT_MM,
                           colors=COLORS_THEORY if is_theory else COLORS_OBSERVED,
@@ -477,8 +477,8 @@ class TrackerRenderer:
         if rvec is None or tvec is None:
             return
         tr = self.tr
-        K = tr.engine.camera_matrix
-        dist = tr.engine.dist_coeffs
+        K = tr.pnp_solver.camera_matrix
+        dist = tr.pnp_solver.dist_coeffs
         h_c, w_c = canvas.shape[:2]
 
         half_w = ASPARAGUS_HALF_WIDTH_MM    # 7.5 mm
@@ -612,7 +612,7 @@ class TrackerRenderer:
             if tr.world_locked and tr.locked_rvec is not None:
                 R_lock, _ = cv2.Rodrigues(tr.locked_rvec)
                 z_exp = R_lock @ np.array([0.0, 0.0, 1.0])
-            ok_b, rvec_b, tvec_b = tr.engine.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
+            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
             if ok_b:
                 tvec_b = np.asarray(tvec_b).reshape(3, 1)
 
@@ -646,7 +646,7 @@ class TrackerRenderer:
             return cv2.Rodrigues(R @ R_t)[0], R @ c_w + t_flat
 
         for tid in tr.anchor_positions:
-            wc = tr.engine.get_tag_world_corners(tid)
+            wc = tr.pnp_solver.get_tag_world_corners(tid)
             if wc is None or R is None:
                 continue
             rvec_t, tvec_t = _world_tag_pose(wc)
@@ -657,7 +657,7 @@ class TrackerRenderer:
             if tid in det:
                 # 蓝色实测棱柱 (单靶 PnP 位姿); 传入地图理论法向, 消除 IPPE 平面二义性 180° 翻转
                 R_exp, _ = cv2.Rodrigues(rvec_t)
-                ok_b, rvec_b, tvec_b = tr.engine.solve_single_tag_pnp(
+                ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(
                     det[tid], expected_z_cam=R_exp[:, 2])
                 if ok_b:
                     self._draw_studio_prism(canvas, rvec_b, np.asarray(tvec_b).reshape(3, 1), False)
@@ -666,7 +666,7 @@ class TrackerRenderer:
             else:
                 # 未入镜的理论 Tag: 在标靶中心标注编号
                 pc = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]]), rvec_t, tvec_t,
-                                       tr.engine.camera_matrix, tr.engine.dist_coeffs)[0]
+                                       tr.pnp_solver.camera_matrix, tr.pnp_solver.dist_coeffs)[0]
                 pc = pc.reshape(2).astype(int)
                 draw_text(canvas, str(tid), (int(pc[0]) + 8, int(pc[1]) - 22), 14, COL_GREEN, True)
 
@@ -680,7 +680,7 @@ class TrackerRenderer:
         if tr.world_locked and tr.locked_rvec is not None:
             R, _ = cv2.Rodrigues(tr.locked_rvec)
             t_flat = np.asarray(tr.locked_tvec, dtype=np.float64).reshape(3)
-        K = tr.engine.camera_matrix
+        K = tr.pnp_solver.camera_matrix
 
         def _world_tag_pose(wc):
             """世界角点 -> 标靶相机系位姿 (rvec, tvec)"""
@@ -691,7 +691,7 @@ class TrackerRenderer:
         map_ids = sorted(set(tr.anchor_positions) |
                          ({tr.target_tag_id} if tr.theoretical is not None else set()))
         for tid in map_ids:
-            wc = tr.engine.get_tag_world_corners(tid)
+            wc = tr.pnp_solver.get_tag_world_corners(tid)
             if wc is None or R is None:
                 continue
             rvec_t, tvec_t = _world_tag_pose(wc)
@@ -702,7 +702,7 @@ class TrackerRenderer:
             if tid not in (tr.static_det or {}):
                 # 未入镜的理论 Tag: 在标靶中心标注编号
                 pc = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]]), rvec_t, tvec_t, K,
-                                       tr.engine.dist_coeffs)[0].reshape(2).astype(int)
+                                       tr.pnp_solver.dist_coeffs)[0].reshape(2).astype(int)
                 draw_text(canvas, str(tid), (int(pc[0]) + 8, int(pc[1]) - 22), 14, COL_GREEN, True)
 
         # 2. 蓝色实测棱柱: 当帧识别到的全部 Tag (单靶 PnP)
@@ -711,13 +711,13 @@ class TrackerRenderer:
         for tid, corners in (tr.static_det or {}).items():
             z_exp = None
             if R is not None:
-                wc = tr.engine.get_tag_world_corners(tid)
+                wc = tr.pnp_solver.get_tag_world_corners(tid)
                 if wc is not None:
                     R_t, _ = _tag_local_frame(wc)
                     z_exp = R @ R_t[:, 2]
                 else:
                     z_exp = sky_z
-            ok_b, rvec_b, tvec_b = tr.engine.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
+            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
             if ok_b:
                 self._draw_studio_prism(canvas, rvec_b, np.asarray(tvec_b).reshape(3, 1), False,
                                         is_target=(tid == tr.target_tag_id))
@@ -740,7 +740,7 @@ class TrackerRenderer:
             return
         R, _ = cv2.Rodrigues(rvec)
         t_flat = np.asarray(tvec, dtype=np.float64).reshape(3)
-        K = tr.engine.camera_matrix
+        K = tr.pnp_solver.camera_matrix
         h_c, w_c = canvas.shape[:2]
         ext, step, z0 = tr.PLANE_EXTENT_MM, tr.PLANE_STEP_MM, float(tr.plane_z)
 

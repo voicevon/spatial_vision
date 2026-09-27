@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from tools.tracker.common import _tag_local_frame
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.pnp_solver import PnpSolver
 
 
 class TestTagLocalFrameNormal(unittest.TestCase):
@@ -21,23 +21,23 @@ class TestTagLocalFrameNormal(unittest.TestCase):
         cls.K = np.array([[1363.68, 0, 971.19], [0, 1361.19, 566.26], [0, 0, 1.0]])
         dist = np.zeros((5, 1))
         cls.r_true, cls.t_true = np.array([[0.3], [0.0], [0.0]]), np.array([[10.0], [-20.0], [600.0]])
-        cls.engine = OfflineVerificationEngine(
+        cls.pnp_solver = PnpSolver(
             tags_map={}, camera_matrix=cls.K, dist_coeffs=dist, marker_size_mm=40.0)
 
     def test_normal_and_translation_consistency(self):
-        proj, _ = cv2.projectPoints(self.engine.obj_points, self.r_true, self.t_true,
+        proj, _ = cv2.projectPoints(self.pnp_solver.obj_points, self.r_true, self.t_true,
                                     self.K, np.zeros((5, 1)))
         corners_img = proj.reshape(4, 2)
 
         # 1) 蓝色路径: 单靶 PnP 位姿
-        ok, r_pnp, t_pnp = self.engine.solve_single_tag_pnp(corners_img)
+        ok, r_pnp, t_pnp = self.pnp_solver.solve_single_tag_pnp(corners_img)
         self.assertTrue(ok, "PnP 失败")
 
         # 2) 绿色路径: 构造世界角点 (真值位姿) -> _tag_local_frame -> 合成相机系位姿
         T_w_t = np.eye(4)
         R_t, _ = cv2.Rodrigues(self.r_true)
         T_w_t[:3, :3], T_w_t[:3, 3] = R_t.reshape(3, 3), self.t_true.reshape(3)
-        s = self.engine.marker_size_mm / 2.0
+        s = self.pnp_solver.marker_size_mm / 2.0
         local = np.array([[-s, s, 0, 1], [s, s, 0, 1], [s, -s, 0, 1], [-s, -s, 0, 1]],
                          dtype=np.float64)
         wc = (T_w_t @ local.T).T[:, :3]  # 世界角点 (4,3), 顺序同 get_tag_world_corners

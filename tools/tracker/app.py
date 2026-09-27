@@ -47,7 +47,8 @@ if sys.platform == "win32":
     except Exception:
         pass  # 编码重配置失败无伤大雅，终端仍可正常运行
 
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.pnp_solver import PnpSolver, get_tag_world_transform, get_tag_world_corners
+from src.calibration.tag_detector import TagDetector
 from src.control.robot_serial import RobotSerial
 from src.utils.gui_window_manager import GuiWindowManager
 from tools.tracker.camera_controller import CameraController
@@ -101,11 +102,12 @@ class RobotOnlineTracker:
         self._load_workspace_selection()
         self.map_path = map_path or self._workspace_map_path()
 
-        # 1. 世界坐标地图与计算引擎 (内参待相机开启后按实际分辨率刷新)
-        self.engine = None
-        self.theoretical = None     # 地图中目标 Tag 的理论世界坐标 (_load_engine 填充)
+        # 1. 世界坐标地图与几何求解器 (内参待相机开启后按实际分辨率刷新)
+        self.pnp_solver = None
+        self.tag_detector = None
+        self.theoretical = None     # 地图中目标 Tag 的理论世界坐标 (_load_pnp_solver 填充)
         self.anchor_positions = {}  # 锚定标靶 BA 理论世界中心 {tag_id: np.array(3)} (不含 Tag 2)
-        self._load_engine()
+        self._load_pnp_solver()
 
         # 2. 机械臂串口控制器
         self.robot = RobotSerial(port=port or "", baudrate=baudrate)
@@ -114,7 +116,7 @@ class RobotOnlineTracker:
         self.robot_cmd_busy = False               # M84/G92 即时指令执行中 (防重入)
 
         # 3. 相机硬件控制器 (类型/分辨率状态机 + 取流启停; GUI 先行, 不自动开相机)
-        self.camera = CameraController(self.engine)
+        self.camera = CameraController(self.pnp_solver)
 
         # 4. 工具栏状态 (借鉴 d435_viewer: 相机类型 → 分辨率 → 开关; 绘制由 TrackerRenderer 负责)
         self.active_dropdown = None     # "WORKSPACE_DROPDOWN" | "CAMERA_TYPE_DROPDOWN" | "RES_DROPDOWN" | "PLANE_DROPDOWN" | "TARGET_DROPDOWN" | "PORT_DROPDOWN" | None
@@ -262,7 +264,7 @@ class RobotOnlineTracker:
         self.workspace_id = ws_id
         self.map_path = ws.map_path
         try:
-            self._load_engine()
+            self._load_pnp_solver()
         except Exception as e:
             # 加载失败回滚到旧地图
             self.workspace_id = ""
@@ -272,7 +274,7 @@ class RobotOnlineTracker:
                     break
             self.map_path = old_map
             try:
-                self._load_engine()
+                self._load_pnp_solver()
             except Exception:
                 pass
             self.set_toast(f"加载工位地图失败: {e}", True)
@@ -305,8 +307,8 @@ class RobotOnlineTracker:
         self._save_viewer_state()
         self.set_toast(f"工作空间已切换: {ws.name} | 地图 {os.path.basename(ws.map_path)}")
 
-    def _load_engine(self):
-        """加载世界坐标地图并构建纯几何计算引擎 (相机内参以 config.yaml 默认值初始化)"""
+    def _load_pnp_solver(self):
+        """加载世界坐标地图并构建纯几何计算求解器 (相机内参以 config.yaml 默认值初始化)"""
         with open(self.map_path, "r", encoding="utf-8") as f:
             tags_map = yaml.safe_load(f) or {}
         marker_size = float(tags_map.get("marker_size_mm") or 40.0)
@@ -321,15 +323,18 @@ class RobotOnlineTracker:
             ], dtype=np.float64)
             dist_coeffs = np.zeros((5, 1), dtype=np.float64)
 
-        self.engine = OfflineVerificationEngine(
-            tags_map=tags_map,
+        self.pnp_solver = PnpSolver(
             camera_matrix=camera_matrix,
             dist_coeffs=dist_coeffs,
-            marker_size_mm=marker_size
+            marker_size_mm=marker_size,
+            tags_map=tags_map
         )
+        if hasattr(self, "camera") and self.camera is not None:
+            self.camera.pnp_solver = self.pnp_solver
+        self.tag_detector = TagDetector(valid_tag_ids=None)
         n_tags = len(tags_map.get("tags", {}))
         log.info(f"[OK] 世界坐标地图已加载: {self.map_path} | 标靶 {n_tags} 枚 | 边长 {marker_size:.1f}mm")
-        T = self.engine.get_tag_world_transform(self.target_tag_id)
+        T = self.pnp_solver.get_tag_world_transform(self.target_tag_id)
         self.theoretical = T[:3, 3].copy() if T is not None else None
 
         # 锚定标靶 (地图白名单内, 排除移动的 Tag 2) 的 BA 理论世界中心
@@ -338,7 +343,7 @@ class RobotOnlineTracker:
             tid_i = int(tid_s)
             if tid_i == self.target_tag_id:
                 continue
-            T_i = self.engine.get_tag_world_transform(tid_i)
+            T_i = self.pnp_solver.get_tag_world_transform(tid_i)
             if T_i is not None:
                 self.anchor_positions[tid_i] = T_i[:3, 3].copy()
 
@@ -470,7 +475,7 @@ class RobotOnlineTracker:
             self.rmse = None
             return None
 
-        det = self.engine.detect_tags(frame)
+        det = self.tag_detector.detect_tags(frame)
         det = self._detect_high_precision(frame, det)  # 目标 Tag ROI 放大重检 (高精度)
         target_world = None
         target_r = None
@@ -481,7 +486,7 @@ class RobotOnlineTracker:
             R_lock = (cv2.Rodrigues(self.locked_rvec)[0]
                       if (self.world_locked and self.locked_rvec is not None) else None)
             z_exp = None if R_lock is None else R_lock @ np.array([0.0, 0.0, 1.0])
-            ok2, rvec2, t2 = self.engine.solve_single_tag_pnp(c2, expected_z_cam=z_exp)
+            ok2, rvec2, t2 = self.pnp_solver.solve_single_tag_pnp(c2, expected_z_cam=z_exp)
             if ok2:
                 self.target_rvec = rvec2
                 self.target_tvec = t2.reshape((3, 1))
@@ -537,7 +542,7 @@ class RobotOnlineTracker:
         for tid, corners in det.items():
             if tid == self.target_tag_id:
                 continue
-            wc = self.engine.get_tag_world_corners(tid)
+            wc = self.pnp_solver.get_tag_world_corners(tid)
             if wc is None:
                 continue
             obj_list.append(wc)
@@ -547,12 +552,12 @@ class RobotOnlineTracker:
         if obj_list:
             obj = np.vstack(obj_list).astype(np.float64)
             img = np.vstack(img_list).astype(np.float64)
-            rvec, tvec, ok = self.engine.solve_pnp(obj, img)
+            rvec, tvec, ok = self.pnp_solver.solve_pnp(obj, img)
             if ok:
                 sol["rvec"] = rvec
                 sol["tvec"] = tvec.reshape(3)
                 proj, _ = cv2.projectPoints(obj, rvec, tvec,
-                                            self.engine.camera_matrix, self.engine.dist_coeffs)
+                                            self.pnp_solver.camera_matrix, self.pnp_solver.dist_coeffs)
                 sol["rmse"] = float(np.mean(np.linalg.norm(
                     proj.reshape(-1, 2) - img, axis=1)))
                 sol["support"] = ids
@@ -561,7 +566,7 @@ class RobotOnlineTracker:
                 if c2 is not None:
                     # 目标 Tag 法向"朝向天空"先验: 用锚定 PnP 旋转把世界 +Z 映到相机系
                     R_wc, _ = cv2.Rodrigues(rvec)
-                    ok2, rvec2, t2 = self.engine.solve_single_tag_pnp(
+                    ok2, rvec2, t2 = self.pnp_solver.solve_single_tag_pnp(
                         c2, expected_z_cam=R_wc @ np.array([0.0, 0.0, 1.0]))
                     if ok2:
                         p_cam = t2.reshape(3)                      # 目标 Tag 中心 (相机系)
@@ -582,8 +587,8 @@ class RobotOnlineTracker:
         c2 = det.get(self.target_tag_id)
         if c2 is None:
             return det
-        det_bright = getattr(self.engine, "detector_bright", None)
-        det_dark = getattr(self.engine, "detector_dark", None)
+        det_bright = self.tag_detector.detector_bright
+        det_dark = self.tag_detector.detector_dark
         if det_bright is None:
             return det
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
@@ -615,7 +620,7 @@ class RobotOnlineTracker:
                 break
         if refined is None:
             return det
-        refine = getattr(self.engine, "refine_corners_subpix", None)
+        refine = getattr(self.tag_detector, "refine_corners_subpix", None)
         if refine is not None:
             refined = refine(roi_up, refined)
         refined_orig = np.asarray(refined, dtype=np.float64) / scale + np.array([x1, y1])
@@ -669,7 +674,7 @@ class RobotOnlineTracker:
                 frame = self.camera.read_frame()
                 if frame is None:
                     continue
-                det = self.engine.detect_tags(frame)
+                det = self.tag_detector.detect_tags(frame)
                 sol = self._solve_per_frame(det)
                 if sol["rvec"] is None or sol["rmse"] is None:
                     continue
@@ -749,7 +754,8 @@ class RobotOnlineTracker:
                 return
             # 4. 识别视野内已知的 Tag (目标 Tag 追加 ROI 放大重检, 高精度)
             self.recog_stage = "检测 Tag... (高精度)"
-            det = self._detect_high_precision(frame, self.engine.detect_tags(frame))
+            raw_det = self.tag_detector.detect_tags(frame)
+            det = self._detect_high_precision(frame, raw_det)
             self.static_frame = frame.copy()
             self.static_det = dict(det) if det else {}
             if not det:

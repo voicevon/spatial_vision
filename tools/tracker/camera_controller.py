@@ -16,8 +16,8 @@ from src.hardware.camera_service import CameraService
 class CameraController:
     """相机硬件管理: 只负责取流启停 / 内参刷新 / 帧读取, 不含业务编排"""
 
-    def __init__(self, engine):
-        self.engine = engine            # 引用主控制器的几何引擎, 内参按实际分辨率刷新
+    def __init__(self, pnp_solver):
+        self.pnp_solver = pnp_solver    # 引用主控制器的几何 PnP 求解器, 内参按实际分辨率刷新
         self.camera_type = "realsense"
         self.camera_options = [
             ("realsense", "RealSense D435"),
@@ -68,6 +68,7 @@ class CameraController:
 
     # ------------------------------ 内参回调 ------------------------------
     def _apply_intrinsics(self, K, dist):
-        """经 CameraService 推送的标定/近似内参刷新几何引擎"""
-        self.engine.camera_matrix = K
-        self.engine.dist_coeffs = dist
+        """经 CameraService 推送的标定/近似内参刷新几何求解器"""
+        if self.pnp_solver is not None:
+            self.pnp_solver.camera_matrix = K
+            self.pnp_solver.dist_coeffs = dist

@@ -202,7 +202,7 @@ class MappingCenterViewMixin:
         if len(obj_pts) >= 1:
             obj_flat = np.concatenate(obj_pts, axis=0)
             img_flat = np.concatenate(img_pts, axis=0)
-            rvec, tvec, success = app.engine.solve_pnp(obj_flat, img_flat)
+            rvec, tvec, success = app.pnp_solver.solve_pnp(obj_flat, img_flat)
 
         # 若当前无足够有效点 (如标靶全被剔除)，尝试复用 meta 缓存的相机外参
         if not success and meta is not None:
@@ -270,7 +270,7 @@ class MappingCenterViewMixin:
                         # 仅在有效保留且 obs_mode=='3d' 下才计算并显示实测蓝色棱柱
                         if is_kept and obs_mode == "3d":
                             # 传入地图理论法向, 消除 IPPE 平面二义性 180° 翻转
-                            succ_single, obs_r, obs_t = app.engine.solve_single_tag_pnp(
+                            succ_single, obs_r, obs_t = app.pnp_solver.solve_single_tag_pnp(
                                 c_arr, expected_z_cam=T_c_t[:3, :3][:, 2])
 
                     # 如果既不画理论绿色棱柱，也不画实测蓝色棱柱，跳过
@@ -279,7 +279,7 @@ class MappingCenterViewMixin:
 
                     # 若当前标靶未检出 (纯理论)，检查理论中心是否在像面可视范围内
                     if obs is None and r_tag is not None:
-                        p_center, _ = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]]), r_tag, t_tag, app.engine.camera_matrix, app.engine.dist_coeffs)
+                        p_center, _ = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]]), r_tag, t_tag, app.pnp_solver.camera_matrix, app.pnp_solver.dist_coeffs)
                         cu, cv = p_center.reshape(-1)
                         if not (-80 <= cu <= w_f + 80 and -80 <= cv <= h_f + 80):
                             continue
@@ -295,7 +295,7 @@ class MappingCenterViewMixin:
                         tag_center_f = (float(np.mean(c_arr[:, 0])), float(np.mean(c_arr[:, 1])))
                     elif r_tag is not None:
                         p_c, _ = cv2.projectPoints(np.array([[0.0, 0.0, 0.0]]), r_tag, t_tag,
-                                                   app.engine.camera_matrix, app.engine.dist_coeffs)
+                                                   app.pnp_solver.camera_matrix, app.pnp_solver.dist_coeffs)
                         tag_center_f = (float(p_c.reshape(-1)[0]), float(p_c.reshape(-1)[1]))
                     is_hovered = (mouse_frame is not None and tag_center_f is not None
                                   and (mouse_frame[0] - tag_center_f[0]) ** 2 + (mouse_frame[1] - tag_center_f[1]) ** 2 < 48.0 ** 2)
@@ -328,7 +328,7 @@ class MappingCenterViewMixin:
 
             # 4. 2D 理论重投影框与残差矢量
             if ba_mode == "2d" and len(valid_obs) > 0:
-                proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, app.engine.camera_matrix, app.engine.dist_coeffs)
+                proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, app.pnp_solver.camera_matrix, app.pnp_solver.dist_coeffs)
                 proj_flat = proj_pts.reshape((-1, 2))
                 for i in range(len(valid_obs)):
                     p4 = proj_flat[i * 4:(i + 1) * 4].astype(np.int32)
@@ -377,18 +377,18 @@ class MappingCenterViewMixin:
     def _draw_roi_cuboids_overlay(self, app: Any, disp_frame: np.ndarray,
                                   rvec: np.ndarray, tvec: np.ndarray):
         """遍历当前工位所有 ROI, 用当前帧 BA 外参投影 8 角点到图像, 绘制黄色半透明长方体。
-        前置条件: app.roi_mgr / app.coord_mgr / app.engine.camera_matrix 已就绪。
+        前置条件: app.roi_mgr / app.coord_mgr / app.pnp_solver.camera_matrix 已就绪。
         失败 (无 ROI / 无 BA 位姿 / ROI 未解算) 时静默跳过, 不弹 toast。"""
         roi_mgr = getattr(app, "roi_mgr", None)
         coord_mgr = getattr(app, "coord_mgr", None)
         if roi_mgr is None or coord_mgr is None:
             return
-        engine = getattr(app, "engine", None)
-        if engine is None or getattr(engine, "camera_matrix", None) is None:
+        pnp_solver = getattr(app, "pnp_solver", None)
+        if pnp_solver is None or getattr(pnp_solver, "camera_matrix", None) is None:
             return
 
-        K = engine.camera_matrix
-        dist = getattr(engine, "dist_coeffs", None)
+        K = pnp_solver.camera_matrix
+        dist = getattr(pnp_solver, "dist_coeffs", None)
 
         # 由 rvec/tvec 组合出 4x4 T_world_from_cam 的逆, 用于筛选相机背后的角点
         R_c_w, _ = cv2.Rodrigues(rvec)
@@ -480,7 +480,7 @@ class MappingCenterViewMixin:
 
         R, _ = cv2.Rodrigues(rvec)
         t_flat = np.asarray(tvec, dtype=np.float64).reshape(3)
-        K = app.engine.camera_matrix
+        K = app.pnp_solver.camera_matrix
         h_f, w_f = canvas.shape[:2]
         ext = getattr(app, "PLANE_EXTENT_MM", 600)
         step = getattr(app, "PLANE_STEP_MM", 100)

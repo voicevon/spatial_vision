@@ -7,7 +7,7 @@ import unittest
 import cv2
 import numpy as np
 
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.tag_detector import TagDetector
 from tools.tracker.app import RobotOnlineTracker
 
 
@@ -18,10 +18,9 @@ class TestHighPrecisionRedetect(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.K = np.array([[1363.68, 0, 971.19], [0, 1361.19, 566.26], [0, 0, 1.0]])
-        cls.engine = OfflineVerificationEngine(
-            tags_map={}, camera_matrix=cls.K, dist_coeffs=np.zeros((5, 1)), marker_size_mm=40.0)
+        cls.detector = TagDetector(valid_tag_ids=None)
         # 合成 1280x720 图, Tag 2 (16h5) 以带透视的四边形贴入 + 模糊 + 噪声
-        marker = cv2.aruco.generateImageMarker(cls.engine.dictionary, 2, 200)
+        marker = cv2.aruco.generateImageMarker(cls.detector.dictionary, 2, 200)
         marker = cv2.cvtColor(marker, cv2.COLOR_GRAY2BGR)
         img = np.full((720, 1280, 3), 210, dtype=np.uint8)
         src = np.array([[0, 0], [200, 0], [200, 200], [0, 200]], dtype=np.float32)
@@ -36,14 +35,14 @@ class TestHighPrecisionRedetect(unittest.TestCase):
         cls.img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
 
     def test_hp_not_worse_than_coarse(self):
-        det = self.engine.detect_tags(self.img)
+        det = self.detector.detect_tags(self.img)
         self.assertIn(2, det, f"全景未检出 Tag 2, 实际: {list(det.keys())}")
         coarse = det[2].reshape(4, 2)
         err_coarse = float(np.mean(np.linalg.norm(coarse - self.gt, axis=1)))
 
         app = RobotOnlineTracker.__new__(RobotOnlineTracker)
         app.target_tag_id = 2
-        app.engine = self.engine
+        app.tag_detector = self.detector
         det_hp = app._detect_high_precision(self.img, dict(det))
         self.assertIn(2, det_hp, "高精度流程丢失 Tag 2")
         hp = det_hp[2].reshape(4, 2)

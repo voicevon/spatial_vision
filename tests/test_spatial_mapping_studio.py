@@ -44,8 +44,25 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.map_path = os.path.join(self.temp_dir, "test_tags_map.yaml")
         # 复制或写入一个基础测试地图
         real_map = os.path.join(PROJECT_ROOT, "config", "tags_map.yaml")
+        if not os.path.exists(real_map):
+            try:
+                from src.calibration.workspace_manager import WorkspaceManager
+                ws_map = WorkspaceManager().get_current_workspace().map_path
+                if os.path.exists(ws_map):
+                    real_map = ws_map
+            except Exception:
+                pass
         if os.path.exists(real_map):
             shutil.copy(real_map, self.map_path)
+        else:
+            with open(self.map_path, "w", encoding="utf-8") as f:
+                yaml.dump({
+                    "marker_size_mm": 50.0,
+                    "tags": {
+                        0: {"corners": [[-25, 25, 0], [25, 25, 0], [25, -25, 0], [-25, -25, 0]]},
+                        18: {"corners": [[100, 25, 0], [150, 25, 0], [150, -25, 0], [100, -25, 0]]}
+                    }
+                }, f)
 
         self.manifest_path = os.path.join(self.temp_dir, "test_tag_observations.yaml")
         init_manifest = {
@@ -90,7 +107,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         """测试 Studio 初始化与资产发现"""
         self.assertEqual(len(self.studio.image_files), 3, "应扫描到 3 张测试采图")
         self.assertEqual(self.studio.current_img_idx, 0, "默认初始选中第 0 帧")
-        self.assertIsNotNone(self.studio.engine)
+        self.assertIsNotNone(self.studio.pnp_solver)
         self.assertIsNotNone(self.studio.manifest_repo)
         self.assertIsNotNone(self.studio.optimizer)
         self.assertIsNotNone(self.studio.reporter)
@@ -371,7 +388,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             map_path=self.map_path,
             image_dir=self.image_dir,
             manifest_path=self.studio.manifest_path,
-            engine=self.studio.engine,
+            pnp_solver=self.studio.pnp_solver,
             marker_size_mm=50.0
         )
         loaded_obs = new_mgr.get_observations_for_image(bname)
@@ -387,7 +404,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         success = self.studio.reset_map()
         self.assertTrue(success)
         self.assertEqual(len(self.studio.tags_map_data.get("tags", {})), 0, "复位后 tags 字典应为空")
-        self.assertEqual(len(self.studio.engine.tags_map.get("tags", {})), 0, "引擎内绑定的地图也应同步清空")
+        self.assertEqual(len(self.studio.pnp_solver.tags_map.get("tags", {})), 0, "求解器内绑定的地图也应同步清空")
 
         # 验证 .bak 备份文件存在
         bak_file = self.studio.map_path + ".bak"
@@ -588,6 +605,12 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
     def test_excluded_tag_ba_green_prism_still_renders(self):
         """测试即使标靶在当前帧被剔除，BA 理论绿色棱柱仍必须坚挺显示且蓝色实测棱柱隐藏"""
         disp_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        # 确保测试地图中注册了 Tag 0 与 Tag 18 的世界系位姿矩阵
+        T_mock = np.eye(4)
+        T_mock[2, 3] = 1000.0
+        self.studio.tags_map_data.setdefault("tags", {})[0] = {"transform_matrix": T_mock.tolist()}
+        self.studio.tags_map_data["tags"][18] = {"transform_matrix": T_mock.tolist()}
         
         # 构造包含 2 个标靶的观测: Tag 0(有效保留) 和 Tag 18(被剔除)
         observations = [

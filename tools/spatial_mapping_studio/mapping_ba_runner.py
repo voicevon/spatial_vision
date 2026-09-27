@@ -179,8 +179,8 @@ class MappingBARunner:
             # 2. 同步更新视口预览地图 (若尚未做世界对齐, 视口可查看相对三维构型)
             ManifestRepository.save_map(raw_map, self.map_path)
             self.data_mgr.tags_map_data = raw_map
-            if self.data_mgr.engine:
-                self.data_mgr.engine.tags_map = raw_map
+            if getattr(self.data_mgr, "pnp_solver", None):
+                self.data_mgr.pnp_solver.tags_map = raw_map
             if raw_map.get("marker_size_mm"):
                 self.data_mgr.set_marker_size_mm(raw_map["marker_size_mm"])
             self.data_mgr.refresh_all_frame_metrics()
@@ -224,8 +224,8 @@ class MappingBARunner:
         # 4. 持久化生产世界地图 tags_map.yaml 并更新运行时引擎
         ManifestRepository.save_map(world_map, self.map_path)
         self.data_mgr.tags_map_data = world_map
-        if self.data_mgr.engine:
-            self.data_mgr.engine.tags_map = world_map
+        if getattr(self.data_mgr, "pnp_solver", None):
+            self.data_mgr.pnp_solver.tags_map = world_map
         if world_map.get("marker_size_mm"):
             self.data_mgr.set_marker_size_mm(world_map["marker_size_mm"])
         self.data_mgr.refresh_all_frame_metrics()

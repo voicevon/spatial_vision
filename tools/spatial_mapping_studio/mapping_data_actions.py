@@ -186,10 +186,10 @@ class MappingDataActionsMixin:
             except Exception as e:
                 log.warning(f"备份地图失败: {e}")
 
-        # 清空内存与引擎中的地图
+        # 清空内存与地图
         self.tags_map_data = {"version": "2.0_reset", "tags": {}}
-        if self.engine:
-            self.engine.tags_map = self.tags_map_data
+        if getattr(self, "pnp_solver", None):
+            self.pnp_solver.tags_map = self.tags_map_data
 
         # 写回空地图文件
         try:

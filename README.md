@@ -279,7 +279,7 @@ flux_vision_3d/
 │   │   ├── ba_optimizer.py        #      两阶段 BA 平差优化器 (Cauchy核 + 尺度基线对齐)
 │   │   ├── covisibility_graph.py  #      多视角标靶共视网络图论建模与割点分析
 │   │   ├── manifest_repository.py #      标定清单与观测数据持久化仓储
-│   │   ├── offline_engine.py      #      离线纯几何计算引擎 (PnP / IPPE / 正深度校验)
+│   │   ├── pnp_solver.py          #      标靶 PnP 空间位姿与二义性消歧求解器
 │   │   ├── verification_reporter.py #    Per-Tag/Per-Frame 稳健统计与体检报告器
 │   │   ├── verification_visualizer.py #  3D 双四棱柱位姿对比与 2D 残差矢量渲染管线
 │   │   └── world_datum_aligner.py #      世界基准对齐与空间尺度相似变换解算器

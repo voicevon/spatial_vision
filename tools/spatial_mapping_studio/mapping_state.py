@@ -19,7 +19,8 @@ import cv2
 import yaml
 
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.pnp_solver import PnpSolver
+from src.calibration.tag_detector import TagDetector
 from tools.spatial_mapping_studio.mapping_data_actions import MappingDataActionsMixin
 from src.utils.logger import get_logger
 
@@ -34,14 +35,16 @@ class MappingDataManager(MappingDataActionsMixin):
         map_path: str,
         image_dir: str,
         manifest_path: str,
-        engine: OfflineVerificationEngine,
+        pnp_solver: PnpSolver,
         marker_size_mm: float,
+        tag_detector: Optional[TagDetector] = None
     ):
         self.map_path = map_path
         self.image_dir = image_dir
         self.manifest_path = manifest_path
-        self.engine = engine
+        self.pnp_solver = pnp_solver
         self.marker_size_mm = marker_size_mm
+        self.tag_detector = tag_detector or TagDetector()
 
         # 1. 资产与清单
         self.manifest_repo = ManifestRepository()
@@ -260,8 +263,8 @@ class MappingDataManager(MappingDataActionsMixin):
                 self.tags_map_data = {}
         else:
             self.tags_map_data = {}
-        if self.engine:
-            self.engine.tags_map = self.tags_map_data
+        if self.pnp_solver:
+            self.pnp_solver.tags_map = self.tags_map_data
 
     def set_marker_size_mm(self, size_mm) -> None:
         """同步标靶物理边长到全局状态与引擎单靶 PnP 模型"""
@@ -272,8 +275,8 @@ class MappingDataManager(MappingDataActionsMixin):
         if size_mm <= 0:
             return
         self.marker_size_mm = size_mm
-        if getattr(self, "engine", None):
-            self.engine.set_marker_size_mm(size_mm)
+        if getattr(self, "pnp_solver", None):
+            self.pnp_solver.set_marker_size_mm(size_mm)
 
     def get_tag_transform(self, tag_id: int) -> Optional[np.ndarray]:
         """获取已知标靶在世界系下的 4x4 位姿变换矩阵"""
@@ -344,15 +347,15 @@ class MappingDataManager(MappingDataActionsMixin):
         obj_flat = np.concatenate(obj_pts, axis=0)
         img_flat = np.concatenate(img_pts, axis=0)
 
-        rvec, tvec, success = self.engine.solve_pnp(obj_flat, img_flat)
+        rvec, tvec, success = self.pnp_solver.solve_pnp(obj_flat, img_flat)
         if not success:
             return 0.0, 0.0, {}, None, None, 0.0, {}
 
-        proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, self.engine.camera_matrix, self.engine.dist_coeffs)
+        proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, self.pnp_solver.camera_matrix, self.pnp_solver.dist_coeffs)
         dists = np.linalg.norm(img_flat - proj_pts.reshape((-1, 2)), axis=1)
 
         tz = float(tvec[2, 0]) if tvec is not None else 800.0
-        fx = float(self.engine.camera_matrix[0, 0]) if (self.engine and self.engine.camera_matrix is not None) else 1363.0
+        fx = float(self.pnp_solver.camera_matrix[0, 0]) if (self.pnp_solver and self.pnp_solver.camera_matrix is not None) else 1363.0
         scale_mm_per_px = abs(tz) / fx if fx > 0 else 0.0
 
         errors_dict = {}
@@ -480,7 +483,8 @@ class MappingDataManager(MappingDataActionsMixin):
         sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
         # 候选多边形与拒检分析
-        c_raw, ids_raw, rejected = self.engine.detector_bright.detectMarkers(gray)
+        detector_bright = self.tag_detector.detector_bright
+        c_raw, ids_raw, rejected = detector_bright.detectMarkers(gray)
         detected_tids = set(ids_raw.flatten().tolist()) if ids_raw is not None else set()
         rej_count = len(rejected) if rejected is not None else 0
 
@@ -509,7 +513,7 @@ class MappingDataManager(MappingDataActionsMixin):
                 if t_int not in detected_tids:
                     wc = self.get_tag_world_corners(t_int)
                     if wc is not None:
-                        proj, _ = cv2.projectPoints(wc, rvec, tvec, self.engine.camera_matrix, self.engine.dist_coeffs)
+                        proj, _ = cv2.projectPoints(wc, rvec, tvec, self.pnp_solver.camera_matrix, self.pnp_solver.dist_coeffs)
                         p2 = proj.reshape((4, 2))
                         if np.all(p2[:, 0] >= -20) and np.all(p2[:, 0] < w + 20) and np.all(p2[:, 1] >= -20) and np.all(p2[:, 1] < h + 20):
                             missing_tags.append({

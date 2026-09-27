@@ -27,6 +27,9 @@ class TestWorkspaceDropdownPersistence(unittest.TestCase):
         self.ws_a = self.mgr.create_workspace(alias='工位A')
         self.ws_b = self.mgr.create_workspace(alias='工位B')
         self.ws_c = self.mgr.create_workspace(alias='工位C')
+        for ws in (self.ws_a, self.ws_b, self.ws_c):
+            with open(ws.whitelist_path, 'w', encoding='utf-8') as f:
+                f.write('tag_default_size_mm: 50.0\nwhitelist: [0, 1, 2]\n')
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)

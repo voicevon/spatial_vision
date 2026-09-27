@@ -16,7 +16,6 @@ import cv2
 
 from src.calibration.manifest_repository import ManifestRepository
 from tools.spatial_mapping_studio.mapping_ui_common import (
-    VIEW_MODE_OPTIONS,
     FILTER_MODE_OPTIONS,
     SORT_MODE_OPTIONS,
     BA_VIEW_OPTIONS,
@@ -154,23 +153,12 @@ class MappingEventMixin:
                     self.set_toast(f"XY 平面已平移至 {self.get_current_plane_z_label()}")
             elif dd_name == "BA_VIEW_DROPDOWN":
                 self.ba_view_mode = selected_val
-                self.view_mode = selected_val
                 lbl = dict(BA_VIEW_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"BA 理论显示已切换为: {lbl}")
             elif dd_name == "OBS_VIEW_DROPDOWN":
                 self.obs_view_mode = selected_val
                 lbl = dict(OBS_VIEW_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"实测识别显示已切换为: {lbl}")
-            elif dd_name == "VIEW_DROPDOWN":
-                self.view_mode = selected_val
-                if selected_val == "3d":
-                    self.ba_view_mode = "3d"
-                    self.obs_view_mode = "3d"
-                elif selected_val == "2d":
-                    self.ba_view_mode = "2d"
-                    self.obs_view_mode = "2d"
-                lbl = dict(VIEW_MODE_OPTIONS).get(selected_val, selected_val)
-                self.set_toast(f"显示模式已切换为: {lbl}")
             elif dd_name == "FILTER_DROPDOWN":
                 self.filter_mode = selected_val
                 self.scroll_offset = 0

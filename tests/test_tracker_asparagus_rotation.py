@@ -25,7 +25,8 @@ from tools.tracker.common import (
 )
 from tools.tracker.app import RobotOnlineTracker
 from tools.tracker.renderer import TrackerRenderer
-from src.calibration.offline_engine import OfflineVerificationEngine
+from src.calibration.pnp_solver import PnpSolver
+from src.calibration.tag_detector import TagDetector
 
 
 class TestTrackerAsparagusRotation(unittest.TestCase):
@@ -38,12 +39,13 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         self.dist_coeffs = np.zeros(5, dtype=np.float64)
         self.marker_size_mm = 50.0
 
-        self.engine = OfflineVerificationEngine(
+        self.pnp_solver = PnpSolver(
             tags_map={},
             camera_matrix=self.camera_matrix,
             dist_coeffs=self.dist_coeffs,
             marker_size_mm=self.marker_size_mm
         )
+        self.tag_detector = TagDetector(valid_tag_ids=None)
 
         # 实例化轻量 tracker
         self.tracker = RobotOnlineTracker.__new__(RobotOnlineTracker)
@@ -54,7 +56,8 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         self.tracker.world_locked = False
         self.tracker.locked_rvec = None
         self.tracker.locked_tvec = None
-        self.tracker.engine = self.engine
+        self.tracker.pnp_solver = self.pnp_solver
+        self.tracker.tag_detector = self.tag_detector
         self.tracker.support_ids = []
         self.tracker.rmse = None
         self.tracker.measured = None
@@ -89,13 +92,13 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         t_gt = np.array([50.0, -30.0, 800.0], dtype=np.float64).reshape((3, 1))
 
         # 投影 4 个角点
-        obj_pts = self.engine.obj_points
+        obj_pts = self.pnp_solver.obj_points
         rvec_gt, _ = cv2.Rodrigues(R_gt)
         proj_pts, _ = cv2.projectPoints(obj_pts, rvec_gt, t_gt, self.camera_matrix, self.dist_coeffs)
         corners_2d = proj_pts.reshape((4, 2))
 
-        # 调用 engine.solve_single_tag_pnp
-        ok, rvec_est, tvec_est = self.engine.solve_single_tag_pnp(corners_2d, expected_z_cam=np.array([0, 0, 1]))
+        # 调用 pnp_solver.solve_single_tag_pnp
+        ok, rvec_est, tvec_est = self.pnp_solver.solve_single_tag_pnp(corners_2d, expected_z_cam=np.array([0, 0, 1]))
         self.assertTrue(ok)
         self.assertIsNotNone(rvec_est)
         self.assertIsNotNone(tvec_est)
@@ -138,12 +141,12 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         tvec_c = np.array([10.0, 20.0, 600.0], dtype=np.float64)
 
         # 投影角点
-        proj_pts, _ = cv2.projectPoints(self.engine.obj_points, rvec_c, tvec_c, self.camera_matrix, self.dist_coeffs)
+        proj_pts, _ = cv2.projectPoints(self.pnp_solver.obj_points, rvec_c, tvec_c, self.camera_matrix, self.dist_coeffs)
         det = {2: proj_pts.reshape((4, 2))}
 
         # 执行 solve_frame
         # 模拟全景与ROI重检直接返回 det
-        self.tracker.engine.detect_tags = lambda frame: det
+        self.tracker.tag_detector.detect_tags = lambda frame: det
         self.tracker._detect_high_precision = lambda frame, d: d
 
         fake_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
@@ -374,7 +377,7 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
             "target_tvec": np.array([10.0, 20.0, 800.0]),
         }
         self.tracker._solve_per_frame = lambda det: fake_sol
-        self.tracker.engine.detect_tags = lambda frame: {2: np.zeros((4, 2))}
+        self.tracker.tag_detector.detect_tags = lambda frame: {2: np.zeros((4, 2))}
         self.tracker._detect_high_precision = lambda f, d: d
 
         self.tracker.measured = None

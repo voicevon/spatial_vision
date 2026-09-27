@@ -85,7 +85,7 @@ class TestDecoupledBARunner(unittest.TestCase):
             map_path=self.map_path,
             image_dir=self.ws_dir,
             manifest_path=self.manifest_path,
-            engine=None,
+            pnp_solver=None,
             marker_size_mm=50.0
         )
         runner = MappingBARunner(
