@@ -85,45 +85,51 @@ class TestWorkspaceHub(unittest.TestCase):
 
         # 模拟生成并抓拍一帧
         test_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
-        saved_file = state.save_capture_frame(test_frame)
+        saved_file = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file))
         self.assertEqual(cur_ws.image_count, 1)
-        self.assertEqual(len(state.current_images), 1)
+        self.assertEqual(len(state.gallery.current_images), 1)
 
         # 再次抓拍第二帧
-        saved_file2 = state.save_capture_frame(test_frame)
+        saved_file2 = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file2))
         self.assertEqual(cur_ws.image_count, 2)
-        self.assertEqual(len(state.current_images), 2)
+        self.assertEqual(len(state.gallery.current_images), 2)
 
     def test_hub_renderer_canvas(self):
-        """测试 HubRenderer 双缓冲画布在四页签与全宽大图模式下的渲染输出有效性 (960x720)"""
+        """测试 HubRenderer 双缓冲画布在宏观工位页签与微观坐标系页签下的渲染输出 (960x720)"""
         state = HubState(self.workspace_mgr, force_mock=True)
         renderer = HubRenderer()
 
-        # 1. 渲染体检报告页签 (默认)
+        # 1. 渲染工位大盘看板 (默认)
         self.assertEqual(state.active_tab, HubState.TAB_REPORT)
+        canvas_report = renderer.render(state)
+        self.assertEqual(canvas_report.shape, (720, 960, 3))
+
+        # 2. 渲染标定相册页签
+        state.set_tab(HubState.TAB_CALIB_IMAGES)
         canvas_calib = renderer.render(state)
         self.assertEqual(canvas_calib.shape, (720, 960, 3))
 
-        # 2. 渲染生产相册页签
+        # 3. 渲染生产相册页签
         state.set_tab(HubState.TAB_PROD_IMAGES)
         canvas_prod = renderer.render(state)
         self.assertEqual(canvas_prod.shape, (720, 960, 3))
 
-        # 3. 渲染体检报告页签
-        state.set_tab(HubState.TAB_REPORT)
-        canvas_report = renderer.render(state)
-        self.assertEqual(canvas_report.shape, (720, 960, 3))
+        # 4. 切换到微观坐标系视图并渲染【外参位姿&Tag分段】和【3D ROI】
+        state.select_tree_frame(0, "world")
+        self.assertEqual(state.active_tab, HubState.TAB_FRAME_POSE_TAGS)
+        canvas_pose = renderer.render(state)
+        self.assertEqual(canvas_pose.shape, (720, 960, 3))
 
-        # 4. 渲染 Tag 白名单页签
-        state.set_tab(HubState.TAB_WHITELIST)
-        canvas_wl = renderer.render(state)
-        self.assertEqual(canvas_wl.shape, (720, 960, 3))
+        state.set_tab(HubState.TAB_FRAME_ROIS)
+        canvas_rois = renderer.render(state)
+        self.assertEqual(canvas_rois.shape, (720, 960, 3))
 
         # 5. 渲染全宽大图沉浸视图
+        state.select_tree_workspace(0)
         state.set_tab(HubState.TAB_CALIB_IMAGES)
-        state.set_view_mode(HubState.VIEW_EXPANDED)
+        state.gallery.set_view_mode(HubState.VIEW_EXPANDED)
         canvas_exp = renderer.render(state)
         self.assertEqual(canvas_exp.shape, (720, 960, 3))
 

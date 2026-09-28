@@ -1,0 +1,184 @@
+# -*- coding: utf-8 -*-
+"""
+Workspace Hub 工位生命周期业务处理器 (WorkspaceHandler)
+=====================================================
+负责：
+1. 工位创建 (支持中文别名与自动化目录骨架搭建)
+2. 工位克隆 (深拷贝标定数据与相对坐标系树)
+3. 工位重命名与备注说明即时修改
+4. 工位安全删除与唯一工位防误删保护
+5. 物理磁盘与元数据一致性自愈 (自动修复图片计数与统计指标)
+6. 跨平台操作系统文件浏览器打开工位目录
+"""
+
+import os
+import sys
+import subprocess
+from typing import Any
+
+from src.utils.dialog_utils import prompt_confirm, prompt_input_text
+
+
+class WorkspaceHandler:
+    """工位生命周期与数据一致性处理器"""
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    @property
+    def state(self):
+        return self.app.state
+
+    @property
+    def workspace_mgr(self):
+        return self.app.workspace_mgr
+
+    def handle_open_directory(self):
+        """在系统资源管理器中打开工位目录"""
+        ws = self.state.get_selected_workspace()
+        if ws and os.path.exists(ws.workspace_dir):
+            try:
+                if sys.platform == "win32":
+                    os.startfile(ws.workspace_dir)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", ws.workspace_dir])
+                else:
+                    subprocess.run(["xdg-open", ws.workspace_dir])
+                self.state.set_toast(f"已在资源管理器中打开: {ws.name}")
+            except Exception as e:
+                self.state.set_toast(f"打开目录异常: {e}")
+
+    def handle_rename_workspace(self):
+        """修改 Workspace 显示名称 (支持中文)"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            return
+
+        new_name = prompt_input_text(
+            "修改 Workspace 名称",
+            f"请输入 Workspace【{ws.name}】的新显示名称\n(支持中文、英文、数字，如: 1号机台主标定):",
+            initial=ws.name
+        )
+        if new_name and new_name != ws.name:
+            self.state.rename_current_workspace(new_name)
+
+    def handle_edit_description(self):
+        """修改 Workspace 备注说明 (支持中文单行文本)"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            return
+
+        cur_desc = getattr(ws, "description", "") or ""
+        new_desc = prompt_input_text(
+            "修改工位备注",
+            f"请输入工位【{ws.name}】的备注信息 (单行文本):",
+            initial=cur_desc
+        )
+        if new_desc is not None:
+            self.state.update_current_workspace_description(new_desc.strip())
+
+    def handle_create_workspace(self):
+        """新建 Workspace (支持中文名称弹窗)"""
+        idx = len(self.state.workspaces) + 1
+        default_alias = f"Workspace_{idx}"
+
+        chosen_name = prompt_input_text(
+            "新建 Workspace",
+            "请输入新 Workspace 名称/别名 (支持中文、英文、数字，如: 2号机架高位):",
+            initial=default_alias
+        )
+        if not chosen_name:
+            self.state.set_toast("已取消新建 Workspace。")
+            return
+
+        new_ws = self.workspace_mgr.create_workspace(alias=chosen_name, description=f"Workspace {chosen_name}")
+        self.state.refresh_workspaces()
+        target_idx = 0
+        for i, s in enumerate(self.state.workspaces):
+            if s.workspace_id == new_ws.workspace_id:
+                target_idx = i
+                break
+        self.state.select_workspace_at_index(target_idx)
+        self.state.set_toast(f"已成功新建 Workspace: 【{new_ws.name}】({new_ws.workspace_id})，按 [C] 开始采图！")
+
+    def handle_clone_workspace(self):
+        """克隆 Workspace (支持中文名称弹窗)"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何 Workspace，无法克隆！")
+            return
+
+        default_clone_name = f"{ws.name}_对照组"
+        chosen_name = prompt_input_text(
+            "克隆 Workspace",
+            f"请输入克隆后的新 Workspace 名称 (基于原 Workspace【{ws.name}】):",
+            initial=default_clone_name
+        )
+        if not chosen_name:
+            return
+
+        cloned = self.workspace_mgr.clone_workspace(ws.workspace_id, new_alias=chosen_name)
+        if cloned:
+            # 立即刷新 Workspace 列表
+            self.state.refresh_workspaces()
+            target_idx = 0
+            for i, s in enumerate(self.state.workspaces):
+                if s.workspace_id == cloned.workspace_id:
+                    target_idx = i
+                    break
+            self.state.select_workspace_at_index(target_idx)
+            self.state.set_toast(f"已成功克隆 Workspace: 【{cloned.name}】并定位至新 Workspace！")
+        else:
+            self.state.set_toast("克隆 Workspace 失败，请检查源目录！")
+
+    def handle_delete_workspace(self):
+        """删除当前选中的 Workspace"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何 Workspace，无法删除！")
+            return
+
+        if len(self.state.workspaces) <= 1:
+            self.state.set_toast("至少需保留一个工位，禁止删除唯一工位！")
+            return
+
+        confirmed = prompt_confirm(
+            "确认删除 Workspace",
+            f"确定要永久删除工位【{ws.name}】吗？\n\n物理ID: {ws.workspace_id}\n此操作将删除该工位的所有图片和标定数据，不可恢复！"
+        )
+        if not confirmed:
+            self.state.set_toast("已取消删除操作。")
+            return
+
+        ok, msg = self.workspace_mgr.delete_workspace(ws.workspace_id)
+        if ok:
+            self.state.refresh_workspaces()
+            self.state.set_toast(f"已成功删除工位: 【{ws.name}】")
+        else:
+            self.state.set_toast(f"删除工位失败: {msg}")
+
+    def handle_sync_data_consistency(self):
+        """核验物理磁盘与元数据一致性，重新扫描并自动自愈同步"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法核验！")
+            return
+
+        old_calib = ws.image_count
+        old_prod = ws.prod_image_count
+
+        # 1. 强制重新扫描物理磁盘并更新元数据
+        ws.refresh_stats()
+        ws.save_meta()
+
+        # 2. 刷新相册与列表数据
+        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_prod_images()
+        self.state.refresh_workspaces()
+
+        diff_calib = ws.image_count - old_calib
+        diff_prod = ws.prod_image_count - old_prod
+        if diff_calib == 0 and diff_prod == 0:
+            self.state.set_toast(f"一致性核验完成: 物理与元数据已是最新 (标定 {ws.image_count} 帧, 生产 {ws.prod_image_count} 帧)")
+        else:
+            self.state.set_toast(f"已同步数据一致性: 标定 {old_calib}→{ws.image_count} 帧, 生产 {old_prod}→{ws.prod_image_count} 帧")

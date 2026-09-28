@@ -68,7 +68,7 @@ class HubHitTester:
 
             # 若工位展开，渲染其坐标系子节点
             if is_expanded:
-                mgr = state.get_workspace_coord_mgr(ws)
+                mgr = state.geometry.get_workspace_coord_mgr(ws)
                 frames = mgr.list_frames() if mgr else []
 
                 for f in frames:
@@ -124,13 +124,13 @@ class HubHitTester:
             return None
 
         # 0. 坐标系与 3D ROI 结构化弹窗模式 (最高交互层)
-        if state.frame_modal_open:
+        if state.geometry.frame_modal_open:
             mx_box, my_box = GEOM_MODAL_X, GEOM_MODAL_Y
             mw, mh = GEOM_MODAL_W, GEOM_MODAL_H
 
             # 0.a 活跃下拉框浮层检测 (浮层拥有最高层级交互优先级)
-            if state.active_dropdown in ("frame_type", "frame_parent"):
-                dd_data = self.r._get_dropdown_data(state.active_dropdown, state)
+            if state.geometry.active_dropdown in ("frame_type", "frame_parent"):
+                dd_data = self.r._get_dropdown_data(state.geometry.active_dropdown, state)
                 if dd_data:
                     (tx, ty, tw, th), cur_val, options = dd_data
                     drop_x = tx
@@ -139,9 +139,9 @@ class HubHitTester:
                     drop_h = len(options) * item_h
                     if drop_x <= mx <= drop_x + tw and drop_y <= my <= drop_y + drop_h:
                         opt_idx = min(len(options) - 1, max(0, (my - drop_y) // item_h))
-                        return ("dropdown_select", state.active_dropdown, options[opt_idx][0])
+                        return ("dropdown_select", state.geometry.active_dropdown, options[opt_idx][0])
                     if point_in_rect(mx, my, (tx, ty, tw, th)):
-                        return ("dropdown_toggle", state.active_dropdown)
+                        return ("dropdown_toggle", state.geometry.active_dropdown)
                     return "dropdown_dismiss"
 
             if point_in_rect(mx, my, GEOM_MODAL_CLOSE):
@@ -166,7 +166,7 @@ class HubHitTester:
                 return ("dropdown_toggle", "frame_parent")
 
             param_y = form_y + 128
-            d = state.frame_modal_data
+            d = state.geometry.frame_modal_data
             cur_type = d.get("type", "fixed_transform")
             if cur_type == "fixed_transform":
                 from tools.workspace_hub.hub_renderer import (
@@ -202,7 +202,7 @@ class HubHitTester:
                 return "frame_modal_mask"
             return "frame_modal_body"
 
-        if state.roi_modal_open:
+        if state.geometry.roi_modal_open:
             from tools.workspace_hub.hub_renderer import (
                 ROI_ROLE_BTN_SOURCE, ROI_ROLE_BTN_DEST, ROI_ROLE_BTN_KEEPOUT, ROI_ROLE_BTN_GENERAL,
                 ROI_INTENT_BTN_PICK, ROI_INTENT_BTN_COUNT, ROI_INTENT_BTN_OCC, ROI_INTENT_BTN_GEN,
@@ -212,8 +212,8 @@ class HubHitTester:
             mw, mh = GEOM_MODAL_W, GEOM_MODAL_H
 
             # 0.b 活跃下拉框浮层检测
-            if state.active_dropdown in ("roi_category", "roi_frame"):
-                dd_data = self.r._get_dropdown_data(state.active_dropdown, state)
+            if state.geometry.active_dropdown in ("roi_category", "roi_frame"):
+                dd_data = self.r._get_dropdown_data(state.geometry.active_dropdown, state)
                 if dd_data:
                     (tx, ty, tw, th), cur_val, options = dd_data
                     drop_x = tx
@@ -222,10 +222,11 @@ class HubHitTester:
                     drop_h = len(options) * item_h
                     if drop_x <= mx <= drop_x + tw and drop_y <= my <= drop_y + drop_h:
                         opt_idx = min(len(options) - 1, max(0, (my - drop_y) // item_h))
-                        return ("dropdown_select", state.active_dropdown, options[opt_idx][0])
+                        return ("dropdown_select", state.geometry.active_dropdown, options[opt_idx][0])
                     if point_in_rect(mx, my, (tx, ty, tw, th)):
-                        return ("dropdown_toggle", state.active_dropdown)
+                        return ("dropdown_toggle", state.geometry.active_dropdown)
                     return "dropdown_dismiss"
+
 
             if point_in_rect(mx, my, GEOM_MODAL_CLOSE):
                 return "roi_modal_close"
@@ -350,7 +351,7 @@ class HubHitTester:
                         return ("tree_frame_select", item["ws_idx"], item["frame_id"])
 
         # 右侧动态区页签内容按钮 (x: 340~960)
-        if state.view_mode == HubState.VIEW_EXPANDED:
+        if state.gallery.view_mode == HubState.VIEW_EXPANDED:
             if 58 <= my <= 92:
                 if 680 <= mx <= 740:
                     return "exp_prev"
@@ -360,22 +361,9 @@ class HubHitTester:
                     return "album_delete"
                 if 886 <= mx <= 950:
                     return "exp_restore"
-        elif 58 <= my <= 88:
-            # 坐标系与 ROI 页签: [刷新] [打开目录]
-            if state.active_tab == HubState.TAB_FRAMES_ROIS:
-                if 760 <= mx <= 846:
-                    return "geom_refresh"
-                if 854 <= mx <= 944:
-                    return "geom_open_dir"
-            # Tag 白名单页签: [刷新] [编辑]
-            elif state.active_tab == HubState.TAB_WHITELIST:
-                if 760 <= mx <= 846:
-                    return "wl_refresh"
-                if 854 <= mx <= 944:
-                    return "wl_edit"
 
         # 工位大盘看板 (TAB_REPORT) 卡片内嵌按钮
-        if state.active_tab == HubState.TAB_REPORT and state.view_mode == HubState.VIEW_STANDARD:
+        if state.active_tab == HubState.TAB_REPORT and state.gallery.view_mode == HubState.VIEW_STANDARD:
             if point_in_rect(mx, my, WS_BTN_RENAME):
                 return "ws_rename"
             if point_in_rect(mx, my, WS_BTN_OPEN_DIR):
@@ -394,16 +382,16 @@ class HubHitTester:
                 return "btn_add_frame"
 
         # 坐标系专属页签 1: 机构参数与 Tag 分段 (TAB_FRAME_POSE_TAGS)
-        if state.active_tab == HubState.TAB_FRAME_POSE_TAGS and state.view_mode == HubState.VIEW_STANDARD:
+        if state.active_tab == HubState.TAB_FRAME_POSE_TAGS and state.gallery.view_mode == HubState.VIEW_STANDARD:
             if point_in_rect(mx, my, FRAME_EDIT_POSE_BTN):
                 return "btn_edit_frame_pose"
             if point_in_rect(mx, my, FRAME_TAG_EDIT_SIZE_BTN):
                 return "btn_edit_marker_size"
             if self.r._should_show_tag_bound_tooltip(state, (mx, my)):
                 return "tag_bound_help"
-            cur_frame = state.get_selected_frame()
+            cur_frame = state.geometry.get_selected_frame()
             if cur_frame:
-                tag_range = state.get_frame_tag_range(cur_frame.frame_id)
+                tag_range = state.geometry.get_frame_tag_range(cur_frame.frame_id)
                 for slot_idx in range(10):
                     chip_rect = frame_tag_chip_rect(slot_idx)
                     if point_in_rect(mx, my, chip_rect):
@@ -414,16 +402,16 @@ class HubHitTester:
                         return ("frame_tag_toggle", tag_id)
 
         # 坐标系专属页签 2: 3D ROI 空间物件 (TAB_FRAME_ROIS)
-        if state.active_tab == HubState.TAB_FRAME_ROIS and state.view_mode == HubState.VIEW_STANDARD:
+        if state.active_tab == HubState.TAB_FRAME_ROIS and state.gallery.view_mode == HubState.VIEW_STANDARD:
             if point_in_rect(mx, my, FRAME_ADD_ROI_BTN):
                 return "btn_add_frame_roi"
-            cur_frame = state.get_selected_frame()
+            cur_frame = state.geometry.get_selected_frame()
             if cur_frame:
-                rois = state.get_frame_rois(cur_frame.frame_id)
+                rois = state.geometry.get_frame_rois(cur_frame.frame_id)
                 total_rois = len(rois)
                 max_vis = HubState.ROI_VISIBLE_COUNT
                 max_offset = max(0, total_rois - max_vis)
-                offset = max(0, min(getattr(state, "roi_scroll_offset", 0), max_offset))
+                offset = max(0, min(state.geometry.roi_scroll_offset, max_offset))
 
                 if total_rois > max_vis:
                     if point_in_rect(mx, my, FRAME_ROI_PREV_BTN):
@@ -440,30 +428,12 @@ class HubHitTester:
                     if point_in_rect(mx, my, frame_roi_del_btn(i)):
                         return ("frame_roi_delete", r.roi_id)
 
-        # 坐标系与 3D ROI 页签内的列表操作与新增按钮
-        if state.active_tab == HubState.TAB_FRAMES_ROIS and state.view_mode == HubState.VIEW_STANDARD:
-            if point_in_rect(mx, my, frame_btn_add_rect()):
-                return "btn_add_frame"
-            if point_in_rect(mx, my, roi_btn_add_rect()):
-                return "btn_add_roi"
-            frames = state.get_coordinate_frames()
-            for i, f in enumerate(frames[:3]):
-                if point_in_rect(mx, my, frame_row_edit_rect(i)):
-                    return ("frame_edit", i)
-                if f.frame_id != "world" and point_in_rect(mx, my, frame_row_del_rect(i)):
-                    return ("frame_del", i)
-            rois = state.get_roi_spaces()
-            for i in range(min(3, len(rois))):
-                if point_in_rect(mx, my, roi_row_edit_rect(i)):
-                    return ("roi_edit", i)
-                if point_in_rect(mx, my, roi_row_del_rect(i)):
-                    return ("roi_del", i)
-
         # 图片卡片网格墙卡片 Hover (标定相册与生产相册通用)
         if state.active_tab in (HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
             cell_idx = grid_hit_test(mx, my)
             if cell_idx is not None:
-                offset = state.prod_grid_offset if state.active_tab == HubState.TAB_PROD_IMAGES else state.image_grid_offset
+                offset = state.gallery.prod_grid_offset if state.active_tab == HubState.TAB_PROD_IMAGES else state.gallery.image_grid_offset
                 return ("grid_item", offset + cell_idx)
 
         return None
+

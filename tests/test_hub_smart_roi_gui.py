@@ -45,32 +45,32 @@ class TestHubSmartRoiGui(unittest.TestCase):
         state.select_workspace_at_index(0)
         
         # 1. 打开新建 ROI 弹窗
-        state.open_roi_modal()
-        self.assertTrue(state.roi_modal_open)
-        self.assertEqual(state.roi_modal_data["role"], "source")
-        self.assertEqual(state.roi_modal_data["target_intent"], "pose_pick")
-        self.assertEqual(state.roi_modal_data["binding"].get("slot_index"), 0)
+        state.geometry.open_roi_modal()
+        self.assertTrue(state.geometry.roi_modal_open)
+        self.assertEqual(state.geometry.roi_modal_data["role"], "source")
+        self.assertEqual(state.geometry.roi_modal_data["target_intent"], "pose_pick")
+        self.assertEqual(state.geometry.roi_modal_data["binding"].get("slot_index"), 0)
 
         # 2. 模拟点击切换角色为 destination (落料槽)
-        state.set_roi_modal_role("destination")
-        self.assertEqual(state.roi_modal_data["role"], "destination")
+        state.geometry.set_roi_modal_role("destination")
+        self.assertEqual(state.geometry.roi_modal_data["role"], "destination")
         
         # 3. 模拟点击切换意图为 piece_count
-        state.set_roi_modal_intent("piece_count")
-        self.assertEqual(state.roi_modal_data["target_intent"], "piece_count")
+        state.geometry.set_roi_modal_intent("piece_count")
+        self.assertEqual(state.geometry.roi_modal_data["target_intent"], "piece_count")
 
         # 4. 循环切换落料槽位
-        next_slot = state.cycle_roi_modal_slot()
+        next_slot = state.geometry.cycle_roi_modal_slot()
         self.assertEqual(next_slot, 1)
-        self.assertEqual(state.roi_modal_data["binding"]["slot_index"], 1)
+        self.assertEqual(state.geometry.roi_modal_data["binding"]["slot_index"], 1)
 
         # 5. 保存 ROI
-        state.roi_modal_data["roi_id"] = "tray_slot_1"
-        state.roi_modal_data["name"] = "1号分选槽"
-        state.roi_modal_data["size_xyz_mm"] = [100.0, 150.0, 50.0]
-        ok, msg = state.save_roi_modal()
+        state.geometry.roi_modal_data["roi_id"] = "tray_slot_1"
+        state.geometry.roi_modal_data["name"] = "1号分选槽"
+        state.geometry.roi_modal_data["size_xyz_mm"] = [100.0, 150.0, 50.0]
+        ok, msg = state.geometry.save_roi_modal()
         self.assertTrue(ok, f"保存失败: {msg}")
-        self.assertFalse(state.roi_modal_open)
+        self.assertFalse(state.geometry.roi_modal_open)
 
         # 6. 从持久化磁盘重新读取验证
         reloaded_mgr = RoiSpaceManager(self.ws.workspace_id, rois_yaml_path=self.ws.rois_path)
@@ -119,12 +119,13 @@ class TestHubSmartRoiGui(unittest.TestCase):
         self.assertEqual(canvas1.shape, (720, 960, 3))
 
         # 2. ROI 列表页签渲染 (工位多坐标系与 ROI 集合)
-        state.active_tab = HubState.TAB_FRAMES_ROIS
+        state.select_tree_frame(0, "world")
+        state.active_tab = HubState.TAB_FRAME_ROIS
         canvas2 = self.renderer.render(state)
         self.assertEqual(canvas2.shape, (720, 960, 3))
 
         # 3. 打开 Smart ROI 弹窗渲染
-        state.open_roi_modal()
+        state.geometry.open_roi_modal()
         canvas3 = self.renderer.render(state)
         self.assertEqual(canvas3.shape, (720, 960, 3))
         # 确保没有崩溃抛错且画布内容非全黑

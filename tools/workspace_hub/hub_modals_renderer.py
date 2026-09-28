@@ -175,7 +175,7 @@ class HubModalsRenderer:
         form_y = my_box + 56
         if dd_type == "frame_type":
             rect = (mx_box + 115, form_y + 40, 360, 28)
-            cur_val = state.frame_modal_data.get("type", "fixed_transform")
+            cur_val = state.geometry.frame_modal_data.get("type", "fixed_transform")
             options = [
                 ("fixed_transform", "固定刚体外参 (平移 + 旋转)"),
                 ("tag_bound", "AprilTag 动标绑定 (动态跟踪)")
@@ -184,9 +184,9 @@ class HubModalsRenderer:
 
         if dd_type == "frame_parent":
             rect = (mx_box + 115, form_y + 80, 360, 28)
-            cur_val = state.frame_modal_data.get("parent_frame_id", "world")
-            cur_fid = state.frame_modal_data.get("frame_id")
-            frames = state.get_coordinate_frames()
+            cur_val = state.geometry.frame_modal_data.get("parent_frame_id", "world")
+            cur_fid = state.geometry.frame_modal_data.get("frame_id")
+            frames = state.geometry.get_coordinate_frames()
             options = [("world", "world (世界基准绝对原点)")]
             for f in frames:
                 if f.frame_id != cur_fid and f.frame_id != "world":
@@ -196,7 +196,7 @@ class HubModalsRenderer:
         roi_form_y = my_box + 46
         if dd_type == "roi_category":
             rect = (mx_box + 110, roi_form_y + 36, 220, 28)
-            cur_val = state.roi_modal_data.get("category", "belt")
+            cur_val = state.geometry.roi_modal_data.get("category", "belt")
             options = [
                 ("belt", "同步带工作面 (belt)"),
                 ("wheel", "驱动轮干涉区 (wheel)"),
@@ -207,8 +207,8 @@ class HubModalsRenderer:
 
         if dd_type == "roi_frame":
             rect = (mx_box + 425, roi_form_y + 36, 225, 28)
-            cur_val = state.roi_modal_data.get("frame_id", "world")
-            frames = state.get_coordinate_frames()
+            cur_val = state.geometry.roi_modal_data.get("frame_id", "world")
+            frames = state.geometry.get_coordinate_frames()
             options = [("world", "world (世界基准绝对原点)")]
             for f in frames:
                 if f.frame_id != "world":
@@ -219,7 +219,7 @@ class HubModalsRenderer:
 
     def render_active_dropdown(self, canvas: np.ndarray, state: HubState):
         """在弹窗顶层高亮绘制当前展开的下拉菜单浮层 (委托给公共 render_dropdown_popup 控件)"""
-        dd_type = state.active_dropdown
+        dd_type = state.geometry.active_dropdown
         if not dd_type:
             return
         dd_data = self.get_dropdown_data(dd_type, state)
@@ -233,8 +233,8 @@ class HubModalsRenderer:
 
     def render_frame_modal(self, canvas: np.ndarray, state: HubState):
         """渲染机构相对坐标系结构化表单弹窗"""
-        d = state.frame_modal_data
-        title_prefix = "新建机构相对坐标系" if state.frame_modal_is_new else f"编辑坐标系: 【{d.get('name', '')}】"
+        d = state.geometry.frame_modal_data
+        title_prefix = "新建机构相对坐标系" if state.geometry.frame_modal_is_new else f"编辑坐标系: 【{d.get('name', '')}】"
         mx, my, mw, mh, mpos = self.render_modal_scaffold(canvas, state, title_prefix, border_col=(0, 240, 220))
 
         # 表单字段排布
@@ -253,13 +253,13 @@ class HubModalsRenderer:
         cur_type = d.get("type", "fixed_transform")
         type_label = "固定刚体外参 (平移 + 旋转)" if cur_type == "fixed_transform" else "AprilTag 动标绑定 (动态跟踪)"
         self.draw_dropdown_trigger(canvas, (mx + 115, type_y, 360, 28), type_label, mpos,
-                                   is_open=(state.active_dropdown == "frame_type"))
+                                   is_open=(state.geometry.active_dropdown == "frame_type"))
 
         # 3. 挂载父坐标系下拉框
         parent_y = form_y + 80
         draw_text(canvas, "父坐标系:", (mx + 24, parent_y + 4), font_size=13, color=self.r.COLOR_GRAY)
         cur_parent = d.get("parent_frame_id", "world")
-        frames = state.get_coordinate_frames()
+        frames = state.geometry.get_coordinate_frames()
         p_name = "世界基准绝对原点" if cur_parent == "world" else ""
         for f in frames:
             if f.frame_id == cur_parent:
@@ -267,7 +267,7 @@ class HubModalsRenderer:
                 break
         parent_label = f"[{cur_parent}] {p_name}" if p_name else f"[{cur_parent}]"
         self.draw_dropdown_trigger(canvas, (mx + 115, parent_y, 360, 28), parent_label, mpos,
-                                   is_open=(state.active_dropdown == "frame_parent"))
+                                   is_open=(state.geometry.active_dropdown == "frame_parent"))
 
         # 4. 几何参数根据类型切换
         param_y = form_y + 128
@@ -347,8 +347,8 @@ class HubModalsRenderer:
             ROI_INTENT_BTN_PICK, ROI_INTENT_BTN_COUNT, ROI_INTENT_BTN_OCC, ROI_INTENT_BTN_GEN,
             ROI_BIND_SLOT_BTN, ROI_BIND_CAP_BTN, ROI_BIND_CONF_BTN
         )
-        d = state.roi_modal_data
-        title_prefix = "新建 3D Smart ROI 空间物件" if state.roi_modal_is_new else f"编辑 Smart ROI: 【{d.get('name', '')}】"
+        d = state.geometry.roi_modal_data
+        title_prefix = "新建 3D Smart ROI 空间物件" if state.geometry.roi_modal_is_new else f"编辑 Smart ROI: 【{d.get('name', '')}】"
         mx, my, mw, mh, mpos = self.render_modal_scaffold(canvas, state, title_prefix, border_col=(0, 255, 180))
 
         # 表单字段排布
@@ -373,11 +373,11 @@ class HubModalsRenderer:
         }
         cat_label = cat_map.get(cur_cat, f"{cur_cat}")
         self.draw_dropdown_trigger(canvas, (mx + 110, cat_y, 220, 28), cat_label, mpos,
-                                   is_open=(state.active_dropdown == "roi_category"))
+                                   is_open=(state.geometry.active_dropdown == "roi_category"))
 
         draw_text(canvas, "挂载系:", (mx + 355, cat_y + 4), font_size=13, color=self.r.COLOR_GRAY)
         cur_frame = d.get("frame_id", "world")
-        frames = state.get_coordinate_frames()
+        frames = state.geometry.get_coordinate_frames()
         f_name = "世界基准原点" if cur_frame == "world" else ""
         for f in frames:
             if f.frame_id == cur_frame:
@@ -385,7 +385,7 @@ class HubModalsRenderer:
                 break
         frame_label = f"[{cur_frame}] {f_name}" if f_name else f"[{cur_frame}]"
         self.draw_dropdown_trigger(canvas, (mx + 425, cat_y, 225, 28), frame_label, mpos,
-                                   is_open=(state.active_dropdown == "roi_frame"))
+                                   is_open=(state.geometry.active_dropdown == "roi_frame"))
 
         # 3. ★ Smart ROI 工业生产语义与工艺属性面板 (第三行大卡片)
         smart_y = form_y + 72
@@ -490,10 +490,10 @@ class HubModalsRenderer:
         cv2.rectangle(canvas, (MX + 3, MY + 3), (MX + MW - 3, MY + MH - 3), (40, 50, 66), 1)
 
         # 标题栏
-        tag_id = state.anchor_modal_tag
+        tag_id = state.whitelist.anchor_modal_tag
         draw_text(canvas, f"Tag #{tag_id:02d} 物理锚点坐标 (支持部分已知)", (MX + 18, MY + 12),
                   font_size=15, color=GuiTheme.WHITE, bold=True)
-        n_known = sum(1 for b in state.anchor_modal_known if b)
+        n_known = sum(1 for b in state.whitelist.anchor_modal_known if b)
         if n_known == 3:
             status_desc, status_col = "完整锚点 (三轴已知)", (0, 230, 150)
         elif n_known >= 1:
@@ -507,24 +507,24 @@ class HubModalsRenderer:
         for axis in range(3):
             rx, ry, rw, rh = anchor_row_rect(axis)
             hovered = point_in_rect(mpos[0], mpos[1], (rx, ry, rw, rh))
-            is_sel = (state.anchor_axis_sel == axis)
-            is_known = bool(state.anchor_modal_known[axis])
+            is_sel = (state.whitelist.anchor_axis_sel == axis)
+            is_known = bool(state.whitelist.anchor_modal_known[axis])
             row_bg = (30, 38, 52) if is_sel else ((36, 42, 54) if hovered else (26, 30, 40))
             cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh), row_bg, -1)
             cv2.rectangle(canvas, (rx, ry), (rx + rw, ry + rh),
                           (0, 200, 240) if is_sel else (60, 70, 88), 1)
             draw_text(canvas, "XYZ"[axis], (rx + 12, ry + 9), font_size=14,
                       color=(0, 255, 200) if is_known else (150, 160, 175), bold=True)
-            if is_sel and state.anchor_axis_buf:
-                val_text, val_col = state.anchor_axis_buf + "_", GuiTheme.WHITE
+            if is_sel and state.whitelist.anchor_axis_buf:
+                val_text, val_col = state.whitelist.anchor_axis_buf + "_", GuiTheme.WHITE
             elif is_known:
-                val_text, val_col = f"{state.anchor_modal_xyz[axis]:.1f}", GuiTheme.WHITE
+                val_text, val_col = f"{state.whitelist.anchor_modal_xyz[axis]:.1f}", GuiTheme.WHITE
             else:
                 val_text, val_col = "? (未知)", (0, 220, 255)
             draw_text(canvas, val_text, (rx + 42, ry + 8), font_size=15, color=val_col, bold=True)
             know_text = "已知" if is_known else "待BA求解"
             draw_text(canvas, know_text, (rx + 180, ry + 10), font_size=12,
-                      color=(0, 220, 140) if is_known else (0, 200, 230))
+                       color=(0, 220, 140) if is_known else (0, 200, 230))
             # 行内 [设为未知] 按钮
             cx, cy, cw, ch = anchor_clear_rect(axis)
             chov = point_in_rect(mpos[0], mpos[1], (cx, cy, cw, ch))
@@ -578,11 +578,11 @@ class HubModalsRenderer:
         cv2.rectangle(canvas, (MX + 3, MY + 3), (MX + MW - 3, MY + MH - 3), (40, 52, 68), 1)
 
         # 3. 标题与状态提示
-        fid = state.frame_modal_data.get("name") or state.frame_modal_data.get("frame_id", "坐标系")
+        fid = state.geometry.frame_modal_data.get("name") or state.geometry.frame_modal_data.get("frame_id", "坐标系")
         draw_text(canvas, f"编辑 6DoF 外参位姿与约束: 【{fid}】", (MX + 20, MY + 14),
                   font_size=15, color=GuiTheme.WHITE, bold=True)
 
-        n_known = sum(1 for b in state.pose6d_modal_known if b)
+        n_known = sum(1 for b in state.geometry.pose6d_modal_known if b)
         if n_known == 0:
             st_desc, st_col = "全未知模式 (外参全由视觉标靶经 BA 平差自动反推)", (0, 210, 255)
         elif n_known == 6:
@@ -609,8 +609,8 @@ class HubModalsRenderer:
 
         for axis in range(6):
             rx, ry, rw, rh = pose6d_row_rect(axis)
-            is_sel = (state.pose6d_modal_axis_sel == axis)
-            is_known = bool(state.pose6d_modal_known[axis])
+            is_sel = (state.geometry.pose6d_modal_axis_sel == axis)
+            is_known = bool(state.geometry.pose6d_modal_known[axis])
             hov = point_in_rect(mpos[0], mpos[1], (rx, ry, rw, rh))
 
             row_bg = (34, 44, 58) if is_sel else ((32, 38, 48) if hov else (24, 28, 36))
@@ -622,10 +622,10 @@ class HubModalsRenderer:
                       color=(0, 255, 200) if is_known else (150, 165, 185), bold=True)
 
             # 数值或状态
-            if is_sel and state.pose6d_modal_axis_buf:
-                val_text, val_col = state.pose6d_modal_axis_buf + "_", GuiTheme.WHITE
+            if is_sel and state.geometry.pose6d_modal_axis_buf:
+                val_text, val_col = state.geometry.pose6d_modal_axis_buf + "_", GuiTheme.WHITE
             elif is_known:
-                val_text, val_col = f"{state.pose6d_modal_vals[axis]:.1f} {axis_units[axis]}", GuiTheme.WHITE
+                val_text, val_col = f"{state.geometry.pose6d_modal_vals[axis]:.1f} {axis_units[axis]}", GuiTheme.WHITE
             else:
                 val_text, val_col = "? (待BA求解)", (0, 210, 255)
             draw_text(canvas, val_text, (rx + 95, ry + 11), font_size=13, color=val_col, bold=True)
@@ -777,7 +777,7 @@ class HubModalsRenderer:
         cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), (12, 16, 22), -1)
         cv2.rectangle(canvas, (bx, by), (bx + bw, by + bh), (0, 240, 220), 2)
 
-        buf_str = state.marker_size_buf or ""
+        buf_str = state.whitelist.marker_size_buf or ""
         disp_txt = f"{buf_str}_ mm" if buf_str else "请输入边长 (如 35.5) mm"
         val_col = (0, 255, 220) if buf_str else (100, 115, 130)
         draw_text(canvas, disp_txt, (bx + 14, by + 11), font_size=18, color=val_col, bold=True)
