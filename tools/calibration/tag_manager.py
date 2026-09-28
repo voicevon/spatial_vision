@@ -21,7 +21,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from src.utils.gui_window_manager import GuiWindowManager
 from src.utils.gui_theme import GuiTheme
 from src.utils.text_rendering import draw_text
-from src.utils.gui_components import draw_app_header
+from src.utils.gui_components import draw_app_header, TabBar, TabItem
 from src.utils.config_guard import load_raw_config
 from src.calibration.workspace_manager import (
     WorkspaceManager,
@@ -82,17 +82,23 @@ class TagManager:
         )
         self.app_id = self.APP_ID
 
-        # —— 状态 ——
-        self.active_tab = "generator"     # "generator" | "whitelist"
+        # —— 通用 TabBar 组件 (管理页签状态流转与单源排版) ——
+        self.tab_bar = TabBar(
+            tabs=[
+                TabItem(key="generator", label="📐 图纸生成"),
+                TabItem(key="whitelist", label="✅ 白名单管理"),
+            ],
+            active_key="generator",
+            style=TabBar.STYLE_PILL,
+            tab_height=30,
+            spacing=8,
+            fixed_width=140,
+            font_size=12,
+            on_change=lambda _: self._save_settings(),
+        )
         self._quit_requested = False
         self.mouse_pos = (0, 0)
         self.gui_buttons = []             # 每帧重建, 用于 hit-test
-
-        # —— Tab 定义 ——
-        self.tabs = [
-            {"key": "generator", "label": "📐 图纸生成",  "desc": "生成 AprilTag PDF/PNG"},
-            {"key": "whitelist", "label": "✅ 白名单管理", "desc": "0~29 Tag ID 开关"},
-        ]
 
         # —— Tab 1: 图纸生成参数 ——
         self.gen_tag_count = 30
@@ -112,6 +118,14 @@ class TagManager:
         self.anchor_edit = None
 
         self._load_settings()
+
+    @property
+    def active_tab(self) -> str:
+        return self.tab_bar.active_key or "generator"
+
+    @active_tab.setter
+    def active_tab(self, key: str):
+        self.tab_bar.select(key)
 
     # ================================================================
     # 持久化
@@ -331,33 +345,17 @@ class TagManager:
         # 1.1 左侧品牌 LOGO 与模块名称
         tabs_start_x = draw_app_header(canvas, x=12, y=7, sub_title="AprilTag 管理器", icon_size=32)
 
-        # 1.2 中间 Tab 选项卡按钮组
+        # 1.2 中间 Tab 选项卡按钮组 (由通用 TabBar 统一排版与渲染)
         bx = tabs_start_x + 10
         btn_h = 30
         by1 = (self.TOOLBAR_H - btn_h) // 2
-        by2 = by1 + btn_h
-
-        for tab in self.tabs:
-            active = (tab["key"] == self.active_tab)
-            bw = 140
-            bx1, bx2 = bx, bx + bw
-            hover = self._is_hover(bx1, by1, bx2, by2)
-
-            if active:
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.CARD_SEL, -1)
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.ACCENT, 2)
-                draw_text(canvas, tab["label"], (bx1 + 14, by1 + 19), font_size=12, color=GuiTheme.ACCENT, bold=True)
-            elif hover:
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.CARD_HOVER, -1)
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.BORDER_SEL, 1)
-                draw_text(canvas, tab["label"], (bx1 + 14, by1 + 19), font_size=12, color=GuiTheme.BTN_TEXT_HOVER, bold=True)
-            else:
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.CARD_BG, -1)
-                cv2.rectangle(canvas, (bx1, by1), (bx2, by2), GuiTheme.BORDER, 1)
-                draw_text(canvas, tab["label"], (bx1 + 14, by1 + 19), font_size=12, color=GuiTheme.BTN_TEXT, bold=False)
-
-            self.gui_buttons.append((f"TAB_{tab['key']}", (bx1, by1, bx2, by2), tab["key"]))
-            bx += bw + 8
+        tab_layout = self.tab_bar.render(
+            canvas,
+            container_rect=(bx, by1, 320, btn_h),
+            mouse_pos=self.mouse_pos,
+        )
+        for key, (x1, y1, w, h) in tab_layout:
+            self.gui_buttons.append((f"TAB_{key}", (x1, y1, x1 + w, y1 + h), key))
 
         # 1.3 右上角统一退出按钮
         qx2 = canvas_w - 12

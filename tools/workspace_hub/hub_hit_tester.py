@@ -21,19 +21,11 @@ class HubHitTester:
         self.r = parent_renderer
 
     def get_tabs_layout(self, state: HubState) -> List[Tuple[str, str, Tuple[int, int, int, int]]]:
-        """计算顶部 Tab 胶囊的动态布局矩形 (自适应工位 3 页签与坐标系 2 页签)"""
-        from tools.workspace_hub.hub_renderer import HEADER_TAB_Y0, HEADER_TAB_H
-        tabs = state.get_current_tabs()
-        n = len(tabs)
-        tab_w = 148 if n == 2 else 115
-        tab_step = tab_w + 12
-        start_x = 348
-        res = []
-        for idx, (tab_key, tab_label) in enumerate(tabs):
-            tx = start_x + idx * tab_step
-            rect = (tx, HEADER_TAB_Y0, tab_w, HEADER_TAB_H)
-            res.append((tab_key, tab_label, rect))
-        return res
+        """计算顶部 Tab 胶囊的动态布局矩形 (委托给统一 TabBar 组件)"""
+        from tools.workspace_hub.hub_renderer import HEADER_TAB_X0, HEADER_TAB_Y0, HEADER_TAB_H
+        layout = state.tab_bar.compute_layout((HEADER_TAB_X0, HEADER_TAB_Y0, 510, HEADER_TAB_H))
+        label_map = {it.key: it.label for it in state.tab_bar.items}
+        return [(k, label_map.get(k, k), r) for k, r in layout]
 
     def get_tree_layout(self, state: HubState) -> List[dict]:
         """计算左侧两层树结构各项的几何矩形与数据标识，供渲染与点击测试统一使用"""
@@ -324,9 +316,12 @@ class HubHitTester:
         # 1. 常规看板模式
         # 顶部 Header 交互 (右侧动态区页签 Tab + [退出] 按钮)
         if 0 <= my <= 50:
-            for tab_key, tab_label, rect in self.get_tabs_layout(state):
-                if point_in_rect(mx, my, rect):
-                    return ("hdr_tab_key", tab_key)
+            if not state.tab_bar._last_layout:
+                from tools.workspace_hub.hub_renderer import HEADER_TAB_X0, HEADER_TAB_Y0, HEADER_TAB_H
+                state.tab_bar.compute_layout((HEADER_TAB_X0, HEADER_TAB_Y0, 510, HEADER_TAB_H))
+            hit_tab = state.tab_bar.hit_test(mx, my)
+            if hit_tab:
+                return ("hdr_tab_key", hit_tab)
             # [退出] 按钮
             if BTN_EXIT_X0 <= mx <= BTN_EXIT_X0 + BTN_EXIT_W and BTN_EXIT_Y0 <= my <= BTN_EXIT_Y0 + BTN_EXIT_H:
                 return "btn_exit"

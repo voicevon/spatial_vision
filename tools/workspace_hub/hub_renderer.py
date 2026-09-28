@@ -448,31 +448,9 @@ class HubRenderer:
         self._draw_button(canvas, (BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H), "退出", mpos, theme_color=(180, 60, 60))
 
     def _render_header_tabs(self, canvas: np.ndarray, state: HubState):
-        """渲染顶部自适应 Tab 胶囊 (工位视图 3 页签，坐标系专属视图 2 页签)"""
+        """渲染顶部自适应 Tab 胶囊 (委托给统一通用 TabBar 控件)"""
         mpos = (state.mouse_x, state.mouse_y)
-        tabs_layout = self._get_tabs_layout(state)
-
-        for tab_key, tab_text, rect in tabs_layout:
-            tx, ty, tw, th = rect
-            is_active_tab = (state.active_tab == tab_key)
-            is_hover_tab = (tx <= mpos[0] <= tx + tw and ty <= mpos[1] <= ty + th)
-
-            approx_w = sum(13 if ord(c) > 127 else 8 for c in tab_text)
-            text_x = tx + max(4, (tw - approx_w) // 2)
-
-            if is_active_tab:
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (28, 44, 40), -1)
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (0, 255, 180), 2)
-                cv2.rectangle(canvas, (tx + 8, ty + th - 3), (tx + tw - 8, ty + th - 1), (0, 255, 180), -1)
-                draw_text(canvas, tab_text, (text_x, ty + 8), font_size=13, color=(0, 255, 200), bold=True)
-            elif is_hover_tab:
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (34, 40, 52), -1)
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (0, 200, 240), 1)
-                draw_text(canvas, tab_text, (text_x, ty + 8), font_size=13, color=(0, 220, 255))
-            else:
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (22, 27, 35), -1)
-                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), (45, 55, 72), 1)
-                draw_text(canvas, tab_text, (text_x, ty + 8), font_size=13, color=(160, 175, 195))
+        state.tab_bar.render(canvas, (HEADER_TAB_X0, HEADER_TAB_Y0, 510, HEADER_TAB_H), mouse_pos=mpos)
 
     def _draw_button(self, canvas: np.ndarray, rect: tuple[int, int, int, int], text: str,
                      mouse_pos: tuple[int, int], is_active: bool = False,
@@ -667,7 +645,7 @@ class HubRenderer:
         if help_btn_x <= mx <= help_btn_x + help_btn_w and help_btn_y <= my <= help_btn_y + help_btn_h:
             return True
         # 2. 如果是动标类型坐标系，悬停在动标参数卡片上亦弹出完整解释
-        cur_frame = state.get_selected_frame()
+        cur_frame = state.geometry.get_selected_frame()
         if cur_frame and cur_frame.type == "tag_bound":
             tag_box_y = c1_y + 70
             if card_x + 16 <= mx <= card_x + (box_w - 32) - 16 and tag_box_y <= my <= tag_box_y + 44:

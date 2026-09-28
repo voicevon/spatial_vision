@@ -140,7 +140,7 @@ class GeometryState:
         curr_cfg["allowed_ids"] = sorted(list(allowed))
         with open(wl_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(curr_cfg, f, allow_unicode=True)
-        self.hub.refresh_whitelist_cache()
+        self.hub.whitelist.refresh_whitelist_cache()
         action_desc = "放行" if now_allowed else "禁行"
         self.hub.set_toast(f"坐标系 [{frame_id}] 标靶 Tag #{tag_id} 已{action_desc} (已同步工位白名单)")
         return now_allowed
@@ -148,7 +148,7 @@ class GeometryState:
     def get_frame_tags_status(self, frame_id: str) -> list[int]:
         """获取当前坐标系在工位白名单中属于其分配区间的已放行 Tag ID 列表"""
         tag_range = set(self.get_frame_tag_range(frame_id))
-        wl = self.hub.get_tag_whitelist() or {}
+        wl = self.hub.whitelist.get_tag_whitelist() or {}
         allowed_set = set(wl.get("allowed_ids") or [])
         return sorted(list(tag_range.intersection(allowed_set)))
 

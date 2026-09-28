@@ -13,7 +13,8 @@
 所有控件均深度绑定 src.utils.gui_theme.GuiTheme 单源调色板。
 """
 
-from typing import Any, List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
@@ -496,6 +497,224 @@ def render_floating_tooltip(
         cur_y += line_height
 
     return (tx, ty, tw, th)
+
+
+@dataclass
+class TabItem:
+    """标准 Tab 页签项定义"""
+    key: str
+    label: str
+    badge: Optional[str] = None
+    badge_color: Optional[Tuple[int, int, int]] = None
+    enabled: bool = True
+    custom_width: Optional[int] = None
+
+
+class TabBar:
+    """跨应用通用的标准视觉 Tab 页签交互组件 (TabBar)
+    ==================================================
+    统一管理多窗口的 Tab 状态流转、单源排版几何计算、视觉渲染与 Hit-test 碰撞检测。
+    """
+    STYLE_CAPSULE = "capsule"   # 现代工业风发光胶囊卡片 (Workspace Hub 风格)
+    STYLE_PILL    = "pill"      # 圆角紧凑药丸卡片 (Tag Manager 风格)
+    STYLE_LINE    = "line"      # 极简下划线风格
+
+    def __init__(
+        self,
+        tabs: Sequence[Union[TabItem, Tuple[str, str], Tuple[str, str, str]]] = (),
+        active_key: Optional[str] = None,
+        style: str = STYLE_CAPSULE,
+        tab_height: int = 34,
+        spacing: int = 10,
+        fixed_width: Optional[int] = None,
+        font_size: int = 13,
+        on_change: Optional[Callable[[str], None]] = None,
+    ):
+        self.style = style
+        self.tab_height = tab_height
+        self.spacing = spacing
+        self.fixed_width = fixed_width
+        self.font_size = font_size
+        self.on_change = on_change
+
+        self.items: List[TabItem] = []
+        self._active_key: Optional[str] = None
+        self._last_layout: List[Tuple[str, Tuple[int, int, int, int]]] = []
+        self._last_container_rect: Optional[Tuple[int, int, int, int]] = None
+
+        self.set_tabs(tabs, active_key=active_key)
+
+    @property
+    def active_key(self) -> Optional[str]:
+        return self._active_key
+
+    @active_key.setter
+    def active_key(self, key: Optional[str]):
+        self.select(key)
+
+    def set_tabs(
+        self,
+        tabs: Sequence[Union[TabItem, Tuple[str, str], Tuple[str, str, str]]],
+        active_key: Optional[str] = None,
+    ):
+        """动态配置或更新页签项集合"""
+        new_items: List[TabItem] = []
+        for t in tabs:
+            if isinstance(t, TabItem):
+                new_items.append(t)
+            elif isinstance(t, (tuple, list)):
+                if len(t) == 2:
+                    new_items.append(TabItem(key=str(t[0]), label=str(t[1])))
+                elif len(t) >= 3:
+                    new_items.append(TabItem(key=str(t[0]), label=str(t[1]), badge=str(t[2])))
+                else:
+                    new_items.append(TabItem(key=str(t[0]), label=str(t[0])))
+
+        self.items = new_items
+
+        # 校验或初始化 active_key
+        if active_key is not None:
+            self._active_key = active_key
+        elif self.items and (self._active_key is None or self._active_key not in [it.key for it in self.items]):
+            self._active_key = self.items[0].key
+
+    def select(self, key: Optional[str]) -> bool:
+        """切换选中 Tab，若发生改变则触发 on_change 并返回 True"""
+        if key == self._active_key:
+            return False
+        # 验证 key 是否有效且启用
+        target_item = next((it for it in self.items if it.key == key), None)
+        if target_item and not target_item.enabled:
+            return False
+
+        self._active_key = key
+        if self.on_change and key is not None:
+            try:
+                self.on_change(key)
+            except Exception:
+                pass
+        return True
+
+    def compute_layout(
+        self,
+        container_rect: Tuple[int, int, int, int],
+    ) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        """单源真理几何排版计算：根据容器矩形计算每个 Tab 的绝对像素边界 (x, y, w, h)"""
+        self._last_container_rect = container_rect
+        cx, cy, cw, ch = container_rect
+        layout: List[Tuple[str, Tuple[int, int, int, int]]] = []
+        cur_x = cx
+        th = min(ch, self.tab_height)
+        ty = cy + (ch - th) // 2
+
+        for item in self.items:
+            # 计算 Tab 宽度
+            if self.fixed_width is not None:
+                tw = self.fixed_width
+            elif item.custom_width is not None:
+                tw = item.custom_width
+            else:
+                # 动态测量文字宽度
+                approx_w = sum(13 if ord(c) > 127 else 8 for c in item.label)
+                if item.badge:
+                    approx_w += sum(12 if ord(c) > 127 else 7 for c in item.badge) + 14
+                tw = max(80, approx_w + 26)
+
+            rect = (cur_x, ty, tw, th)
+            layout.append((item.key, rect))
+            cur_x += tw + self.spacing
+
+        self._last_layout = layout
+        return layout
+
+    def render(
+        self,
+        canvas: np.ndarray,
+        container_rect: Tuple[int, int, int, int],
+        mouse_pos: Tuple[int, int] = (-1, -1),
+    ) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        """渲染绘制 TabBar 交互组件"""
+        layout = self.compute_layout(container_rect)
+        mx, my = mouse_pos
+
+        for item in self.items:
+            # 查找对应几何位置
+            rect_entry = next((r for k, r in layout if k == item.key), None)
+            if not rect_entry:
+                continue
+            tx, ty, tw, th = rect_entry
+            is_active = (item.key == self._active_key)
+            is_hover = (item.enabled and tx <= mx <= tx + tw and ty <= my <= ty + th)
+
+            if not item.enabled:
+                bg_col = (18, 20, 24)
+                border_col = (35, 40, 48)
+                text_col = (90, 100, 115)
+            elif is_active:
+                bg_col = (28, 44, 40) if self.style == self.STYLE_CAPSULE else GuiTheme.CARD_SEL
+                border_col = (0, 255, 180) if self.style == self.STYLE_CAPSULE else GuiTheme.ACCENT
+                text_col = (0, 255, 200) if self.style == self.STYLE_CAPSULE else GuiTheme.WHITE
+            elif is_hover:
+                bg_col = (34, 40, 52)
+                border_col = (0, 200, 240) if self.style == self.STYLE_CAPSULE else GuiTheme.BORDER_SEL
+                text_col = (0, 220, 255) if self.style == self.STYLE_CAPSULE else GuiTheme.BTN_TEXT_HOVER
+            else:
+                bg_col = (22, 27, 35)
+                border_col = (45, 55, 72) if self.style == self.STYLE_CAPSULE else GuiTheme.BORDER
+                text_col = (160, 175, 195) if self.style == self.STYLE_CAPSULE else GuiTheme.BTN_TEXT
+
+            # 绘制背景与边框
+            if self.style == self.STYLE_CAPSULE:
+                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), bg_col, -1)
+                border_th = 2 if is_active else 1
+                cv2.rectangle(canvas, (tx, ty), (tx + tw, ty + th), border_col, border_th)
+                if is_active:
+                    # 激活态底部发光指示条
+                    cv2.rectangle(canvas, (tx + 8, ty + th - 3), (tx + tw - 8, ty + th - 1), (0, 255, 180), -1)
+            elif self.style == self.STYLE_PILL:
+                draw_rounded_rectangle(canvas, (tx, ty, tw, th), border_col, radius=4, thickness=2 if is_active else 1, fill=True)
+                cv2.rectangle(canvas, (tx + 1, ty + 1), (tx + tw - 1, ty + th - 1), bg_col, -1)
+            elif self.style == self.STYLE_LINE:
+                if is_active:
+                    cv2.rectangle(canvas, (tx + 4, ty + th - 3), (tx + tw - 4, ty + th), border_col, -1)
+                elif is_hover:
+                    cv2.rectangle(canvas, (tx + 4, ty + th - 2), (tx + tw - 4, ty + th), (80, 120, 160), -1)
+
+            # 绘制文字与角标
+            approx_w = sum(13 if ord(c) > 127 else 8 for c in item.label)
+            if item.badge:
+                approx_w += sum(12 if ord(c) > 127 else 7 for c in item.badge) + 14
+
+            text_x = tx + max(6, (tw - approx_w) // 2)
+            text_y = ty + (th - 16) // 2
+            draw_text(canvas, item.label, (text_x, text_y), font_size=self.font_size, color=text_col, bold=is_active)
+
+            # 绘制角标 Badge (若有)
+            if item.badge:
+                bw = sum(12 if ord(c) > 127 else 7 for c in item.badge)
+                bx = text_x + approx_w - bw
+                b_color = item.badge_color or ((0, 230, 255) if is_active else (180, 200, 220))
+                draw_text(canvas, item.badge, (bx, text_y), font_size=max(10, self.font_size - 2), color=b_color, bold=True)
+
+        return layout
+
+    def hit_test(self, x: int, y: int) -> Optional[str]:
+        """单源热区碰撞检测：根据最近一次布局，返回命中的 tab key，未命中返回 None"""
+        for key, (tx, ty, tw, th) in self._last_layout:
+            if tx <= x <= tx + tw and ty <= y <= ty + th:
+                item = next((it for it in self.items if it.key == key), None)
+                if item and item.enabled:
+                    return key
+        return None
+
+    def handle_click(self, x: int, y: int) -> Optional[str]:
+        """点击快捷处理：检测命中、自动切换内部 active_key，并返回选中的 key"""
+        hit_key = self.hit_test(x, y)
+        if hit_key:
+            self.select(hit_key)
+            return hit_key
+        return None
+
 
 
 

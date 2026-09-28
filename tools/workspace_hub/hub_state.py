@@ -16,6 +16,7 @@ from typing import Optional
 
 from src.calibration.workspace_manager import WorkspaceManager, Workspace
 from src.utils.logger import get_logger
+from src.utils.gui_components import TabBar, TabItem
 
 from tools.workspace_hub.states.gallery_state import GalleryState, imread_unicode, imwrite_unicode
 from tools.workspace_hub.states.whitelist_state import WhitelistState
@@ -63,6 +64,16 @@ class HubState:
         # 右侧激活页签与业务说明弹窗
         self.active_tab = self.TAB_REPORT
         self.is_help_modal_open = False
+
+        # 统一通用 TabBar 组件 (工业风发光胶囊卡片单源驱动)
+        self.tab_bar = TabBar(
+            tabs=[],
+            active_key=self.TAB_REPORT,
+            style=TabBar.STYLE_CAPSULE,
+            tab_height=34,
+            spacing=10,
+            on_change=self._on_tab_change,
+        )
 
         # 当前鼠标悬停坐标 (用于 Hover 动效)
         self.mouse_x = -1
@@ -175,6 +186,34 @@ class HubState:
         if ws:
             self.set_toast(f"已切换工位: 【{ws.name}】 ({ws.workspace_id})")
 
+    def _on_tab_change(self, key: str):
+        self.active_tab = key
+        if self.gallery.view_mode == self.VIEW_EXPANDED:
+            self.gallery.view_mode = self.VIEW_STANDARD
+
+    def refresh_tabs(self):
+        """根据当前左侧选中的树节点类型 (工位 vs 坐标系) 动态更新 TabBar"""
+        item_type = self.selected_tree_item[0]
+        if item_type == "frame":
+            tabs = [
+                TabItem(key=self.TAB_FRAME_POSE_TAGS, label="Tag"),
+                TabItem(key=self.TAB_FRAME_ROIS, label="ROI物件"),
+            ]
+            allowed = self.FRAME_TAB_ORDER
+            default_key = self.TAB_FRAME_POSE_TAGS
+        else:
+            tabs = [
+                TabItem(key=self.TAB_REPORT, label="大盘看板"),
+                TabItem(key=self.TAB_CALIB_IMAGES, label="标定相册"),
+                TabItem(key=self.TAB_PROD_IMAGES, label="生产相册", badge="★"),
+            ]
+            allowed = self.WS_TAB_ORDER
+            default_key = self.TAB_REPORT
+
+        target_key = self.active_tab if self.active_tab in allowed else default_key
+        self.tab_bar.set_tabs(tabs, active_key=target_key)
+        self.active_tab = target_key
+
     # ------------------------------ 树形导航与视图切换 ------------------------------
     def select_tree_workspace(self, ws_idx: int):
         """激活左侧工位根节点 (切换至工位宏观视图: 大盘看板/标定相册/生产相册)"""
@@ -188,6 +227,7 @@ class HubState:
             self.expanded_workspaces.add(ws.workspace_id)
         if self.active_tab not in self.WS_TAB_ORDER:
             self.active_tab = self.TAB_REPORT
+        self.refresh_tabs()
 
     def select_tree_frame(self, arg1, arg2: str = None):
         """激活左侧坐标系子节点 (切换至微观视图: 机构位姿与Tag/3D ROI空间)"""
@@ -207,6 +247,7 @@ class HubState:
             self.expanded_workspaces.add(ws.workspace_id)
         if self.active_tab not in self.FRAME_TAB_ORDER:
             self.active_tab = self.TAB_FRAME_POSE_TAGS
+        self.refresh_tabs()
 
     def toggle_workspace_expanded(self, ws_id: str):
         """展开/折叠指定工位树节点"""
@@ -216,19 +257,8 @@ class HubState:
             self.expanded_workspaces.add(ws_id)
 
     def get_current_tabs(self) -> list[tuple[str, str]]:
-        """根据当前左侧选中的树节点类型 (工位 vs 坐标系) 动态返回对应的右侧 Tab 列表"""
-        item_type = self.selected_tree_item[0]
-        if item_type == "frame":
-            return [
-                (self.TAB_FRAME_POSE_TAGS, "Tag"),
-                (self.TAB_FRAME_ROIS, "ROI物件")
-            ]
-        else:
-            return [
-                (self.TAB_REPORT, "大盘看板"),
-                (self.TAB_CALIB_IMAGES, "标定相册"),
-                (self.TAB_PROD_IMAGES, "★ 生产相册")
-            ]
+        """根据当前状态动态返回对应的右侧 Tab 列表 (key, label)"""
+        return [(it.key, it.label) for it in self.tab_bar.items]
 
     def get_current_frame_id(self) -> str | None:
         """获取当前激活的坐标系 ID (若当前选中工位根节点则返回 None)"""
@@ -237,8 +267,9 @@ class HubState:
         return None
 
     def set_tab(self, tab: str):
-        """切换右侧动态区页签 (若处于全宽大图沉浸模式则自动退出)"""
-        self.active_tab = tab
+        """切换右侧动态区页签 (由 TabBar 驱动并自动退出大图沉浸模式)"""
+        self.tab_bar.select(tab)
+        self.active_tab = self.tab_bar.active_key
         if self.gallery.view_mode == self.VIEW_EXPANDED:
             self.gallery.view_mode = self.VIEW_STANDARD
 

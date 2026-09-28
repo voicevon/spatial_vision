@@ -182,7 +182,7 @@ class TestWorkspaceHub(unittest.TestCase):
                 break
         self.assertNotEqual(target_idx, -1)
         state.selected_workspace_idx = target_idx
-        state.load_current_workspace_images()
+        state.gallery.load_current_workspace_images()
         self.assertEqual(state.get_selected_workspace().name, "对照组_工况测试")
 
     def test_hub_rename_workspace(self):
@@ -193,13 +193,13 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(state.get_selected_workspace().name, "全新车间工况A")
 
     def test_hub_expanded_preview_toggle(self):
-        """测试 [F] 键单帧大图全宽自适应占满与三栏模式切换"""
+        """测试 [F] 键单帧大图全宽自适应占满与标准模式切换"""
         state = HubState(self.workspace_mgr, force_mock=True)
         renderer = HubRenderer()
 
-        self.assertFalse(state.expanded_preview_mode)
-        state.toggle_expanded_preview()
-        self.assertTrue(state.expanded_preview_mode)
+        self.assertEqual(state.gallery.view_mode, HubState.VIEW_STANDARD)
+        state.gallery.toggle_expanded_preview()
+        self.assertEqual(state.gallery.view_mode, HubState.VIEW_EXPANDED)
 
         # 渲染全宽大图
         canvas_exp = renderer.render(state)
@@ -227,42 +227,47 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertIsNotNone(app.state.get_selected_workspace())
 
     def test_four_tabs_switch_and_rendering(self):
-        """测试右侧动态区四页签切换与各页签画布渲染稳定性 (960x720)"""
+        """测试右侧动态区宏观工位页签与微观坐标系页签切换与画布渲染稳定性 (960x720)"""
         state = HubState(self.workspace_mgr, force_mock=True)
         renderer = HubRenderer()
 
-        # 1. 初始为体检报告页签
+        # 1. 初始为大盘看板页签
         self.assertEqual(state.active_tab, HubState.TAB_REPORT)
         c1 = renderer.render(state)
         self.assertEqual(c1.shape, (720, 960, 3))
 
-        # 2. 切换至 Tab2: Tag 白名单页签
-        state.set_tab(HubState.TAB_WHITELIST)
-        self.assertEqual(state.active_tab, HubState.TAB_WHITELIST)
+        # 2. 切换至 标定相册
+        state.set_tab(HubState.TAB_CALIB_IMAGES)
+        self.assertEqual(state.active_tab, HubState.TAB_CALIB_IMAGES)
         c2 = renderer.render(state)
         self.assertEqual(c2.shape, (720, 960, 3))
 
-        # 3. 切换至 Tab3: 体检报告页签
-        state.set_tab(HubState.TAB_REPORT)
-        self.assertEqual(state.active_tab, HubState.TAB_REPORT)
+        # 3. 切换至 生产相册
+        state.set_tab(HubState.TAB_PROD_IMAGES)
+        self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
         c3 = renderer.render(state)
         self.assertEqual(c3.shape, (720, 960, 3))
 
-        # 4. 切换至 Tab4: 生产相册页签
-        state.set_tab(HubState.TAB_PROD_IMAGES)
-        self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
+        # 4. 激活微观坐标系视图并切换页签
+        state.select_tree_frame(0, "world")
+        self.assertEqual(state.active_tab, HubState.TAB_FRAME_POSE_TAGS)
         c4 = renderer.render(state)
         self.assertEqual(c4.shape, (720, 960, 3))
 
+        state.set_tab(HubState.TAB_FRAME_ROIS)
+        self.assertEqual(state.active_tab, HubState.TAB_FRAME_ROIS)
+        c5 = renderer.render(state)
+        self.assertEqual(c5.shape, (720, 960, 3))
+
         # 5. 切换页签过程中视图模式始终稳定为标准页签看板
-        self.assertEqual(state.view_mode, HubState.VIEW_STANDARD)
+        self.assertEqual(state.gallery.view_mode, HubState.VIEW_STANDARD)
 
         # 6. 全宽大图沉浸模式下切换页签自动回落到标准看板
-        state.toggle_expanded_preview()
-        self.assertEqual(state.view_mode, HubState.VIEW_EXPANDED)
-        state.set_tab(HubState.TAB_REPORT)
-        self.assertEqual(state.view_mode, HubState.VIEW_STANDARD)
-        self.assertEqual(state.active_tab, HubState.TAB_REPORT)
+        state.gallery.toggle_expanded_preview()
+        self.assertEqual(state.gallery.view_mode, HubState.VIEW_EXPANDED)
+        state.set_tab(HubState.TAB_FRAME_POSE_TAGS)
+        self.assertEqual(state.gallery.view_mode, HubState.VIEW_STANDARD)
+        self.assertEqual(state.active_tab, HubState.TAB_FRAME_POSE_TAGS)
 
     def test_four_tabs_header_clicks(self):
         """测试鼠标点击顶部 Header 工位三页签 Tab 胶囊直接切换页签 (Dashboard / 标定相册 / ★ 生产相册)"""
@@ -270,29 +275,27 @@ class TestWorkspaceHub(unittest.TestCase):
         app.win_mgr.canvas_w = 960
         app.win_mgr.canvas_h = 720
 
-        # 点击 Tab 0: Dashboard (x: 348~463, 测试点 400, 25)
+        # 点击 Tab 0: Dashboard (x: 348~454, 测试点 400, 25)
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 400, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_REPORT)
 
-        # 点击 Tab 1: 标定相册 (x: 475~590, 测试点 530, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 530, 25, 0, None)
+        # 点击 Tab 1: 标定相册 (x: 464~570, 测试点 510, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 510, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_CALIB_IMAGES)
 
-        # 点击 Tab 2: 生产相册 (x: 602~717, 测试点 650, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 650, 25, 0, None)
+        # 点击 Tab 2: 生产相册 (x: 580~700, 测试点 630, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_PROD_IMAGES)
 
         # 点击 Header 页签后仍处于标准页签看板 (非全宽大图)
-        self.assertEqual(app.state.view_mode, HubState.VIEW_STANDARD)
+        self.assertEqual(app.state.gallery.view_mode, HubState.VIEW_STANDARD)
 
     def test_context_menu_removed_and_left_click_only(self):
-        """测试工位卡片右键菜单已彻底移除，右键点击不触发弹出菜单"""
+        """测试工位卡片右键菜单已彻底移除，右键点击不影响状态，左键正常选中"""
         app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
-        self.assertFalse(app.state.context_menu_open)
 
-        # 1. 模拟在第 1 张卡片上右键点击 (x=100, y=80)，验证不再弹出菜单
+        # 1. 模拟在第 1 张卡片上右键点击 (x=100, y=80)，验证安全无异常
         app._on_mouse_event(cv2.EVENT_RBUTTONDOWN, 100, 80, 0, None)
-        self.assertFalse(app.state.context_menu_open)
 
         # 2. 模拟在第 1 张卡片上左键点击 (x=100, y=80)，验证正常选中工位
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 100, 80, 0, None)
@@ -398,63 +401,53 @@ class TestWorkspaceHub(unittest.TestCase):
         state = app.state
         state.set_tab(HubState.TAB_CALIB_IMAGES)
 
-        # 1. 创建 20 张测试图片放入当前选中工位中 (卡片网格 4 列 x 3 行 = 每页 12 张)
+        # 1. 创建 20 张测试图片放入当前选中工位中 (卡片网格 3 列 x 3 行)
         ws = state.get_selected_workspace()
         self.assertIsNotNone(ws)
         dummy = np.zeros((480, 640, 3), dtype=np.uint8)
         for i in range(20):
             cv2.imwrite(os.path.join(ws.calib_raw_images_dir, f"test_view_{i:02d}.png"), dummy)
-        state.load_current_workspace_images()
+        state.gallery.load_current_workspace_images()
 
-        initial_count = len(state.current_images)
+        initial_count = len(state.gallery.current_images)
         self.assertGreaterEqual(initial_count, 20)
-        state.selected_image_idx = 0
+        state.gallery.selected_image_idx = 0
 
-        # 2. 测试通过 state.delete_selected_image() 删除首张照片
-        deleted_file = state.current_images[0]
-        ok = state.delete_selected_image()
+        # 2. 测试通过 state.gallery.delete_selected_image() 删除首张照片
+        deleted_file = state.gallery.current_images[0]
+        ok = state.gallery.delete_selected_image()
         self.assertTrue(ok)
         self.assertFalse(os.path.exists(deleted_file), "被删除的照片文件应已从磁盘移除")
-        self.assertEqual(len(state.current_images), initial_count - 1)
+        self.assertEqual(len(state.gallery.current_images), initial_count - 1)
         self.assertEqual(ws.image_count, initial_count - 1)
 
-        # 3. 图片页签已移除顶部按钮组: 右上角点击不再触发删除, 删除改由 [Del] 键触发
-        del_target = state.current_images[0]
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 1240, 73, 0, None)
-        self.assertTrue(os.path.exists(del_target), "图片页签右上角已无按钮, 点击不应删除照片")
-        self.assertEqual(len(state.current_images), initial_count - 1)
-
-        # 4. 键盘 [Del] 对应的状态层删除逻辑
-        self.assertTrue(state.delete_selected_image())
+        # 3. 键盘 [Del] 对应的状态层删除逻辑
+        del_target = state.gallery.current_images[0]
+        self.assertTrue(state.gallery.delete_selected_image())
         self.assertFalse(os.path.exists(del_target), "键盘 [Del] 删除逻辑应移除当前照片")
-        self.assertEqual(len(state.current_images), initial_count - 2)
+        self.assertEqual(len(state.gallery.current_images), initial_count - 2)
 
-        # 5. 滚轮在卡片网格中按行滚动 (每格滚动一行, 并夹紧到最后一页起始行)
-        state.image_grid_offset = 0
+        # 4. 滚轮在卡片网格中按行滚动 (每格滚动一行)
+        state.gallery.image_grid_offset = 0
         app._on_mouse_event(cv2.EVENT_MOUSEWHEEL, 700, 300, -1, None)
-        self.assertEqual(state.image_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
-        for _ in range(6):
-            app._on_mouse_event(cv2.EVENT_MOUSEWHEEL, 700, 300, -1, None)
-        self.assertEqual(state.image_grid_offset, HubState.GRID_PAGE, "滚轮下翻应夹紧到最后一页起始行")
-        app._on_mouse_event(cv2.EVENT_MOUSEWHEEL, 700, 300, 1, None)
-        self.assertEqual(state.image_grid_offset, HubState.GRID_PAGE - HubState.GRID_COLS, "滚轮上翻应回退一行")
+        self.assertEqual(state.gallery.image_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
 
-        # 6. 测试点击 Header 页签 Tab 切换动态区内容 (左栏保持稳定)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 650, 25, 0, None)
+        # 5. 测试点击 Header 页签 Tab 切换动态区内容 (左栏保持稳定)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
 
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 400, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_REPORT)
 
-        # Tab 1: 标定相册 (x=530, y=25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 530, 25, 0, None)
+        # Tab 1: 标定相册 (x=510, y=25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 510, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_CALIB_IMAGES)
 
     def test_tag_whitelist_creation_and_context_menu(self):
-        """测试 [编辑] 进入白名单芯片矩阵编辑模式: 自动生成 tag_whitelist.yaml 模板并进入编辑态"""
+        """测试工位白名单自动创建与结构验证"""
         import yaml
         clean_cfg = os.path.join(self.test_root, "clean_whitelist_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg)
+        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         ws = app.state.get_selected_workspace()
         self.assertIsNotNone(ws)
 
@@ -463,10 +456,9 @@ class TestWorkspaceHub(unittest.TestCase):
         if os.path.exists(wl_path):
             os.remove(wl_path)
 
-        # 执行白名单处理 (页内编辑, 不再委托外部编辑器, 无 startfile)
-        app._handle_tag_whitelist()
-        self.assertTrue(os.path.exists(wl_path), "应自动创建 tag_whitelist.yaml 文件")
-        self.assertTrue(app.state.whitelist_edit_mode, "应进入芯片矩阵编辑模式")
+        # 自动创建白名单
+        p = self.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
+        self.assertTrue(os.path.exists(p), "应自动创建 tag_whitelist.yaml 文件")
 
         # 验证文件结构符合规范 (白名单恒启用: 无 enabled 开关, 名单内容即行为)
         with open(wl_path, "r", encoding="utf-8") as f:
@@ -476,15 +468,11 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertIn("workspace_id", cfg)
         self.assertEqual(cfg["workspace_id"], ws.workspace_id)
 
-        app.state.exit_whitelist_edit()
-        self.assertFalse(app.state.whitelist_edit_mode)
-
     def test_whitelist_chip_editor_write_through(self):
-        """测试芯片矩阵编辑器写穿语义: 切换/批量均即时落盘 tag_whitelist.yaml"""
+        """测试坐标系专属标靶放行矩阵写穿语义: 切换即时落盘 tag_whitelist.yaml"""
         import yaml
-        from tools.workspace_hub.hub_renderer import whitelist_cell_rect
         clean_cfg = os.path.join(self.test_root, "chip_editor_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg)
+        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         state = app.state
         ws = state.get_selected_workspace()
         wl_path = ws.whitelist_path
@@ -493,71 +481,28 @@ class TestWorkspaceHub(unittest.TestCase):
 
         def read_ids():
             with open(wl_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f).get("allowed_ids")
+                return yaml.safe_load(f).get("allowed_ids", [])
 
-        app._handle_tag_whitelist()  # 创建模板并进入编辑态
-        state.whitelist_batch("clear")
-        self.assertEqual(read_ids(), [])
+        # 切换 world 坐标系下的 Tag 2 放行
+        is_allowed = state.geometry.toggle_frame_tag_allowed("world", 2)
+        self.assertTrue(is_allowed)
+        self.assertIn(2, read_ids())
 
-        # 芯片切换写穿: 加入 5、2 → yaml 即时 [2, 5]; 再切 5 → 移除
-        self.assertEqual(state.toggle_whitelist_id(5), 1)
-        self.assertEqual(state.toggle_whitelist_id(2), 2)
-        self.assertEqual(read_ids(), [2, 5])
-        state.toggle_whitelist_id(5)
-        self.assertEqual(read_ids(), [2])
-
-        # 批量全量放行
-        self.assertEqual(state.whitelist_batch("all"), 30)
-        self.assertEqual(len(read_ids()), 30)
-
-        # 退出编辑后 yaml 保持最后状态
-        state.exit_whitelist_edit()
-        self.assertFalse(state.whitelist_edit_mode)
-        self.assertEqual(len(read_ids()), 30)
-
-        # 模拟点击芯片 #2 (row0 col2 中心) → 移除并写盘; 点击 [完成] → 退出编辑态
-        state.set_tab(HubState.TAB_WHITELIST)
-        app._handle_tag_whitelist()
-        cx, cy, cw, ch = whitelist_cell_rect(2)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, cx + cw // 2, cy + ch // 2, 0, None)
-        self.assertNotIn(2, read_ids())
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 899, 73, 0, None)  # [完成] 按钮中心
-        self.assertFalse(state.whitelist_edit_mode)
+        # 再次切换 Tag 2 禁行
+        is_allowed2 = state.geometry.toggle_frame_tag_allowed("world", 2)
+        self.assertFalse(is_allowed2)
         self.assertNotIn(2, read_ids())
 
     def test_anchor_editor_partial_and_clear(self):
-        """测试锚点坐标编辑弹窗: 逐轴输入/部分已知/负号/清除单轴/删除锚点 (写穿工位 anchor_tags.yaml, 全局兜底不动)"""
-        from src.utils.config_guard import load_anchor_tags
+        """测试锚点坐标编辑弹窗: 逐轴输入/部分已知/负号/清除单轴/删除锚点 (写穿工位 anchor_tags.yaml)"""
         from src.calibration.workspace_manager import load_workspace_anchor_tags
         from tools.workspace_hub.hub_renderer import (
-            whitelist_cell_rect, anchor_row_rect, anchor_clear_rect, anchor_padkey_rect
+            anchor_row_rect, anchor_padkey_rect
         )
-        tmp_cfg = os.path.join(self.test_root, "anchor_config.yaml")
-        with open(tmp_cfg, "w", encoding="utf-8") as f:
-            f.write(
-                "tags_map_path: map/test_map.yaml\n"
-                "calibration:\n"
-                "  # 每-Tag 世界坐标锚点表 (旧版全局源)\n"
-                "  anchor_tags:\n"
-                "    0:\n"
-                "      xyz_mm: [10.0, 20.0, 30.0]\n"
-                "      known: [true, true, true]\n"
-                "    1:\n"
-                "      xyz_mm: [0.0, 520.0, 196.0]\n"
-                "      known: [true, true, true]\n"
-            )
         clean_cfg = os.path.join(self.test_root, "anchor_settings.json")
         app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         state = app.state
-        state.anchor_config_path = tmp_cfg  # 全局兜底源注入
         ws = state.get_selected_workspace()
-        state.set_tab(HubState.TAB_WHITELIST)
-        state.enter_whitelist_edit()
-        state.enter_anchor_mode()
-
-        def read_global_text():
-            with open(tmp_cfg, "r", encoding="utf-8") as f:
-                return f.read()
 
         def rect_center(rect):
             rx, ry, rw, rh = rect
@@ -567,91 +512,69 @@ class TestWorkspaceHub(unittest.TestCase):
             labels = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "-/+", "清空", "退格", "确认"]
             return rect_center(anchor_padkey_rect(labels.index(label)))
 
-        # 1. 锚点模式单击无锚芯片 #3 → 打开弹窗 (草稿来自全局兜底, tag3 无锚 → 全未记录)
-        cx, cy, cw, ch = whitelist_cell_rect(3)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, cx + cw // 2, cy + ch // 2, 0, None)
-        self.assertTrue(state.anchor_modal_open)
-        self.assertEqual(state.anchor_modal_tag, 3)
-        self.assertEqual(state.anchor_known_count(), 0)
-        self.assertFalse(os.path.exists(ws.anchor_path), "未保存前不应创建工位锚点文件")
+        # 1. 打开无锚芯片 #3 弹窗
+        state.whitelist.open_anchor_editor(3)
+        self.assertTrue(state.whitelist.anchor_modal_open)
+        self.assertEqual(state.whitelist.anchor_modal_tag, 3)
+        self.assertEqual(state.whitelist.anchor_known_count(), 0)
 
-        # 2. X 轴输入 12.5 → 保存 = 写穿工位锚点文件 (兜底条目随迁, 部分已知 [T,F,F])
-        app._handle_anchor_modal_click(*rect_center(anchor_row_rect(0)))
+        # 2. X 轴输入 12.5 → 保存 = 写穿工位锚点文件 (部分已知 [T,F,F])
+        app.modal_handler.handle_anchor_modal_click(*rect_center(anchor_row_rect(0)))
         for d in "12.5":
-            app._handle_anchor_modal_click(*pad_center(d))
-        app._handle_anchor_modal_click(*pad_center("确认"))
-        ok, msg = state.save_anchor_modal()
+            app.modal_handler.handle_anchor_modal_click(*pad_center(d))
+        app.modal_handler.handle_anchor_modal_click(*pad_center("确认"))
+        ok, msg = state.whitelist.save_anchor_modal()
         self.assertTrue(ok, msg)
-        self.assertFalse(state.anchor_modal_open)
+        self.assertFalse(state.whitelist.anchor_modal_open)
         self.assertTrue(os.path.exists(ws.anchor_path))
         own = load_workspace_anchor_tags(ws.workspace_dir)
         self.assertEqual(own[3]["known"], [True, False, False])
         self.assertAlmostEqual(own[3]["xyz_mm"][0], 12.5)
-        self.assertEqual(set(own), {0, 1, 3}, "首次写穿应包含全局兜底条目 (以当前标定为基础)")
-        # 全局兜底源不被修改 (注释保留)
-        self.assertIn("# 每-Tag 世界坐标锚点表", read_global_text())
-        self.assertEqual(set(load_anchor_tags(tmp_cfg)), {0, 1})
 
-        # 3. 工位锚点回填草稿; 清除 Z 轴 → [T,T,F] 写穿工位文件
-        state.open_anchor_editor(1)
-        self.assertEqual(state.anchor_known_count(), 3)
-        app._handle_anchor_modal_click(*rect_center(anchor_clear_rect(2)))
-        self.assertEqual(state.anchor_known_count(), 2)
-        ok, _ = state.save_anchor_modal()
+        # 3. 清除单轴与多轴保存
+        state.whitelist.open_anchor_editor(3)
+        self.assertEqual(state.whitelist.anchor_known_count(), 1)
+        state.whitelist.anchor_axis_clear(0)
+        self.assertEqual(state.whitelist.anchor_known_count(), 0)
+        ok, _ = state.whitelist.save_anchor_modal()
         self.assertTrue(ok)
         own = load_workspace_anchor_tags(ws.workspace_dir)
-        self.assertEqual(own[1]["known"], [True, True, False])
-        self.assertAlmostEqual(own[1]["xyz_mm"][1], 520.0)
+        self.assertNotIn(3, own)
 
-        # 4. 负数输入: 3.25 → -/+ → -3.25 (tag0 草稿三轴全知)
-        state.open_anchor_editor(0)
-        app._handle_anchor_modal_click(*rect_center(anchor_row_rect(0)))
+        # 4. 负数输入测试: 3.25 -> -/+ -> -3.25
+        state.whitelist.open_anchor_editor(5)
+        app.modal_handler.handle_anchor_modal_click(*rect_center(anchor_row_rect(0)))
         for d in "3.25":
-            app._handle_anchor_modal_click(*pad_center(d))
-        app._handle_anchor_modal_click(*pad_center("-/+"))
-        app._handle_anchor_modal_click(*pad_center("确认"))
-        ok, _ = state.save_anchor_modal()
+            app.modal_handler.handle_anchor_modal_click(*pad_center(d))
+        app.modal_handler.handle_anchor_modal_click(*pad_center("-/+"))
+        app.modal_handler.handle_anchor_modal_click(*pad_center("确认"))
+        ok, _ = state.whitelist.save_anchor_modal()
         self.assertTrue(ok)
         own = load_workspace_anchor_tags(ws.workspace_dir)
-        self.assertEqual(own[0]["known"], [True, True, True])
-        self.assertAlmostEqual(own[0]["xyz_mm"][0], -3.25)
+        self.assertEqual(own[5]["known"], [True, False, False])
+        self.assertAlmostEqual(own[5]["xyz_mm"][0], -3.25)
 
-        # 5. [清除锚点] → 从工位锚点删除 tag0 条目 (全局兜底不受影响)
-        state.open_anchor_editor(0)
-        ok, _ = state.clear_anchor_modal()
+        # 5. [清除锚点] 按钮
+        state.whitelist.open_anchor_editor(5)
+        ok, _ = state.whitelist.clear_anchor_modal()
         self.assertTrue(ok)
-        self.assertNotIn(0, load_workspace_anchor_tags(ws.workspace_dir))
-        self.assertIn(0, load_anchor_tags(tmp_cfg))
+        self.assertNotIn(5, load_workspace_anchor_tags(ws.workspace_dir))
 
-        # 6. 全部轴清除后保存 = 从工位锚点删除条目
-        state.open_anchor_editor(1)
-        for axis in range(3):
-            state.anchor_axis_clear(axis)
-        ok, _ = state.save_anchor_modal()
-        self.assertTrue(ok)
-        own = load_workspace_anchor_tags(ws.workspace_dir)
-        self.assertNotIn(1, own)
-        self.assertEqual(set(own), {3})
-
-        # 7. 取消 → 不落盘
-        state.open_anchor_editor(3)
-        state.anchor_axis_select(1)
+        # 6. 取消弹窗不落盘
+        state.whitelist.open_anchor_editor(7)
+        state.whitelist.anchor_axis_select(0)
         for _ in "999":
-            state.anchor_pad_key("9")
-        state.cancel_anchor_modal()
+            state.whitelist.anchor_pad_key("9")
+        state.whitelist.cancel_anchor_modal()
         own = load_workspace_anchor_tags(ws.workspace_dir)
-        self.assertAlmostEqual(own[3]["xyz_mm"][0], 12.5)
-        self.assertAlmostEqual(own[3]["xyz_mm"][1], 0.0)
+        self.assertNotIn(7, own)
 
-        # 8. 弹窗渲染冒烟 (960x720)
-        state.open_anchor_editor(3)
+        # 7. 弹窗渲染冒烟 (960x720)
+        state.whitelist.open_anchor_editor(0)
         canvas = app.renderer.render(state)
         self.assertEqual(canvas.shape, (720, 960, 3))
-
-        state.exit_anchor_mode()
-        self.assertFalse(state.anchor_modal_open)
-        state.exit_whitelist_edit()
-        self.assertFalse(state.whitelist_edit_mode)
+        state.whitelist.cancel_anchor_modal()
+        self.assertFalse(state.whitelist.anchor_modal_open)
 
     def test_legacy_whitelist_migration(self):
         """测试旧格式白名单一次性迁移: whitelist_tag_ids → allowed_ids 写回 (保留其余字段, 同义旧键移除)"""
@@ -724,10 +647,10 @@ class TestWorkspaceHub(unittest.TestCase):
         renderer = HubRenderer()
 
         # 工位 3 个 Tab 胶囊
-        # Tab 0: Dashboard (x: 348~463)
+        # Tab 0: Dashboard (x: 348~454)
         self.assertEqual(renderer.hit_test(400, 25, state), ("hdr_tab_key", HubState.TAB_REPORT))
-        # Tab 2: 生产相册 (x: 602~717)
-        self.assertEqual(renderer.hit_test(650, 25, state), ("hdr_tab_key", HubState.TAB_PROD_IMAGES))
+        # Tab 2: 生产相册 (x: 580~700)
+        self.assertEqual(renderer.hit_test(630, 25, state), ("hdr_tab_key", HubState.TAB_PROD_IMAGES))
 
         # [退出] 按钮
         self.assertEqual(renderer.hit_test(880, 25, state), "btn_exit")

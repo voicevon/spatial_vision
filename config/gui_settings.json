@@ -40,7 +40,7 @@
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260928_081335_workspace"
+    "selected_workspace_id": "20260923_204026_Workspace_5"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -139,10 +139,10 @@
     "scale_pct": 100,
     "canvas_w": 1366,
     "canvas_h": 705,
-    "updated_at": "2026-09-19 16:33:51",
+    "updated_at": "2026-09-28 08:38:09",
     "gen_tag_count": 30,
     "gen_pixel_size": 800,
-    "active_tab": "generator"
+    "active_tab": "whitelist"
   },
   "scara_production": {
     "scale_pct": 100,
