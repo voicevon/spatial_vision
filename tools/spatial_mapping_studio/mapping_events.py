@@ -38,33 +38,59 @@ class MappingEventMixin:
         left_x1, left_x2 = 0, self.left_bar_w
         mid_x1, mid_x2 = self.left_bar_w, self.win_w - self.right_bar_w
 
-        # 1. 鼠标滚轮事件 (精准区分：左侧列表滚动 vs 中间视口以鼠标为中心缩放)
+        right_x1, right_x2 = self.win_w - self.right_bar_w, self.win_w
+
+        # 1. 鼠标滚轮事件 (精准区分：左侧帧列表滚动 vs 右侧标靶列表滚动 vs 中间视口以鼠标为中心缩放)
         if event == cv2.EVENT_MOUSEWHEEL:
             # 滚轮判定方向: flags > 0 为向上滚, flags < 0 为向下滚
             wheel_up = (flags > 0)
 
             # A. 鼠标光标位于左栏：上下滚动帧资产列表
             if left_x1 <= mx < left_x2:
-                if wheel_up:
-                    self.scroll_offset = max(0, self.scroll_offset - 2)
-                else:
-                    self.scroll_offset += 2
+                filtered_indices = self._get_filtered_indices()
+                self.frame_list_box.handle_scroll(-1 if wheel_up else 1, len(filtered_indices))
+                self.scroll_offset = self.frame_list_box.scroll_offset
                 return
 
-            # B. 鼠标光标位于中间画布视口：执行以光标为中心的精准缩放 (Zoom In/Out)
+            # B. 鼠标光标位于右栏：上下滚动标靶残差清单
+            elif right_x1 <= mx <= right_x2:
+                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                if cur_file:
+                    bname = os.path.basename(cur_file)
+                    meta = self.frame_metrics_cache.get(bname, {})
+                    obs_cnt = len(meta.get("observations", []))
+                    self.tag_list_box.handle_scroll(-1 if wheel_up else 1, obs_cnt)
+                return
+
+            # C. 鼠标光标位于中间画布视口：执行以光标为中心的精准缩放 (Zoom In/Out)
             elif mid_x1 <= mx < mid_x2 and content_y1 <= my < content_y2:
                 self.viewport.zoom_at(mx, my, wheel_up, (mid_x1, content_y1, mid_x2 - mid_x1, content_y2 - content_y1))
                 return
 
-        # 2. 拖拽平移事件 (支持鼠标右键或中键按住平移)
+        # 2. 拖拽与移动事件 (支持滚动条滑块拖拽与鼠标右键/中键画布平移)
         if event in (cv2.EVENT_RBUTTONDOWN, cv2.EVENT_MBUTTONDOWN):
             if mid_x1 <= mx < mid_x2 and content_y1 <= my < content_y2:
                 self.viewport.start_pan(mx, my)
                 return
         elif event == cv2.EVENT_MOUSEMOVE:
+            # 优先处理滚动条滑块拖拽跟随
+            if self.frame_list_box.is_dragging_thumb:
+                filtered_indices = self._get_filtered_indices()
+                self.frame_list_box.handle_mouse_move(mx, my, len(filtered_indices))
+                self.scroll_offset = self.frame_list_box.scroll_offset
+                return
+            if self.tag_list_box.is_dragging_thumb:
+                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                bname = os.path.basename(cur_file) if cur_file else ""
+                obs_cnt = len(self.frame_metrics_cache.get(bname, {}).get("observations", []))
+                self.tag_list_box.handle_mouse_move(mx, my, obs_cnt)
+                return
+
             if self.viewport.update_pan(mx, my):
                 return
-        elif event in (cv2.EVENT_RBUTTONUP, cv2.EVENT_MBUTTONUP):
+        elif event in (cv2.EVENT_RBUTTONUP, cv2.EVENT_MBUTTONUP, cv2.EVENT_LBUTTONUP):
+            self.frame_list_box.handle_mouse_up()
+            self.tag_list_box.handle_mouse_up()
             if self.viewport.is_panning:
                 self.viewport.end_pan()
                 return
@@ -75,8 +101,27 @@ class MappingEventMixin:
                 self.reset_viewport_zoom()
                 return
 
-        # 4. 鼠标左键点击事件 (GUI 按钮分发，优先命中置顶下拉层)
+        # 4. 鼠标左键点击事件 (GUI 按钮分发，优先命中置顶下拉层与滚动条滑块)
         if event == cv2.EVENT_LBUTTONDOWN:
+            # A. 优先检测左栏滚动条滑块与轨道
+            if left_x1 <= mx < left_x2:
+                filtered_indices = self._get_filtered_indices()
+                handled, clicked_idx = self.frame_list_box.handle_mouse_down(mx, my, len(filtered_indices))
+                if handled and clicked_idx is None:
+                    # 命中了滑块或轨道跳转
+                    self.scroll_offset = self.frame_list_box.scroll_offset
+                    return
+
+            # B. 优先检测右栏滚动条滑块与轨道
+            elif right_x1 <= mx <= right_x2:
+                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                bname = os.path.basename(cur_file) if cur_file else ""
+                obs_cnt = len(self.frame_metrics_cache.get(bname, {}).get("observations", []))
+                handled, clicked_idx = self.tag_list_box.handle_mouse_down(mx, my, obs_cnt)
+                if handled and clicked_idx is None:
+                    # 命中了滑块或轨道跳转
+                    return
+
             clicked_any = False
             for btn_id, (bx1, by1, bx2, by2), extra in reversed(self.gui_buttons):
                 if bx1 <= mx <= bx2 and by1 <= my <= by2:

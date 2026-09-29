@@ -716,5 +716,277 @@ class TabBar:
         return None
 
 
+class ScrollableListBox:
+    """
+    通用工业级可滚动列表组件 (ScrollableListBox)
+    =============================================
+    采用委托渲染模式 (Delegate Pattern):
+    - 容器层 (ScrollableListBox):
+      1. 虚拟化视口计算 (可见行数、总项数自适应、安全几何边界)
+      2. 平滑滚动偏移控制 (scroll_offset、滚轮自适应步进、范围夹紧)
+      3. 工业级自适应滚动条 (轨道 Track、自适应高度滑块 Thumb、滑块拖拽与轨道跳跃)
+      4. 鼠标热区与状态机 (悬停项 hover_index、选中项 selected_index、点击选择分发)
+      5. 统一标准化的条目高亮底衬与外边框绘制
+    - 委托绘制层 (draw_item_callback):
+      接收 (canvas, rect, item_data, index, is_hover, is_selected)
+      由业务方自由渲染高个性化内容 (如状态灯、多列彩色数字、进度条、复杂文字排版等)
+    """
+
+    def __init__(
+        self,
+        item_height: int = 36,
+        item_gap: int = 2,
+        scrollbar_width: int = 6,
+        auto_hide_scrollbar: bool = True,
+        render_item_background: bool = True,
+        scroll_speed: int = 2,
+    ):
+        self.item_height = item_height
+        self.item_gap = item_gap
+        self.scrollbar_width = scrollbar_width
+        self.auto_hide_scrollbar = auto_hide_scrollbar
+        self.render_item_background = render_item_background
+        self.scroll_speed = scroll_speed
+
+        # 运行时状态
+        self.scroll_offset: int = 0
+        self.selected_index: int = -1
+        self.hover_index: int = -1
+        self.is_dragging_thumb: bool = False
+        self._drag_start_y: int = 0
+        self._drag_start_offset: int = 0
+
+        # 最近一次渲染几何缓存
+        self._last_rect: Tuple[int, int, int, int] = (0, 0, 0, 0)
+        self._last_track_rect: Tuple[int, int, int, int] = (0, 0, 0, 0)
+        self._last_thumb_rect: Tuple[int, int, int, int] = (0, 0, 0, 0)
+        self._last_visible_count: int = 0
+        self._last_total_items: int = 0
+        self._item_rects: List[Tuple[int, Tuple[int, int, int, int]]] = []
+
+    def get_visible_count(self, viewport_h: int) -> int:
+        """根据当前视口高度计算最多可容纳的完整条目数"""
+        stride = self.item_height + self.item_gap
+        if stride <= 0:
+            return 1
+        return max(1, viewport_h // stride)
+
+    def clamp_scroll_offset(self, total_items: int, visible_count: int):
+        """确保滚动偏移量位于 [0, max_offset] 有效区间内"""
+        max_offset = max(0, total_items - visible_count)
+        self.scroll_offset = max(0, min(self.scroll_offset, max_offset))
+
+    def scroll_to_index(self, index: int, total_items: int, visible_count: Optional[int] = None):
+        """确保指定 index 条目滚动至可见区域内"""
+        if total_items <= 0:
+            self.scroll_offset = 0
+            return
+        vis_c = visible_count or self._last_visible_count or 1
+        index = max(0, min(index, total_items - 1))
+        if index < self.scroll_offset:
+            self.scroll_offset = index
+        elif index >= self.scroll_offset + vis_c:
+            self.scroll_offset = index - vis_c + 1
+        self.clamp_scroll_offset(total_items, vis_c)
+
+    def handle_scroll(self, delta_lines: int, total_items: int) -> bool:
+        """鼠标滚轮处理 (delta_lines: 正数向下滚，负数向上滚)"""
+        vis_c = self._last_visible_count or 1
+        old_offset = self.scroll_offset
+        self.scroll_offset += delta_lines * self.scroll_speed
+        self.clamp_scroll_offset(total_items, vis_c)
+        return self.scroll_offset != old_offset
+
+    def handle_mouse_down(self, mx: int, my: int, total_items: int) -> Tuple[bool, Optional[int]]:
+        """
+        鼠标按下事件分发:
+        Returns:
+            (handled: bool, clicked_index: Optional[int])
+        """
+        # 1. 检查是否点击滚动条滑块 (开始拖动)
+        if self._last_thumb_rect[2] > 0:
+            tx, ty, tw, th = self._last_thumb_rect
+            if tx <= mx <= tx + tw and ty <= my <= ty + th:
+                self.is_dragging_thumb = True
+                self._drag_start_y = my
+                self._drag_start_offset = self.scroll_offset
+                return True, None
+
+            # 2. 检查是否点击滚动条轨道 (轨道快速跳转)
+            rx, ry, rw, rh = self._last_track_rect
+            if rx <= mx <= rx + rw and ry <= my <= ry + rh:
+                vis_c = self._last_visible_count or 1
+                max_offset = max(0, total_items - vis_c)
+                if max_offset > 0:
+                    ratio = max(0.0, min(1.0, (my - ry) / float(rh)))
+                    self.scroll_offset = int(round(ratio * max_offset))
+                    self.clamp_scroll_offset(total_items, vis_c)
+                return True, None
+
+        # 3. 检查是否点击具体数据条目
+        for idx, (ix, iy, iw, ih) in self._item_rects:
+            if ix <= mx <= ix + iw and iy <= my <= iy + ih:
+                self.selected_index = idx
+                return True, idx
+
+        return False, None
+
+    def handle_mouse_move(self, mx: int, my: int, total_items: int) -> bool:
+        """鼠标移动事件: 支持滑块实时拖动与 Hover 悬停状态更新"""
+        # 1. 正在拖拽滑块中
+        if self.is_dragging_thumb:
+            rx, ry, rw, rh = self._last_track_rect
+            vis_c = self._last_visible_count or 1
+            max_offset = max(0, total_items - vis_c)
+            if rh > 0 and max_offset > 0:
+                dy = my - self._drag_start_y
+                step_per_px = max_offset / float(max(1, rh - self._last_thumb_rect[3]))
+                new_offset = int(round(self._drag_start_offset + dy * step_per_px))
+                self.scroll_offset = max(0, min(new_offset, max_offset))
+            return True
+
+        # 2. 悬停检测
+        old_hover = self.hover_index
+        self.hover_index = -1
+        for idx, (ix, iy, iw, ih) in self._item_rects:
+            if ix <= mx <= ix + iw and iy <= my <= iy + ih:
+                self.hover_index = idx
+                break
+        return self.hover_index != old_hover
+
+    def handle_mouse_up(self) -> bool:
+        """释放滑块拖拽"""
+        if self.is_dragging_thumb:
+            self.is_dragging_thumb = False
+            return True
+        return False
+
+    def render(
+        self,
+        canvas: np.ndarray,
+        rect: Tuple[int, int, int, int],
+        items: List[Any],
+        draw_item_callback: Optional[Callable[[np.ndarray, Tuple[int, int, int, int], Any, int, bool, bool], None]] = None,
+        mouse_pos: Tuple[int, int] = (-1, -1),
+        empty_text: str = "暂无数据项",
+    ):
+        """
+        执行列表与滚动条统一渲染:
+        Args:
+            canvas: 绘制目标画布 (BGR)
+            rect: 视口区域 (vx, vy, vw, vh)
+            items: 数据项列表
+            draw_item_callback: 委托条目绘制函数 (canvas, item_rect, item_data, index, is_hover, is_selected)
+            mouse_pos: 当前鼠标坐标 (mx, my)
+            empty_text: 列表为空时的居中文本
+        """
+        vx, vy, vw, vh = rect
+        self._last_rect = rect
+        total_items = len(items)
+        self._last_total_items = total_items
+
+        visible_count = self.get_visible_count(vh)
+        self._last_visible_count = visible_count
+        self.clamp_scroll_offset(total_items, visible_count)
+
+        has_scrollbar = (total_items > visible_count)
+        sb_w = self.scrollbar_width if (has_scrollbar or not self.auto_hide_scrollbar) else 0
+        content_w = vw - (sb_w + 4 if sb_w > 0 else 0)
+
+        # 实时检测当前鼠标位置的 hover_index (如果未被拖动锁定)
+        mx, my = mouse_pos
+        if not self.is_dragging_thumb and (vx <= mx <= vx + vw and vy <= my <= vy + vh):
+            self.handle_mouse_move(mx, my, total_items)
+        elif not self.is_dragging_thumb:
+            self.hover_index = -1
+
+        # 1. 空状态兜底
+        if total_items == 0:
+            self._item_rects.clear()
+            self._last_track_rect = (0, 0, 0, 0)
+            self._last_thumb_rect = (0, 0, 0, 0)
+            draw_text(canvas, empty_text, (vx + vw // 2 - 40, vy + vh // 2 - 8), font_size=12, color=GuiTheme.TEXT_MUTED)
+            return
+
+        # 2. 逐行绘制可视条目
+        self._item_rects.clear()
+        stride = self.item_height + self.item_gap
+
+        for row_i in range(visible_count):
+            item_idx = self.scroll_offset + row_i
+            if item_idx >= total_items:
+                break
+
+            iy = vy + row_i * stride
+            item_rect = (vx, iy, content_w, self.item_height)
+            self._item_rects.append((item_idx, item_rect))
+
+            is_selected = (item_idx == self.selected_index)
+            is_hover = (item_idx == self.hover_index)
+
+            # 绘制统一的底层背景与高亮框 (业务方亦可在其 draw_item_callback 中覆盖)
+            if self.render_item_background:
+                if is_selected:
+                    bg_col = (48, 42, 28)
+                    border_col = (0, 220, 255)
+                    border_th = 2
+                elif is_hover:
+                    bg_col = (34, 38, 48)
+                    border_col = (65, 75, 95)
+                    border_th = 1
+                else:
+                    bg_col = (25, 27, 34) if item_idx % 2 == 0 else (20, 22, 28)
+                    border_col = (38, 40, 50)
+                    border_th = 1
+
+                cv2.rectangle(canvas, (vx, iy), (vx + content_w, iy + self.item_height), bg_col, -1)
+                cv2.rectangle(canvas, (vx, iy), (vx + content_w, iy + self.item_height), border_col, border_th)
+
+            # 调用业务委托绘制函数
+            if draw_item_callback is not None:
+                draw_item_callback(canvas, item_rect, items[item_idx], item_idx, is_hover, is_selected)
+            else:
+                # 默认纯文本回退绘制
+                txt = str(items[item_idx])
+                text_col = (255, 255, 255) if is_selected else (200, 210, 225)
+                draw_text(canvas, txt, (vx + 10, iy + (self.item_height - 14) // 2), font_size=12, color=text_col, bold=is_selected)
+
+        # 3. 绘制微质感滚动条 (仅当需要滚动或显式配置时)
+        if sb_w > 0 and has_scrollbar:
+            track_x = vx + vw - sb_w - 2
+            track_y = vy + 2
+            track_h = vh - 4
+            self._last_track_rect = (track_x, track_y, sb_w, track_h)
+
+            # 轨道底衬
+            cv2.rectangle(canvas, (track_x, track_y), (track_x + sb_w, track_y + track_h), (20, 22, 28), -1)
+            cv2.rectangle(canvas, (track_x, track_y), (track_x + sb_w, track_y + track_h), (35, 40, 50), 1)
+
+            # 自适应滑块高度 (最小安全高度 20px)
+            thumb_ratio = max(0.08, min(1.0, float(visible_count) / float(total_items)))
+            thumb_h = max(20, int(round(track_h * thumb_ratio)))
+
+            # 滑块 Y 轴位置计算
+            max_offset = max(1, total_items - visible_count)
+            scroll_ratio = max(0.0, min(1.0, float(self.scroll_offset) / float(max_offset)))
+            thumb_y = track_y + int(round(scroll_ratio * (track_h - thumb_h)))
+            self._last_thumb_rect = (track_x, thumb_y, sb_w, thumb_h)
+
+            # 滑块颜色：拖拽中金色发光，鼠标悬停时高亮科技蓝，常态为典雅暗银色
+            is_thumb_hover = (track_x <= mx <= track_x + sb_w and thumb_y <= my <= thumb_y + thumb_h)
+            if self.is_dragging_thumb:
+                thumb_col = (0, 240, 255)
+            elif is_thumb_hover:
+                thumb_col = (0, 200, 230)
+            else:
+                thumb_col = (75, 85, 105)
+
+            cv2.rectangle(canvas, (track_x, thumb_y), (track_x + sb_w, thumb_y + thumb_h), thumb_col, -1)
+        else:
+            self._last_track_rect = (0, 0, 0, 0)
+            self._last_thumb_rect = (0, 0, 0, 0)
+
+
+
 
 

@@ -114,16 +114,22 @@ class GalleryPageRenderer:
         cv2.rectangle(canvas, (box_x, box_y), (box_x + box_w, box_y + box_h), (0, 200, 240), 2)
         mpos = (state.mouse_x, state.mouse_y)
 
+        is_prod = (state.active_tab == HubState.TAB_PROD_IMAGES)
+        images = state.gallery.prod_images if is_prod else state.gallery.current_images
+        sel_idx = state.gallery.selected_prod_image_idx if is_prod else state.gallery.selected_image_idx
+
         # 标题与右上角实体按钮
-        if not state.gallery.current_images:
-            draw_text(canvas, "当前场景无图片", (box_x + 220, box_y + 280), font_size=20, color=self.r.COLOR_DARK_GRAY)
+        if not images:
+            hint = "当前生产相册无图片" if is_prod else "当前标定相册无图片"
+            draw_text(canvas, hint, (box_x + 220, box_y + 280), font_size=20, color=self.r.COLOR_DARK_GRAY)
             self.r._draw_button(canvas, (box_x + box_w - 140, box_y + 10, 120, 32), "返回网格", mpos)
             return
 
-        cur_img = state.gallery.current_images[state.gallery.selected_image_idx]
+        sel_idx = max(0, min(sel_idx, len(images) - 1))
+        cur_img = images[sel_idx]
         prev = state.gallery.get_preview(cur_img, max_w=590, max_h=520)
 
-        img_title = f"{os.path.basename(cur_img)} ({state.gallery.selected_image_idx + 1}/{len(state.gallery.current_images)})"
+        img_title = f"{os.path.basename(cur_img)} ({sel_idx + 1}/{len(images)})"
         draw_text(canvas, img_title, (box_x + 16, box_y + 14), font_size=14, color=(0, 255, 200), bold=True)
 
         # 右上角实体按钮组: [上张] [下张] [删帧] [返回] (x: 680~950)

@@ -317,6 +317,91 @@ class TestHubFramesRoisGui(unittest.TestCase):
         handled_esc = app.on_key(27)
         self.assertFalse(handled_esc)
 
+    def test_delete_frame_button_and_cascade_cleanup(self):
+        """验证子坐标系删除按钮权限控制、Hit-test 判定及级联清理机制 (Tag白名单+ROI+下级重定向)"""
+        from tools.workspace_hub.hub_renderer import FRAME_DELETE_BTN
+        from src.calibration.coordinate_manager import FrameDefinition
+        from src.calibration.roi_manager import RoiDefinition
+
+        state = HubState(workspace_mgr=self.ws_mgr)
+        renderer = HubRenderer()
+
+        # 1. 验证在绝对世界坐标系 (world) 下：不显示删除按钮，Hit-test 不命中
+        state.select_tree_frame(0, "world")
+        state.set_tab(HubState.TAB_FRAME_POSE_TAGS)
+        hit_world_del = renderer.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
+        self.assertNotEqual(hit_world_del, "btn_delete_frame")
+
+        # 2. 创建子坐标系 frame_sub_1 及其下级子坐标系 frame_sub_child
+        f1 = FrameDefinition(
+            frame_id="frame_sub_1",
+            name="1号机构从属坐标系",
+            parent_frame_id="world",
+            type="fixed_transform",
+        )
+        f_child = FrameDefinition(
+            frame_id="frame_sub_child",
+            name="末端下级坐标系",
+            parent_frame_id="frame_sub_1",
+            type="fixed_transform",
+        )
+        state.geometry.coord_mgr.add_frame(f1)
+        state.geometry.coord_mgr.add_frame(f_child)
+        state.geometry.coord_mgr.save()
+
+        # 3. 为 frame_sub_1 放行专属 Tag (ID 18, 19)
+        state.geometry.toggle_frame_tag_allowed("frame_sub_1", 18)
+        state.geometry.toggle_frame_tag_allowed("frame_sub_1", 19)
+        allowed_tags_before = state.geometry.get_frame_tags_status("frame_sub_1")
+        self.assertEqual(allowed_tags_before, [18, 19])
+
+        # 4. 创建依附于 frame_sub_1 的 3D ROI 空间物件
+        roi1 = RoiDefinition(
+            roi_id="roi_sub_belt",
+            name="皮带料道检测区",
+            frame_id="frame_sub_1",
+            center_xyz_mm=[100.0, 200.0, 50.0],
+            size_xyz_mm=[50.0, 50.0, 50.0],
+        )
+        state.geometry.roi_mgr.add_roi(roi1)
+        state.geometry.roi_mgr.save()
+        self.assertEqual(len(state.geometry.get_frame_rois("frame_sub_1")), 1)
+
+        # 5. 选中 frame_sub_1，验证非世界坐标系下 Hit-test 能够命中 btn_delete_frame
+        state.select_tree_frame(0, "frame_sub_1")
+        hit_sub_del = renderer.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
+        self.assertEqual(hit_sub_del, "btn_delete_frame")
+
+        # 6. 执行级联删除
+        ok, msg = state.geometry.delete_frame_cascade("frame_sub_1")
+        self.assertTrue(ok, f"Delete cascade failed: {msg}")
+
+        # 7. 级联结果验证：
+        # (a) frame_sub_1 已从 frames.yaml 移除
+        frames_after = state.geometry.get_coordinate_frames()
+        frame_ids_after = [f.frame_id for f in frames_after]
+        self.assertNotIn("frame_sub_1", frame_ids_after)
+
+        # (b) 原下级坐标系 frame_sub_child 自动重定向至 world
+        child_frame = state.geometry.coord_mgr.get_frame("frame_sub_child")
+        self.assertIsNotNone(child_frame)
+        self.assertEqual(child_frame.parent_frame_id, "world")
+
+        # (c) 专属放行的 Tag 18, 19 已自动从工位白名单 allowed_ids 中回收清理
+        wl_after = state.whitelist.get_tag_whitelist()
+        allowed_ids_after = wl_after.get("allowed_ids", [])
+        self.assertNotIn(18, allowed_ids_after)
+        self.assertNotIn(19, allowed_ids_after)
+
+        # (d) 依附于 frame_sub_1 的 3D ROI 空间物件已被级联清理
+        rois_after = state.geometry.get_roi_spaces()
+        roi_ids_after = [r.roi_id for r in rois_after]
+        self.assertNotIn("roi_sub_belt", roi_ids_after)
+
+        # (e) 左侧树导航选择项已安全回退到当前工位的 world 坐标系
+        self.assertEqual(state.selected_tree_item[2], "world")
+
 
 if __name__ == "__main__":
     unittest.main()
+

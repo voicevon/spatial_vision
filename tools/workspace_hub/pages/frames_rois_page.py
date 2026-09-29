@@ -214,7 +214,7 @@ class FramesRoisPageRenderer:
     def render_frame_pose_tags(self, canvas: np.ndarray, state: HubState, ws: Any):
         """坐标系专属页签 1: 机构参数与 Tag 分段管理 (x: 340~960, y: 50~670)"""
         from tools.workspace_hub.hub_renderer import (
-            FRAME_EDIT_POSE_BTN, FRAME_TAG_EDIT_SIZE_BTN, frame_tag_chip_rect
+            FRAME_DELETE_BTN, FRAME_EDIT_POSE_BTN, FRAME_TAG_EDIT_SIZE_BTN, frame_tag_chip_rect
         )
 
         box_x, box_y, box_w, box_h = 340, 50, self.r.canvas_w - 340, 620
@@ -226,7 +226,11 @@ class FramesRoisPageRenderer:
             draw_text(canvas, "未选择任何机构坐标系", (box_x + 180, box_y + 280), font_size=18, color=self.r.COLOR_GRAY)
             return
 
-        # 1. 顶部编辑按钮
+        is_world_datum = (cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id)
+
+        # 1. 顶部操作按钮 (世界坐标系禁止删除，仅非世界坐标系显示删除按钮)
+        if not is_world_datum:
+            self.r._draw_button(canvas, FRAME_DELETE_BTN, "删除", mpos, theme_color=(60, 60, 220))
         self.r._draw_button(canvas, FRAME_EDIT_POSE_BTN, "编辑", mpos)
 
         card_x = box_x + 16
@@ -238,7 +242,6 @@ class FramesRoisPageRenderer:
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (24, 28, 38), -1)
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (42, 52, 70), 1)
 
-        is_world_datum = (cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id)
         if is_world_datum:
             type_desc = "工位绝对世界基准 (world)"
         elif cur_frame.type == "fixed_transform":

@@ -102,6 +102,7 @@ class WorkspaceHubApp(BaseCvApp):
     _STATIC_DISPATCH = {
         "btn_exit": lambda app: app.stop(),
         "btn_new_workspace": lambda app: app.workspace_handler.handle_create_workspace(),
+        "btn_delete_frame": lambda app: app._action_delete_frame(),
         "btn_edit_frame_pose": lambda app: app._action_edit_frame_pose(),
         "btn_edit_marker_size": lambda app: app.state.whitelist.open_marker_size_editor(),
         "btn_add_frame_roi": lambda app: app._action_add_frame_roi(),
@@ -134,6 +135,39 @@ class WorkspaceHubApp(BaseCvApp):
         "frame_roi_edit": lambda app, h: app.state.geometry.open_roi_modal(h[1]),
         "frame_roi_delete": lambda app, h: app._action_delete_roi(h[1]),
     }
+
+    def _action_delete_frame(self):
+        """响应删除当前选中子坐标系动作 (含详细级联影响清单与安全确认)"""
+        cur_frame = self.state.geometry.get_selected_frame()
+        if not cur_frame:
+            return
+        if cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id:
+            self.state.set_toast("绝对世界基准坐标系 (world) 禁止删除！")
+            return
+
+        fid = cur_frame.frame_id
+        fname = cur_frame.name
+
+        # 统计将要级联删除的专属资源
+        allowed_tags = self.state.geometry.get_frame_tags_status(fid)
+        tag_desc = f"{len(allowed_tags)} 个专属 Tag (#{', #'.join(str(x) for x in allowed_tags)})" if allowed_tags else "无专属放行 Tag"
+
+        frame_rois = self.state.geometry.get_frame_rois(fid)
+        roi_desc = f"{len(frame_rois)} 个 3D ROI 物件" if frame_rois else "无依附 ROI 物件"
+
+        child_frames = [f.frame_id for f in self.state.geometry.coord_mgr.list_frames() if f.parent_frame_id == fid]
+        child_desc = f"\n3. 存在下级坐标系: {child_frames}，将自动重定向挂载至 world 基准" if child_frames else ""
+
+        confirm_msg = (
+            f"确定要删除子坐标系 【{fname}】 ({fid}) 吗？\n\n"
+            f"【连带级联清理影响】：\n"
+            f"1. 专属放行白名单: 将清理并回收 {tag_desc}\n"
+            f"2. 3D 空间物件: 将永久删除 {roi_desc}{child_desc}\n\n"
+            f"⚠️ 此操作不可撤销，请确认是否立即执行删除？"
+        )
+
+        if prompt_confirm("确认删除子机构坐标系", confirm_msg):
+            self.state.geometry.delete_frame_cascade(fid)
 
     def _action_edit_frame_pose(self):
         cur_frame = self.state.geometry.get_selected_frame()
@@ -238,10 +272,10 @@ class WorkspaceHubApp(BaseCvApp):
 
     def _select_image_for_active_tab(self, delta: int):
         """按当前激活页签切换对应的相册照片 (标定相册/生产相册; 其余页签无相册则忽略)"""
-        if self.state.gallery.view_mode == HubState.VIEW_EXPANDED or self.state.active_tab == HubState.TAB_CALIB_IMAGES:
-            self.state.gallery.select_image_by_offset(delta)
-        elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
+        if self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.select_prod_image_by_offset(delta)
+        elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED or self.state.active_tab == HubState.TAB_CALIB_IMAGES:
+            self.state.gallery.select_image_by_offset(delta)
 
     def _scroll_grid_for_active_tab(self, delta_rows: int):
         """按当前激活页签滚动卡片网格 / ROI 列表 (滚轮驱动)"""

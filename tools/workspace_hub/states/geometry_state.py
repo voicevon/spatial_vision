@@ -11,7 +11,9 @@ Workspace Hub 几何与空间物件状态机 (GeometryState)
 6. 坐标系分配 Tag 命名空间区间 (10-Slot) 与区间放行状态同步
 """
 
+import os
 from typing import Any, Optional
+import yaml
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -78,6 +80,16 @@ class GeometryState:
             self.coord_mgr = None
             self.roi_mgr = None
 
+    def refresh_geometry_cache(self, ws_id: Optional[str] = None):
+        """失效几何管理器缓存并按需重新载入"""
+        if ws_id:
+            self._coord_mgr_cache.pop(ws_id, None)
+            self._roi_mgr_cache.pop(ws_id, None)
+        else:
+            self._coord_mgr_cache.clear()
+            self._roi_mgr_cache.clear()
+        self.load_geometry_managers()
+
     def get_workspace_coord_mgr(self, ws) -> Any:
         """获取指定工位的坐标系管理器（带内存缓存，避免渲染树形结构每帧重复加载磁盘 YAML）"""
         if not ws:
@@ -122,7 +134,7 @@ class GeometryState:
             return False
         import os
         import yaml
-        wl_path = os.path.join(ws.workspace_dir, "tag_whitelist.yaml")
+        wl_path = self.hub.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
         curr_cfg = {}
         if os.path.isfile(wl_path):
             try:
@@ -130,7 +142,8 @@ class GeometryState:
                     curr_cfg = yaml.safe_load(f) or {}
             except Exception:
                 curr_cfg = {}
-        allowed = set(curr_cfg.get("allowed_ids", []))
+        raw_allowed = curr_cfg.get("allowed_ids") or []
+        allowed = {int(x) for x in raw_allowed if str(x).isdigit()}
         if tag_id in allowed:
             allowed.remove(tag_id)
             now_allowed = False
@@ -336,17 +349,87 @@ class GeometryState:
         self.hub.set_toast(f"已成功保存坐标系: 【{frame.name}】")
         return True, "保存成功"
 
-    def delete_frame(self, frame_id: str) -> tuple[bool, str]:
+    def delete_frame_cascade(self, frame_id: str) -> tuple[bool, str]:
+        """
+        级联深度清理并删除指定子坐标系：
+        1. 绝对世界基准 (world) 严禁删除；
+        2. 级联清理依附于该坐标系的所有 3D ROI 空间物件 (写穿 rois.yaml)；
+        3. 回收工位 tag_whitelist.yaml 中该坐标系专属分段内所有已放行的 Tag ID；
+        4. 从坐标系树中移除该坐标系，将以其为父的子坐标系重定向到 world，写穿 frames.yaml；
+        5. 安全重置左侧工位树选中项至当前工位的绝对世界坐标系 (world)；
+        6. 强制刷新几何缓存与视图。
+        """
         if not self.coord_mgr:
             return False, "坐标系管理器未就绪"
         if frame_id == "world":
-            return False, "绝对世界坐标系禁止删除"
+            return False, "绝对世界基准坐标系 (world) 严禁删除"
+
+        target_frame = self.coord_mgr.get_frame(frame_id)
+        if not target_frame:
+            return False, f"坐标系 [{frame_id}] 不存在"
+
+        ws = self.hub.get_selected_workspace()
+        if not ws:
+            return False, "未选择有效工位"
+
+        log.info(f"[CascadeDelete] 正在执行子坐标系级联删除: {frame_id} (工位: {ws.name})")
+
+        # 1. 提前记录该坐标系专属分段与当前放行的 Tag (必须在 remove_frame 前提取)
+        tag_range = {int(x) for x in self.get_frame_tag_range(frame_id)}
+
+        # 2. 级联清除依附于该坐标系的 3D ROI 空间物件
+        deleted_rois_count = 0
+        if self.roi_mgr:
+            to_remove_rois = [r.roi_id for r in self.roi_mgr.list_rois() if r.frame_id == frame_id]
+            for rid in to_remove_rois:
+                self.roi_mgr.remove_roi(rid)
+                deleted_rois_count += 1
+            if deleted_rois_count > 0:
+                self.roi_mgr.save()
+                log.info(f"[CascadeDelete] 已级联清除 {deleted_rois_count} 个归属于 [{frame_id}] 的 3D ROI")
+
+        # 3. 回收该坐标系专属分段内所有已放行的 Tag 标靶 (同步更新 tag_whitelist.yaml)
+        cleaned_tags_count = 0
+        try:
+            wl_path = self.hub.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
+            if os.path.exists(wl_path):
+                with open(wl_path, "r", encoding="utf-8") as f:
+                    curr_cfg = yaml.safe_load(f) or {}
+                raw_allowed = curr_cfg.get("allowed_ids") or []
+                allowed = {int(x) for x in raw_allowed if str(x).isdigit()}
+                to_remove_tags = allowed.intersection(tag_range)
+                if to_remove_tags:
+                    allowed.difference_update(to_remove_tags)
+                    curr_cfg["allowed_ids"] = sorted(list(allowed))
+                    with open(wl_path, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(curr_cfg, f, allow_unicode=True)
+                    cleaned_tags_count = len(to_remove_tags)
+                    log.info(f"[CascadeDelete] 已从工位白名单中回收专属 Tag: {sorted(list(to_remove_tags))}")
+            self.hub.whitelist.refresh_whitelist_cache()
+        except Exception as e:
+            log.warning(f"[CascadeDelete] 回收专属 Tag 发生异常 ({e})")
+
+        # 4. 从坐标系树中移除该坐标系 (下级子坐标系自动上挂至 world)，并写穿 frames.yaml
         ok = self.coord_mgr.remove_frame(frame_id)
-        if ok:
-            self.coord_mgr.save()
-            self.hub.set_toast(f"已成功删除坐标系: {frame_id}")
-            return True, "删除成功"
-        return False, "删除失败"
+        if not ok:
+            return False, f"从坐标系树中删除 [{frame_id}] 失败"
+        self.coord_mgr.save()
+
+        # 5. 安全重置左侧树导航选择项 -> 当前工位的 world 坐标系
+        item_type, ws_idx, cur_fid = self.hub.selected_tree_item
+        if cur_fid == frame_id:
+            self.hub.selected_tree_item = ("frame", ws_idx, "world")
+
+        # 5. 刷新几何状态与缓存
+        self.refresh_geometry_cache()
+        msg = f"已成功删除坐标系 【{target_frame.name}】 ({frame_id})，连带清理 {cleaned_tags_count} 个专属Tag与 {deleted_rois_count} 个ROI物件"
+        self.hub.set_toast(msg)
+        log.info(f"[CascadeDelete] {msg}")
+        return True, msg
+
+    def delete_frame(self, frame_id: str) -> tuple[bool, str]:
+        """兼容别名: 执行级联删除"""
+        return self.delete_frame_cascade(frame_id)
 
     # ---------------- 6DoF 外参位姿与约束独立模态弹窗方法 ----------------
     def open_pose6d_modal(self, axis_idx: int = 0):

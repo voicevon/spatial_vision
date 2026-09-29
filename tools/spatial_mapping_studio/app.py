@@ -63,6 +63,7 @@ from tools.spatial_mapping_studio.mapping_renderer import MappingRenderer
 from src.utils.viewport_manager import (
     ViewportManager
 )
+from src.utils.gui_components import ScrollableListBox
 from src.utils.logger import get_logger
 from tools.spatial_mapping_studio.mapping_events import MappingEventMixin
 from tools.spatial_mapping_studio.mapping_workflows import MappingWorkflowMixin
@@ -245,6 +246,24 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         self.extract_thread: Optional[threading.Thread] = None
         self.extract_result_queue: Optional[Tuple[bool, str]] = None
 
+        # 12. 工业级可滚动列表组件 (左栏帧列表 & 右栏标靶残差清单)
+        self.frame_list_box = ScrollableListBox(
+            item_height=36,
+            item_gap=2,
+            scrollbar_width=6,
+            auto_hide_scrollbar=True,
+            render_item_background=True,
+            scroll_speed=2,
+        )
+        self.tag_list_box = ScrollableListBox(
+            item_height=38,
+            item_gap=2,
+            scrollbar_width=6,
+            auto_hide_scrollbar=True,
+            render_item_background=True,
+            scroll_speed=2,
+        )
+
         # 首次预热并计算全集残差指标
         self.refresh_all_frame_metrics()
 
@@ -423,6 +442,8 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
     @current_img_idx.setter
     def current_img_idx(self, val: int):
         self.data_mgr.current_img_idx = val
+        if hasattr(self, "tag_list_box"):
+            self.tag_list_box.scroll_offset = 0
 
     @property
     def scroll_offset(self) -> int:

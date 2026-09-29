@@ -113,11 +113,12 @@ class GalleryState:
             self.set_view_mode(self.VIEW_EXPANDED)
 
     def toggle_expanded_preview(self):
-        """切换全宽大图模式与标准看板模式 (全宽大图仅作用于标定相册页签)"""
+        """切换全宽大图模式与标准看板模式"""
         if self.view_mode == self.VIEW_EXPANDED:
             self.set_view_mode(self.VIEW_STANDARD)
         else:
-            self.hub.active_tab = self.hub.TAB_CALIB_IMAGES
+            if self.hub.active_tab not in (self.hub.TAB_CALIB_IMAGES, self.hub.TAB_PROD_IMAGES):
+                self.hub.active_tab = self.hub.TAB_CALIB_IMAGES
             self.set_view_mode(self.VIEW_EXPANDED)
 
     def load_current_workspace_images(self):
@@ -183,7 +184,7 @@ class GalleryState:
             self.prod_grid_offset = 0
             return
 
-        prod_dir = ws.calib_raw_images_dir
+        prod_dir = ws.prod_raw_images_dir
         if not os.path.isdir(prod_dir):
             self.prod_images = []
             self.selected_prod_image_idx = 0
@@ -194,7 +195,7 @@ class GalleryState:
         imgs = []
         for ext in exts:
             imgs.extend(glob.glob(os.path.join(prod_dir, ext)))
-        imgs.sort(key=lambda f: os.path.getmtime(f) if os.path.exists(f) else 0)
+        imgs.sort(key=lambda f: os.path.basename(f))
         self.prod_images = imgs
         if self.selected_prod_image_idx >= len(imgs):
             self.selected_prod_image_idx = max(0, len(imgs) - 1)
@@ -229,16 +230,20 @@ class GalleryState:
         self.select_prod_image_at_index(new_idx)
 
     def delete_selected_image(self) -> bool:
-        """删除当前选中的照片帧（物理安全移除、清理缓存，并自适应指向相邻帧）"""
-        if not self.current_images:
-            self.hub.set_toast("当前工位相册为空，无照片可删除。")
+        """删除当前选中的照片帧（根据当前激活页签自动区分标定相册/生产相册）"""
+        is_prod = (self.hub.active_tab == self.hub.TAB_PROD_IMAGES)
+        images = self.prod_images if is_prod else self.current_images
+        idx = self.selected_prod_image_idx if is_prod else self.selected_image_idx
+
+        if not images:
+            album_name = "生产相册" if is_prod else "标定相册"
+            self.hub.set_toast(f"当前工位{album_name}为空，无照片可删除。")
             return False
 
-        idx = self.selected_image_idx
-        if idx < 0 or idx >= len(self.current_images):
+        if idx < 0 or idx >= len(images):
             return False
 
-        img_path = self.current_images[idx]
+        img_path = images[idx]
         file_name = os.path.basename(img_path)
 
         try:
@@ -254,19 +259,25 @@ class GalleryState:
                 self.preview_cache.pop(k, None)
 
             # 重新载入相册列表
-            self.load_current_workspace_images()
-
-            # 自适应定位相邻图片
-            if self.current_images:
-                self.selected_image_idx = min(idx, len(self.current_images) - 1)
+            if is_prod:
+                self.load_prod_images()
+                if self.prod_images:
+                    self.selected_prod_image_idx = min(idx, len(self.prod_images) - 1)
+                else:
+                    self.selected_prod_image_idx = 0
+                self._ensure_prod_visible()
             else:
-                self.selected_image_idx = 0
-            self._ensure_image_visible()
+                self.load_current_workspace_images()
+                if self.current_images:
+                    self.selected_image_idx = min(idx, len(self.current_images) - 1)
+                else:
+                    self.selected_image_idx = 0
+                self._ensure_image_visible()
 
-            # 同步更新工位对象的 image_count
+            # 同步更新工位对象的统计
             ws = self.hub.get_selected_workspace()
             if ws:
-                ws.image_count = len(self.current_images)
+                ws.refresh_stats()
 
             self.hub.set_toast(f"已删除照片: {file_name}")
             return True

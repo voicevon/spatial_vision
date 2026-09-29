@@ -83,20 +83,23 @@ class MappingFrameListMixin:
         filtered_indices = app._get_filtered_indices()
         if not filtered_indices:
             put_text(canvas, "当前筛选条件下无图像", (x + 60, y + header_h + 45),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.44, (120, 120, 120), 1, cv2.LINE_AA)
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.44, (120, 120, 120), 1, cv2.LINE_AA)
             return
 
-        # 2. 列表内容区布局与渲染
+        # 2. 列表内容区布局与渲染 (统一接入 ScrollableListBox 工业级组件)
+        app.frame_list_box.scroll_offset = app.scroll_offset
+        try:
+            cur_sel_idx = filtered_indices.index(app.current_img_idx)
+        except ValueError:
+            cur_sel_idx = -1
+        app.frame_list_box.selected_index = cur_sel_idx
+
         if is_matrix:
             # ==================== 【模式 A: 逐帧多轮残差演进矩阵宽表】 ====================
             th_h = 24
             th_y1 = y + header_h + 6
             th_y2 = th_y1 + th_h
             list_y = th_y2 + 4
-            item_h = 30
-            visible_count = (h - (list_y - y) - 10) // item_h
-
-            app.scroll_offset = max(0, min(app.scroll_offset, len(filtered_indices) - visible_count))
 
             # 绘制矩阵表头背景
             cv2.rectangle(canvas, (x + 6, th_y1), (x + w - 6, th_y2), (32, 36, 46), -1)
@@ -112,108 +115,60 @@ class MappingFrameListMixin:
             put_text(canvas, "Tag", (x + 14 + c_name_w, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 205, 215), 1, cv2.LINE_AA)
 
             cur_col_x = x + 14 + c_name_w + c_tag_w
-            # 动态平差轮次表头列 (R0, R1, R2, ..., R10)
             active_headers = headers if headers else ["基准(R0)"]
             for col_idx, h_name in enumerate(active_headers):
                 is_latest_col = (col_idx == len(active_headers) - 1)
                 th_color = (0, 240, 255) if is_latest_col else (180, 185, 195)
-                # 最新一轮列高亮底框
                 if is_latest_col and len(active_headers) > 1:
                     cv2.rectangle(canvas, (cur_col_x - 2, th_y1 + 2), (cur_col_x + c_round_w - 4, th_y2 - 2), (25, 60, 75), -1)
                 put_text(canvas, h_name, (cur_col_x + 6, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.35, th_color, 1 if not is_latest_col else 2, cv2.LINE_AA)
                 cur_col_x += c_round_w
 
-            # 累计改善降幅列
             put_text(canvas, "累计降幅", (cur_col_x + 4, th_y1 + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 240, 120), 1, cv2.LINE_AA)
 
-            # 绘制逐帧矩阵数据行
-            for row_idx in range(visible_count):
-                list_idx = app.scroll_offset + row_idx
-                if list_idx >= len(filtered_indices):
-                    break
-
-                orig_img_idx = filtered_indices[list_idx]
+            def _draw_matrix_row(cvs, rect, orig_img_idx, idx, is_hover, is_selected):
+                rx1, ry1, rw, rh = rect
+                rx2, ry2 = rx1 + rw, ry1 + rh
                 p = app.image_files[orig_img_idx]
                 bname = os.path.basename(p)
                 meta = app.frame_metrics_cache.get(bname, {})
 
-                iy1 = list_y + row_idx * item_h
-                iy2 = iy1 + item_h - 2
-                is_selected = (orig_img_idx == app.current_img_idx)
-                is_hover = (x + 6 <= app.mouse_pos[0] <= x + w - 6 and iy1 <= app.mouse_pos[1] <= iy2)
-
-                if is_selected:
-                    row_bg = (48, 42, 28)
-                    border_c = (0, 220, 255)
-                elif is_hover:
-                    row_bg = (35, 38, 48)
-                    border_c = (55, 60, 75)
-                else:
-                    row_bg = (24, 26, 33) if row_idx % 2 == 0 else (20, 22, 28)
-                    border_c = (36, 38, 48)
-
-                cv2.rectangle(canvas, (x + 6, iy1), (x + w - 6, iy2), row_bg, -1)
-                cv2.rectangle(canvas, (x + 6, iy1), (x + w - 6, iy2), border_c, 1)
-
                 btn_id = f"SELECT_FRAME_{orig_img_idx}"
-                app.gui_buttons.append((btn_id, (x + 6, iy1, x + w - 6, iy2), orig_img_idx))
+                app.gui_buttons.append((btn_id, (rx1, ry1, rx2, ry2), orig_img_idx))
 
-                # 状态小圆点
-                dot_y = iy1 + item_h // 2
+                dot_y = ry1 + rh // 2
                 is_excl = meta.get("is_excluded", False)
-                if is_excl:
-                    dot_c = (0, 0, 240)
-                elif meta.get("mean_err", 0.0) > 0.5:
-                    dot_c = (0, 180, 255)
-                else:
-                    dot_c = (0, 230, 80)
-                cv2.circle(canvas, (x + 14, dot_y), 3, dot_c, -1)
+                dot_c = (0, 0, 240) if is_excl else ((0, 180, 255) if meta.get("mean_err", 0.0) > 0.5 else (0, 230, 80))
+                cv2.circle(cvs, (rx1 + 8, dot_y), 3, dot_c, -1)
 
-                # 文件名 (截取前10个字符)
                 name_stem = bname.replace(".png", "").replace(".jpg", "")
                 short_name = name_stem if len(name_stem) <= 10 else name_stem[:9] + "…"
                 name_col = (255, 255, 255) if is_selected else (200, 205, 215)
-                put_text(canvas, short_name, (x + 22, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.36, name_col, 1, cv2.LINE_AA)
+                put_text(cvs, short_name, (rx1 + 16, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.36, name_col, 1, cv2.LINE_AA)
 
-                # Tag 数量
                 tag_cnt = meta.get("tag_count", 0)
-                put_text(canvas, f"{tag_cnt}T", (x + 14 + c_name_w, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (140, 150, 165), 1, cv2.LINE_AA)
+                put_text(cvs, f"{tag_cnt}T", (rx1 + 8 + c_name_w, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (140, 150, 165), 1, cv2.LINE_AA)
 
-                # 各轮次残差单元格值 (R0, R1, ..., R10)
                 row_vals = matrix.get(bname, [])
-                r_col_x = x + 14 + c_name_w + c_tag_w
-
+                r_col_x = rx1 + 8 + c_name_w + c_tag_w
                 for c_idx in range(len(active_headers)):
                     is_latest_c = (c_idx == len(active_headers) - 1)
                     val = row_vals[c_idx] if c_idx < len(row_vals) else None
-
-                    # 最新一轮单元格微高亮底框
                     if is_latest_c and len(active_headers) > 1 and not is_selected:
-                        cv2.rectangle(canvas, (r_col_x - 2, iy1 + 2), (r_col_x + c_round_w - 6, iy2 - 2), (20, 42, 54), -1)
+                        cv2.rectangle(cvs, (r_col_x - 2, ry1 + 2), (r_col_x + c_round_w - 6, ry2 - 2), (20, 42, 54), -1)
 
                     if val is None or is_excl:
                         v_txt = "EXCL" if is_excl else "--"
                         v_col = (90, 95, 110) if not is_excl else (0, 0, 200)
-                        put_text(canvas, v_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.32, v_col, 1, cv2.LINE_AA)
+                        put_text(cvs, v_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.32, v_col, 1, cv2.LINE_AA)
                     else:
                         v_txt = f"{val:.1f}" if val >= 100.0 else f"{val:.2f}"
-                        if val > 1.0:
-                            v_col = (0, 180, 255)
-                        elif val > 0.5:
-                            v_col = (0, 220, 255)
-                        else:
-                            v_col = (0, 240, 100)
-                        put_text(canvas, v_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, v_col, 1, cv2.LINE_AA)
+                        v_col = (0, 180, 255) if val > 1.0 else ((0, 220, 255) if val > 0.5 else (0, 240, 100))
+                        put_text(cvs, v_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, v_col, 1, cv2.LINE_AA)
                     r_col_x += c_round_w
 
-                # 累计降幅百分比
                 first_v = row_vals[0] if (row_vals and row_vals[0] is not None) else None
-                last_v = None
-                for rv in reversed(row_vals):
-                    if rv is not None:
-                        last_v = rv
-                        break
-
+                last_v = next((rv for rv in reversed(row_vals) if rv is not None), None)
                 if first_v is not None and last_v is not None and first_v > 0.001:
                     drop_val = first_v - last_v
                     drop_pct = (drop_val / first_v) * 100.0
@@ -229,74 +184,63 @@ class MappingFrameListMixin:
                 else:
                     pct_txt = "--"
                     pct_col = (110, 115, 125)
+                put_text(cvs, pct_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, pct_col, 1, cv2.LINE_AA)
 
-                put_text(canvas, pct_txt, (r_col_x + 4, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, pct_col, 1, cv2.LINE_AA)
+            app.frame_list_box.item_height = 30
+            app.frame_list_box.render(
+                canvas=canvas,
+                rect=(x + 6, list_y, w - 12, h - (list_y - y) - 10),
+                items=filtered_indices,
+                draw_item_callback=_draw_matrix_row,
+                mouse_pos=app.mouse_pos,
+                empty_text="暂无匹配帧",
+            )
+            app.scroll_offset = app.frame_list_box.scroll_offset
 
         else:
             # ==================== 【模式 B: 高信息密度垂直紧凑帧列表】 ====================
             list_y = y + header_h + 8
-            item_h = 36
-            visible_count = (h - header_h - 16) // item_h
+            box_x = x + 6
+            box_w = w - 12
+            box_h = h - header_h - 16
 
-            app.scroll_offset = max(0, min(app.scroll_offset, len(filtered_indices) - visible_count))
-
-            for row_idx in range(visible_count):
-                list_idx = app.scroll_offset + row_idx
-                if list_idx >= len(filtered_indices):
-                    break
-
-                orig_img_idx = filtered_indices[list_idx]
+            def _draw_compact_frame(cvs, rect, orig_img_idx, idx, is_hover, is_selected):
+                rx1, ry1, rw, rh = rect
+                rx2, ry2 = rx1 + rw, ry1 + rh
                 p = app.image_files[orig_img_idx]
                 bname = os.path.basename(p)
                 meta = app.frame_metrics_cache.get(bname, {})
 
-                iy1 = list_y + row_idx * item_h
-                iy2 = iy1 + item_h - 2
-                is_selected = (orig_img_idx == app.current_img_idx)
-                is_hover = (x + 4 <= app.mouse_pos[0] <= x + w - 4 and iy1 <= app.mouse_pos[1] <= iy2)
-
-                if is_selected:
-                    row_bg = (48, 42, 28)
-                    border_c = (0, 220, 255)
-                elif is_hover:
-                    row_bg = (35, 38, 48)
-                    border_c = (55, 60, 75)
-                else:
-                    row_bg = (25, 27, 34)
-                    border_c = (38, 40, 50)
-
-                cv2.rectangle(canvas, (x + 6, iy1), (x + w - 6, iy2), row_bg, -1)
-                cv2.rectangle(canvas, (x + 6, iy1), (x + w - 6, iy2), border_c, 1)
-
                 btn_id = f"SELECT_FRAME_{orig_img_idx}"
-                app.gui_buttons.append((btn_id, (x + 6, iy1, x + w - 6, iy2), orig_img_idx))
+                app.gui_buttons.append((btn_id, (rx1, ry1, rx2, ry2), orig_img_idx))
 
-                # 状态小圆点
-                dot_y = iy1 + item_h // 2
+                dot_y = ry1 + rh // 2
                 is_excl = meta.get("is_excluded", False)
-                if is_excl:
-                    dot_c = (0, 0, 240)
-                elif meta.get("mean_err", 0.0) > 0.5:
-                    dot_c = (0, 180, 255)
-                else:
-                    dot_c = (0, 230, 80)
-                cv2.circle(canvas, (x + 18, dot_y), 4, dot_c, -1)
+                dot_c = (0, 0, 240) if is_excl else ((0, 180, 255) if meta.get("mean_err", 0.0) > 0.5 else (0, 230, 80))
+                cv2.circle(cvs, (rx1 + 12, dot_y), 4, dot_c, -1)
 
-                # 文件名
                 txt_col = (255, 255, 255) if is_selected else (200, 200, 200)
                 short_name = bname if len(bname) <= 15 else bname[:12] + "..."
-                put_text(canvas, short_name, (x + 28, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.40, txt_col, 1, cv2.LINE_AA)
+                put_text(cvs, short_name, (rx1 + 22, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.40, txt_col, 1, cv2.LINE_AA)
 
-                # Tag 计数
                 tag_cnt = meta.get("tag_count", 0)
-                t_str = f"{tag_cnt}T"
-                put_text(canvas, t_str, (x + 168, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (150, 160, 175), 1, cv2.LINE_AA)
+                put_text(cvs, f"{tag_cnt}T", (rx1 + 162, dot_y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (150, 160, 175), 1, cv2.LINE_AA)
 
-                # 平均残差数值与降幅
                 if is_excl:
-                    put_text(canvas, "EXCL", (x + 218, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 0, 240), 1, cv2.LINE_AA)
+                    put_text(cvs, "EXCL", (rx1 + 212, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 0, 240), 1, cv2.LINE_AA)
                 else:
                     err_val = meta.get('mean_err', 0.0)
                     err_str = f"{err_val:.2f}px"
                     err_col = (0, 200, 255) if err_val > 0.5 else (0, 240, 100)
-                    put_text(canvas, err_str, (x + 218, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.40, err_col, 1, cv2.LINE_AA)
+                    put_text(cvs, err_str, (rx1 + 212, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.40, err_col, 1, cv2.LINE_AA)
+
+            app.frame_list_box.item_height = 36
+            app.frame_list_box.render(
+                canvas=canvas,
+                rect=(box_x, list_y, box_w, box_h),
+                items=filtered_indices,
+                draw_item_callback=_draw_compact_frame,
+                mouse_pos=app.mouse_pos,
+                empty_text="暂无匹配帧",
+            )
+            app.scroll_offset = app.frame_list_box.scroll_offset

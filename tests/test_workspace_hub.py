@@ -708,6 +708,41 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(ws.image_count, ws.get_image_count("calibration"))
         self.assertIn("已", app.state.toast_msg)
 
+    def test_prod_images_loading_and_gallery_separation(self):
+        """测试生产相册与标定相册目录物理隔离、独立加载与大图展示"""
+        state = HubState(self.workspace_mgr, force_mock=True)
+        ws = state.get_selected_workspace()
+        self.assertIsNotNone(ws)
+
+        # 写入 2 张标定图片与 3 张生产图片 (不同前缀)
+        for i in range(2):
+            cv2.imwrite(os.path.join(ws.calib_raw_images_dir, f"calib_{i:04d}.png"), np.zeros((100, 100, 3), dtype=np.uint8))
+        for i in range(3):
+            cv2.imwrite(os.path.join(ws.prod_raw_images_dir, f"prod_{i:04d}.png"), np.zeros((100, 100, 3), dtype=np.uint8))
+
+        state.gallery.load_current_workspace_images()
+        state.gallery.load_prod_images()
+
+        # 验证两相册图片互相独立
+        self.assertEqual(len(state.gallery.current_images), 2)
+        self.assertEqual(len(state.gallery.prod_images), 3)
+        self.assertTrue(all("calib_" in p for p in state.gallery.current_images))
+        self.assertTrue(all("prod_" in p for p in state.gallery.prod_images))
+
+        # 切换到生产相册并进入全宽大图
+        state.active_tab = HubState.TAB_PROD_IMAGES
+        state.gallery.set_view_mode(HubState.VIEW_EXPANDED)
+        renderer = HubRenderer()
+        canvas = renderer.render(state)
+        self.assertIsNotNone(canvas)
+
+        # 验证大图下删除生产相册图片
+        deleted = state.gallery.delete_selected_image()
+        self.assertTrue(deleted)
+        self.assertEqual(len(state.gallery.prod_images), 2)
+        self.assertEqual(len(state.gallery.current_images), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
+

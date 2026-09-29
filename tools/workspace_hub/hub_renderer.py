@@ -181,6 +181,7 @@ def roi_row_del_rect(idx: int) -> tuple[int, int, int, int]:
     return (874, ry + 6, 50, 24)
 
 # ==================== 坐标系专属视图几何常量 ====================
+FRAME_DELETE_BTN = (782, 58, 74, 30)
 FRAME_EDIT_POSE_BTN = (866, 58, 74, 30)
 FRAME_ADD_ROI_BTN = (780, 58, 160, 30)
 FRAME_TAG_EDIT_SIZE_BTN = (796, 234, 144, 32)

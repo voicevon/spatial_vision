@@ -102,7 +102,7 @@ class HubHitTester:
             BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H,
             WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME,
-            FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
+            FRAME_DELETE_BTN, FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
             FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN, FRAME_ROI_SCROLL_TRACK,
             frame_tag_chip_rect, frame_roi_edit_btn, frame_roi_del_btn,
             frame_btn_add_rect, roi_btn_add_rect,
@@ -378,13 +378,16 @@ class HubHitTester:
 
         # 坐标系专属页签 1: 机构参数与 Tag 分段 (TAB_FRAME_POSE_TAGS)
         if state.active_tab == HubState.TAB_FRAME_POSE_TAGS and state.gallery.view_mode == HubState.VIEW_STANDARD:
+            cur_frame = state.geometry.get_selected_frame()
+            is_world_datum = (cur_frame and (cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id))
+            if not is_world_datum and point_in_rect(mx, my, FRAME_DELETE_BTN):
+                return "btn_delete_frame"
             if point_in_rect(mx, my, FRAME_EDIT_POSE_BTN):
                 return "btn_edit_frame_pose"
             if point_in_rect(mx, my, FRAME_TAG_EDIT_SIZE_BTN):
                 return "btn_edit_marker_size"
             if self.r._should_show_tag_bound_tooltip(state, (mx, my)):
                 return "tag_bound_help"
-            cur_frame = state.geometry.get_selected_frame()
             if cur_frame:
                 tag_range = state.geometry.get_frame_tag_range(cur_frame.frame_id)
                 for slot_idx in range(10):

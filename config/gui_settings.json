@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-29 09:33:45"
+    "updated_at": "2026-09-29 15:49:29"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -31,10 +31,10 @@
     "updated_at": "2026-09-28 15:46:32"
   },
   "workspace_hub": {
-    "scale_pct": 120,
+    "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-28 15:40:38",
+    "updated_at": "2026-09-29 15:54:09",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
@@ -52,11 +52,11 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-28 08:45:27",
+    "updated_at": "2026-09-29 10:31:06",
     "viewer_state": {
       "camera_type": "realsense",
       "resolution": "1920x1080",
-      "purpose": "calibration"
+      "purpose": "production"
     }
   },
   "asparagus_offline": {

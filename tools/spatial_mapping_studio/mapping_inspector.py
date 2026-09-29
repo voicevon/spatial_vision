@@ -112,25 +112,25 @@ class MappingInspectorMixin:
                 reverse=True
             )
 
-            row_y = list_y + 24
-            row_h = 38
-            for obs in sorted_obs_list:
+            box_x = x + 6
+            box_y = list_y + 24
+            box_w = w - 12
+            box_h = max(40, diag_y - box_y - 6)
+
+            def _draw_tag_item(cvs, rect, obs, idx, is_hover, is_selected):
+                rx1, ry1, rw, rh = rect
+                rx2, ry2 = rx1 + rw, ry1 + rh
                 tid = obs["tag_id"]
                 keep = obs.get("keep", True)
                 err_val = tag_errors.get(tid, 0.0)
 
-                rx1, ry1, rx2, ry2 = x + 6, row_y, x + w - 6, row_y + row_h - 2
-                is_hover = (rx1 <= app.mouse_pos[0] <= rx2 and ry1 <= app.mouse_pos[1] <= ry2)
-                bg_col = (34, 38, 48) if is_hover else (26, 28, 36)
-                cv2.rectangle(canvas, (rx1, ry1), (rx2, ry2), bg_col, -1)
-                cv2.rectangle(canvas, (rx1, ry1), (rx2, ry2), (48, 52, 64), 1)
                 app.gui_buttons.append((f"TOGGLE_TAG_{tid}", (rx1, ry1, rx2, ry2), tid))
 
                 dot_c = (0, 220, 80) if keep else (0, 0, 220)
-                cv2.circle(canvas, (rx1 + 10, ry1 + 11), 3, dot_c, -1)
+                cv2.circle(cvs, (rx1 + 10, ry1 + 11), 3, dot_c, -1)
 
                 t_col = (230, 230, 230) if keep else (120, 120, 120)
-                put_text(canvas, f"#{tid}", (rx1 + 18, ry1 + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.46, t_col, 1, cv2.LINE_AA)
+                put_text(cvs, f"#{tid}", (rx1 + 18, ry1 + 17), cv2.FONT_HERSHEY_SIMPLEX, 0.46, t_col, 1, cv2.LINE_AA)
 
                 err_str = f"{err_val:.2f}px" if keep else "EXCL"
                 if not keep:
@@ -142,7 +142,7 @@ class MappingInspectorMixin:
                 else:
                     err_c = (0, 230, 80)   # 优良 (<=0.5px) 荧光绿
                 (ew, _), _ = measure_text(err_str, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 1)
-                put_text(canvas, err_str, (rx2 - ew - 6, ry1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.52, err_c, 1, cv2.LINE_AA)
+                put_text(cvs, err_str, (rx2 - ew - 6, ry1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.52, err_c, 1, cv2.LINE_AA)
 
                 # 第二行: FR-9.6 世界系坐标 XYZ (mm)
                 rec = tags_meta.get(tid) or {}
@@ -153,11 +153,16 @@ class MappingInspectorMixin:
                 else:
                     xyz_str = "XYZ: --"
                     xyz_c = (110, 115, 125)
-                put_text(canvas, xyz_str, (rx1 + 18, ry1 + 31), cv2.FONT_HERSHEY_SIMPLEX, 0.36, xyz_c, 1, cv2.LINE_AA)
+                put_text(cvs, xyz_str, (rx1 + 18, ry1 + 31), cv2.FONT_HERSHEY_SIMPLEX, 0.36, xyz_c, 1, cv2.LINE_AA)
 
-                row_y += row_h
-                if row_y > diag_y - 12:
-                    break
+            app.tag_list_box.render(
+                canvas=canvas,
+                rect=(box_x, box_y, box_w, box_h),
+                items=sorted_obs_list,
+                draw_item_callback=_draw_tag_item,
+                mouse_pos=app.mouse_pos,
+                empty_text="暂无标靶观测",
+            )
 
         # 3. 底部 3 个紧凑快捷动作
         cv2.line(canvas, (x + 8, diag_y), (x + w - 8, diag_y), (45, 48, 58), 1)
