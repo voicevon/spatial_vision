@@ -100,6 +100,8 @@ def render_dropdown_popup(
     item_h: int = 30,
     min_width: int = 210,
     max_visible: int = 15,
+    mouse_pos: Tuple[int, int] = (-1, -1),
+    font_size: int = 12,
 ) -> List[Tuple[str, Tuple[int, int, int, int], str]]:
     """在画布上渲染置顶悬浮下拉选项列表浮层
 
@@ -112,6 +114,8 @@ def render_dropdown_popup(
         item_h: 每项高度 (px)
         min_width: 浮层最小宽度 (px)
         max_visible: 最多展示行数
+        mouse_pos: 鼠标当前坐标 (mx, my) 用于 hover 高亮
+        font_size: 字体大小
 
     Returns:
         List[Tuple[str, Tuple[int, int, int, int], str]]: 生成的交互按钮注册列表 [(btn_id, item_rect, key), ...]
@@ -138,6 +142,7 @@ def render_dropdown_popup(
     cv2.rectangle(canvas, (pop_x1, pop_y1), (pop_x2, pop_y2), GuiTheme.BORDER_SEL, 1)
 
     registered_buttons = []
+    mx, my = mouse_pos
     for i, (key, label) in enumerate(disp_opts):
         iy1 = pop_y1 + 3 + i * item_h
         iy2 = iy1 + item_h
@@ -146,10 +151,14 @@ def render_dropdown_popup(
 
         is_active = (key == active_key)
         item_rect = (pop_x1 + 2, iy1, pop_x2 - 2, iy2)
+        is_hover = (item_rect[0] <= mx <= item_rect[2] and item_rect[1] <= my <= item_rect[3])
 
         if is_active:
             cv2.rectangle(canvas, (pop_x1 + 2, iy1), (pop_x2 - 2, iy2), GuiTheme.CARD_SEL, -1)
             text_color = GuiTheme.ACCENT
+        elif is_hover:
+            cv2.rectangle(canvas, (pop_x1 + 2, iy1), (pop_x2 - 2, iy2), GuiTheme.CARD_HOVER, -1)
+            text_color = GuiTheme.BTN_TEXT_HOVER
         else:
             text_color = GuiTheme.WHITE
 
@@ -157,9 +166,9 @@ def render_dropdown_popup(
             canvas,
             label,
             (pop_x1 + 10, iy1 + (item_h - 16) // 2 - 2),
-            font_size=14,
+            font_size=font_size,
             color=text_color,
-            bold=is_active,
+            bold=is_active or is_hover,
         )
         btn_id = f"{btn_prefix}{i}"
         registered_buttons.append((btn_id, item_rect, key))

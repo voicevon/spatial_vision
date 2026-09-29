@@ -228,19 +228,19 @@ class FramesRoisPageRenderer:
 
         is_world_datum = (cur_frame.type == "world" or cur_frame.frame_id == "world" or not cur_frame.parent_frame_id)
 
-        # 1. 顶部操作按钮 (世界坐标系禁止删除，仅非世界坐标系显示删除按钮)
-        if not is_world_datum:
-            self.r._draw_button(canvas, FRAME_DELETE_BTN, "删除", mpos, theme_color=(60, 60, 220))
-        self.r._draw_button(canvas, FRAME_EDIT_POSE_BTN, "编辑", mpos)
+        card_x = box_x + 12
+        card_w = box_w - 24
 
-        card_x = box_x + 16
-        card_w = box_w - 32
-
-        # 2. 上部卡片: 机构位姿与空间拓扑 (紧凑精致)
-        c1_y = box_y + 40
-        c1_h = 134
+        # ==== 1. 栏目 #1: 机构坐标系配置卡片 (内嵌 [编辑] / [删除] 按钮) ====
+        c1_y = box_y + 10
+        c1_h = 138
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (24, 28, 38), -1)
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (42, 52, 70), 1)
+
+        # 顶行右侧内嵌操作按钮
+        self.r._draw_button(canvas, FRAME_EDIT_POSE_BTN, "编辑", mpos)
+        if not is_world_datum:
+            self.r._draw_button(canvas, FRAME_DELETE_BTN, "删除", mpos, theme_color=(60, 60, 220))
 
         if is_world_datum:
             type_desc = "工位绝对世界基准 (world)"
@@ -249,12 +249,12 @@ class FramesRoisPageRenderer:
         else:
             type_desc = "AprilTag 动标绑定 (tag_bound)"
 
-        draw_text(canvas, f"坐标系标识: {cur_frame.frame_id}", (card_x + 16, c1_y + 12), font_size=13, color=(210, 225, 240))
+        draw_text(canvas, f"坐标系标识: {cur_frame.frame_id}", (card_x + 16, c1_y + 12), font_size=13, color=(210, 225, 240), bold=True)
         draw_text(canvas, f"父坐标系: {cur_frame.parent_frame_id}", (card_x + 220, c1_y + 12), font_size=13, color=(210, 225, 240))
         draw_text(canvas, f"类型: {type_desc}", (card_x + 16, c1_y + 36), font_size=12, color=(0, 220, 200))
 
         # 动标定义与说明悬停帮助徽章
-        help_btn_x, help_btn_y, help_btn_w, help_btn_h = card_x + 310, c1_y + 33, 126, 22
+        help_btn_x, help_btn_y, help_btn_w, help_btn_h = card_x + 280, c1_y + 34, 126, 22
         is_hover_help = (help_btn_x <= mpos[0] <= help_btn_x + help_btn_w and help_btn_y <= mpos[1] <= help_btn_y + help_btn_h)
         help_bg = (30, 48, 48) if is_hover_help else (20, 28, 36)
         help_border = (0, 255, 200) if is_hover_help else (40, 75, 75)
@@ -264,7 +264,7 @@ class FramesRoisPageRenderer:
                   color=(0, 255, 220) if is_hover_help else (140, 185, 195), bold=is_hover_help)
 
         if is_world_datum:
-            w_box_y = c1_y + 60
+            w_box_y = c1_y + 64
             cv2.rectangle(canvas, (card_x + 16, w_box_y), (card_x + card_w - 16, w_box_y + 62), (18, 22, 32), -1)
             cv2.rectangle(canvas, (card_x + 16, w_box_y), (card_x + card_w - 16, w_box_y + 62), (38, 48, 65), 1)
             draw_text(canvas, "● 工位全局绝对空间基准 (World Datum / Origin)", (card_x + 24, w_box_y + 9), font_size=12, color=(0, 255, 200), bold=True)
@@ -272,7 +272,7 @@ class FramesRoisPageRenderer:
 
         elif cur_frame.type == "fixed_transform":
             if cur_frame.translation_xyz_mm is None or getattr(cur_frame, "rotation_rpy_deg", None) is None:
-                unk_box_y = c1_y + 60
+                unk_box_y = c1_y + 64
                 cv2.rectangle(canvas, (card_x + 16, unk_box_y), (card_x + card_w - 16, unk_box_y + 62), (18, 22, 32), -1)
                 cv2.rectangle(canvas, (card_x + 16, unk_box_y), (card_x + card_w - 16, unk_box_y + 62), (38, 48, 65), 1)
                 draw_text(canvas, "● 外参位姿约束状态: 未知 / 待解 (Unknown / To be Calibrated)", (card_x + 24, unk_box_y + 9), font_size=12, color=(140, 160, 255), bold=True)
@@ -290,34 +290,36 @@ class FramesRoisPageRenderer:
                 ry_str = f"Ry:{ry:+.1f}°" if k_dof[4] else "Ry:? (待解)"
                 rz_str = f"Rz:{rz:+.1f}°" if k_dof[5] else "Rz:? (待解)"
 
-                t_box_y = c1_y + 60
+                t_box_y = c1_y + 64
                 cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (18, 22, 32), -1)
                 cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (38, 48, 65), 1)
                 draw_text(canvas, "平移 T [mm]:", (card_x + 24, t_box_y + 7), font_size=11, color=(160, 180, 200))
                 draw_text(canvas, f"{tx_str}  {ty_str}  {tz_str}", (card_x + 120, t_box_y + 7), font_size=12, color=(0, 255, 220), bold=True)
 
-                r_box_y = c1_y + 94
+                r_box_y = c1_y + 98
                 cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (18, 22, 32), -1)
                 cv2.rectangle(canvas, (card_x + 16, r_box_y), (card_x + card_w - 16, r_box_y + 30), (38, 48, 65), 1)
                 draw_text(canvas, "旋转 R [deg]:", (card_x + 24, r_box_y + 7), font_size=11, color=(160, 180, 200))
                 draw_text(canvas, f"{rx_str}  {ry_str}  {rz_str}", (card_x + 120, r_box_y + 7), font_size=12, color=(255, 200, 60), bold=True)
 
         else:
-            tag_box_y = c1_y + 60
+            tag_box_y = c1_y + 64
             cv2.rectangle(canvas, (card_x + 16, tag_box_y), (card_x + card_w - 16, tag_box_y + 44), (18, 22, 32), -1)
             cv2.rectangle(canvas, (card_x + 16, tag_box_y), (card_x + card_w - 16, tag_box_y + 44), (38, 48, 65), 1)
             off = getattr(cur_frame, "offset_xyz_mm", [0.0, 0.0, 0.0])
             draw_text(canvas, f"标称安装偏移 offset: [{off[0]:.1f}, {off[1]:.1f}, {off[2]:.1f}] mm", (card_x + 24, tag_box_y + 14), font_size=12, color=(200, 215, 230))
 
-        # 3. 中间卡片: Tag 工位公共物理属性 (空间绝对尺度基准)
-        c_mid_y = c1_y + c1_h + 8
-        c_mid_h = 58
-        cv2.rectangle(canvas, (card_x, c_mid_y), (card_x + card_w, c_mid_y + c_mid_h), (24, 28, 38), -1)
-        cv2.rectangle(canvas, (card_x, c_mid_y), (card_x + card_w, c_mid_y + c_mid_h), (48, 60, 80), 1)
+        # ==== 2. 栏目 #2: Tags 标靶管理与空间基准卡片 (整合公共属性与分段放行矩阵) ====
+        c2_y = c1_y + c1_h + 10
+        c2_h = 450
+        cv2.rectangle(canvas, (card_x, c2_y), (card_x + card_w, c2_y + c2_h), (22, 26, 36), -1)
+        cv2.rectangle(canvas, (card_x, c2_y), (card_x + card_w, c2_y + c2_h), (40, 50, 68), 1)
 
-        cv2.circle(canvas, (card_x + 18, c_mid_y + 17), 4, (0, 240, 220), -1)
+        # 2.A 上半部: Tag 工位公共物理属性 (三维空间绝对尺度基准)
+        p1_y = c2_y + 10
+        cv2.circle(canvas, (card_x + 18, p1_y + 8), 4, (0, 240, 220), -1)
         draw_text(canvas, "Tag 工位公共物理属性 (三维空间绝对尺度基准 Scale Datum)",
-                  (card_x + 28, c_mid_y + 9), font_size=12, color=(0, 240, 220), bold=True)
+                  (card_x + 28, p1_y + 1), font_size=12, color=(0, 240, 220), bold=True)
 
         ms_val = state.whitelist.get_workspace_marker_size()
         if ms_val is not None and ms_val > 0:
@@ -326,22 +328,20 @@ class FramesRoisPageRenderer:
         else:
             ms_str = "标靶名义边长: 未录入 ⚠️ (建图/跟踪拒绝运行，请点击核准)"
             ms_col = (0, 160, 255)
-        draw_text(canvas, ms_str, (card_x + 28, c_mid_y + 32), font_size=13, color=ms_col, bold=True)
+        draw_text(canvas, ms_str, (card_x + 28, p1_y + 24), font_size=12, color=ms_col, bold=True)
 
         # 边长编辑/核准按钮
         self.r._draw_button(canvas, FRAME_TAG_EDIT_SIZE_BTN, "核准 / 编辑边长", mpos, theme_color=(0, 220, 160))
 
-        # 4. 下部卡片: 10-Slot Tag 专属分配矩阵与局部真值
-        c2_y = c_mid_y + c_mid_h + 8
-        c2_h = box_h - (c2_y - box_y) - 6
-        cv2.rectangle(canvas, (card_x, c2_y), (card_x + card_w, c2_y + c2_h), (24, 28, 38), -1)
-        cv2.rectangle(canvas, (card_x, c2_y), (card_x + card_w, c2_y + c2_h), (42, 52, 70), 1)
+        # 子板块分割线
+        sep_y = p1_y + 56
+        cv2.line(canvas, (card_x + 16, sep_y), (card_x + card_w - 16, sep_y), (36, 45, 60), 1)
 
+        # 2.B 下半部: Tag 专属分段放行矩阵 [分配区间 ID: xx ~ xx]
         tag_range = state.geometry.get_frame_tag_range(cur_frame.frame_id)
         start_id, end_id = tag_range[0], tag_range[-1]
         draw_text(canvas, f"Tag 专属分段放行矩阵 [分配区间 ID: {start_id:02d} ~ {end_id:02d}]",
-                  (card_x + 14, c2_y + 10), font_size=14, color=(0, 240, 220), bold=True)
-        cv2.line(canvas, (card_x + 10, c2_y + 44), (card_x + card_w - 10, c2_y + 44), (36, 45, 60), 1)
+                  (card_x + 16, sep_y + 10), font_size=13, color=(0, 240, 220), bold=True)
 
         allowed_set = set(state.geometry.get_frame_tags_status(cur_frame.frame_id))
         anchors = state.whitelist.get_anchor_map()
@@ -393,6 +393,10 @@ class FramesRoisPageRenderer:
             px, py = cx + cw - 14, cy + 48
             pen_col = (0, 255, 180) if is_hover else (70, 95, 110)
             cv2.line(canvas, (px - 3, py + 2), (px + 3, py - 4), pen_col, 1, cv2.LINE_AA)
+
+        # 底部操作提示说明
+        draw_text(canvas, "提示: 点击卡片上半区快速放行/锁定标靶，点击右下角笔形图标可核准先验三维坐标 P(x, y, z)",
+                  (card_x + 16, 486), font_size=11, color=(120, 140, 160))
 
     def render_frame_rois(self, canvas: np.ndarray, state: HubState, ws: Any):
         """坐标系专属页签 2: 3D ROI 空间物件 (x: 340~960, y: 50~670)"""

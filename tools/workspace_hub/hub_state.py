@@ -47,9 +47,14 @@ class HubState:
     VIEW_STANDARD = GalleryState.VIEW_STANDARD
     VIEW_EXPANDED = GalleryState.VIEW_EXPANDED
     GRID_COLS = GalleryState.GRID_COLS
-    GRID_ROWS = GalleryState.GRID_ROWS
-    GRID_PAGE = GalleryState.GRID_PAGE
     ROI_VISIBLE_COUNT = GeometryState.ROI_VISIBLE_COUNT
+
+    # 3. 生产工作流模式枚举定义 [(mode_key, display_name, pipeline_id), ...]
+    PRODUCTION_MODES = [
+        ("scara_sorting", "SCARA 智能分选生产线", "asparagus_studio"),
+        ("wheel_inspection", "分选轮在席质检生产线", "wheel_inspector"),
+        ("none", "通用标定观察工位", "general_viewer"),
+    ]
 
     def __init__(self, workspace_mgr: WorkspaceManager = None, force_mock: bool = False):
         self.workspace_mgr = workspace_mgr or WorkspaceManager()
@@ -82,6 +87,9 @@ class HubState:
         # 浮动提示通知
         self.toast_msg = ""
         self.toast_time = 0.0
+
+        # 当前活跃展开的下拉菜单浮层标识 (例如 "ws_prod_mode")
+        self.active_dropdown: str | None = None
 
         # 实例化领域子状态机
         self.gallery = GalleryState(self)
@@ -140,6 +148,7 @@ class HubState:
         """选中指定索引的 Workspace，并同步驱动各领域子状态机加载数据"""
         if 0 <= idx < len(self.workspaces):
             self.selected_workspace_idx = idx
+            self.active_dropdown = None
             self.save_selected_workspace()
             self.gallery.selected_image_idx = 0
             self.gallery.image_grid_offset = 0
@@ -157,6 +166,7 @@ class HubState:
         self.workspaces = self.workspace_mgr.list_workspaces()
         if not self.workspaces:
             self.selected_workspace_idx = 0
+            self.active_dropdown = None
             self.gallery.current_images = []
             self.geometry.coord_mgr = None
             self.geometry.roi_mgr = None
@@ -188,6 +198,7 @@ class HubState:
 
     def _on_tab_change(self, key: str):
         self.active_tab = key
+        self.active_dropdown = None
         if self.gallery.view_mode == self.VIEW_EXPANDED:
             self.gallery.view_mode = self.VIEW_STANDARD
 
@@ -196,7 +207,7 @@ class HubState:
         item_type = self.selected_tree_item[0]
         if item_type == "frame":
             tabs = [
-                TabItem(key=self.TAB_FRAME_POSE_TAGS, label="Tag"),
+                TabItem(key=self.TAB_FRAME_POSE_TAGS, label="Tags"),
                 TabItem(key=self.TAB_FRAME_ROIS, label="ROI物件"),
             ]
             allowed = self.FRAME_TAB_ORDER
@@ -314,27 +325,38 @@ class HubState:
             self.set_toast(f"工位备注已成功修改为: 【{clean or '无'}】")
         return ok
 
-    def cycle_workspace_production_mode(self) -> str:
-        """循环切换当前工位的生产工作流模式 (scara_sorting -> wheel_inspection -> none)"""
+    def set_workspace_production_mode(self, mode_key: str) -> bool:
+        """设置当前工位的生产工作流模式"""
         ws = self.get_selected_workspace()
         if not ws:
-            return ""
-        modes = [
-            ("scara_sorting", "SCARA 智能分选生产线", "asparagus_studio"),
-            ("wheel_inspection", "分选轮在席质检生产线", "wheel_inspector"),
-            ("none", "通用标定观察工位", "general_viewer"),
-        ]
-        curr_mode = ws.production.get("mode", "scara_sorting")
-        cur_idx = 0
-        for i, (m, _, _) in enumerate(modes):
-            if m == curr_mode:
-                cur_idx = i
+            return False
+        found = None
+        for m, name, pipe in self.PRODUCTION_MODES:
+            if m == mode_key:
+                found = (m, name, pipe)
                 break
-        next_idx = (cur_idx + 1) % len(modes)
-        next_mode, next_name, next_pipe = modes[next_idx]
+        if not found:
+            return False
+        next_mode, next_name, next_pipe = found
         ws.production["mode"] = next_mode
         ws.production["name"] = next_name
         ws.production["active_pipeline"] = next_pipe
         ws.save_meta()
         self.set_toast(f"工位生产工作流已切换为: 【{next_name}】 ({next_mode})")
+        return True
+
+    def cycle_workspace_production_mode(self) -> str:
+        """循环切换当前工位的生产工作流模式 (scara_sorting -> wheel_inspection -> none)"""
+        ws = self.get_selected_workspace()
+        if not ws:
+            return ""
+        curr_mode = ws.production.get("mode", "scara_sorting")
+        cur_idx = 0
+        for i, (m, _, _) in enumerate(self.PRODUCTION_MODES):
+            if m == curr_mode:
+                cur_idx = i
+                break
+        next_idx = (cur_idx + 1) % len(self.PRODUCTION_MODES)
+        next_mode = self.PRODUCTION_MODES[next_idx][0]
+        self.set_workspace_production_mode(next_mode)
         return next_mode

@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from typing import Any
 
-from src.utils.gui_components import draw_text
+from src.utils.gui_components import draw_text, draw_dropdown_button, render_dropdown_popup
 from tools.workspace_hub.hub_state import HubState
 
 
@@ -27,7 +27,7 @@ class DashboardPageRenderer:
     def render(self, canvas: np.ndarray, state: HubState, sc: Any):
         """渲染大盘看板主视图 (x: 340~960, y: 50~670)"""
         from tools.workspace_hub.hub_renderer import (
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME
         )
 
@@ -56,14 +56,26 @@ class DashboardPageRenderer:
         draw_text(canvas, sc.workspace_id, (card_x + 16, c1_y + 39), font_size=12, color=self.r.COLOR_GRAY)
         self.r._draw_button(canvas, WS_BTN_OPEN_DIR, "打开", mpos)
 
-        # 行 3: 生产工作流模式 (Smart Production) 与 [切换模式] 按钮
+        # 行 3: 生产工作流模式 (Smart Production) 下拉选择框
         prod_cfg = getattr(sc, "production", {}) or {}
         prod_name = prod_cfg.get("name", "SCARA 智能分选生产线")
         prod_mode = prod_cfg.get("mode", "scara_sorting")
         prod_pipe = prod_cfg.get("active_pipeline", "asparagus_studio")
-        draw_text(canvas, f"工作流:  {prod_name}  ({prod_mode} · {prod_pipe})",
-                  (card_x + 16, c1_y + 68), font_size=12, color=(0, 255, 200), bold=True)
-        self.r._draw_button(canvas, WS_BTN_TOGGLE_PROD_MODE, "切换模式", mpos, theme_color=(0, 200, 220))
+        draw_text(canvas, "工作流:", (card_x + 16, c1_y + 68), font_size=12, color=(0, 255, 200), bold=True)
+
+        display_label = f"{prod_name}  ({prod_mode} · {prod_pipe})"
+        dd_x, dd_y, dd_w, dd_h = WS_DROPDOWN_PROD_MODE
+        dd_rect_pts = (dd_x, dd_y, dd_x + dd_w, dd_y + dd_h)
+        is_open = (state.active_dropdown == "ws_prod_mode")
+        draw_dropdown_button(
+            canvas,
+            dd_rect_pts,
+            display_label,
+            is_open=is_open,
+            mouse_pos=mpos,
+            font_size=11,
+            theme_color=(0, 220, 200),
+        )
 
         # 行 4: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
         desc_text = getattr(sc, "description", "") or "暂无备注"
@@ -169,3 +181,23 @@ class DashboardPageRenderer:
             roi_col = self.r.COLOR_GRAY
         draw_text(canvas, f"• 3D ROI 空间物件集合  : {roi_desc}", (card_x + 18, c4_y + 114), font_size=12, color=roi_col, bold=True)
         draw_text(canvas, f"• 标定核心求解与剪枝   : Ceres/Levenberg-Marquardt 两阶段优化 (Huber 稳健核函数)", (card_x + 18, c4_y + 137), font_size=12, color=(140, 155, 175))
+
+        # ==== 5. 工作流下拉菜单浮层 (置顶渲染，防止被下方卡片遮挡) ====
+        if state.active_dropdown == "ws_prod_mode":
+            dd_x, dd_y, dd_w, dd_h = WS_DROPDOWN_PROD_MODE
+            anchor_rect = (dd_x, dd_y, dd_x + dd_w, dd_y + dd_h)
+            prod_mode = prod_cfg.get("mode", "scara_sorting")
+            options = [
+                (m, f"{name}  ({m} · {pipe})")
+                for m, name, pipe in HubState.PRODUCTION_MODES
+            ]
+            render_dropdown_popup(
+                canvas,
+                anchor_rect,
+                options,
+                prod_mode,
+                item_h=30,
+                min_width=dd_w,
+                mouse_pos=mpos,
+                font_size=12,
+            )

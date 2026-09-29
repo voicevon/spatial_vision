@@ -116,6 +116,7 @@ class WorkspaceHubApp(BaseCvApp):
         "ws_open_dir": lambda app: app.workspace_handler.handle_open_directory(),
         "ws_edit_desc": lambda app: app.workspace_handler.handle_edit_description(),
         "ws_toggle_prod_mode": lambda app: app.state.cycle_workspace_production_mode(),
+        "dropdown_dismiss": lambda app: app._action_dropdown_dismiss(),
         "ws_sync_data": lambda app: app.workspace_handler.handle_sync_data_consistency(),
         "ws_clone": lambda app: app.workspace_handler.handle_clone_workspace(),
         "ws_delete": lambda app: app.workspace_handler.handle_delete_workspace(),
@@ -129,12 +130,29 @@ class WorkspaceHubApp(BaseCvApp):
         "tree_ws_toggle": lambda app, h: app.state.toggle_workspace_expanded(h[2]),
         "tree_ws_select": lambda app, h: app.state.select_tree_workspace(h[1]),
         "tree_frame_select": lambda app, h: app.state.select_tree_frame(h[1], h[2]),
+        "dropdown_toggle": lambda app, h: app._action_dropdown_toggle(h[1]),
+        "dropdown_select": lambda app, h: app._action_dropdown_select(h[1], h[2]),
         "frame_tag_toggle": lambda app, h: app._action_frame_tag_toggle(h[1]),
         "frame_tag_edit_xyz": lambda app, h: app._handle_frame_tag_edit_xyz(h[1]),
         "roi_scrollbar_click": lambda app, h: app.state.geometry.jump_roi_scroll_by_y(h[1]),
         "frame_roi_edit": lambda app, h: app.state.geometry.open_roi_modal(h[1]),
         "frame_roi_delete": lambda app, h: app._action_delete_roi(h[1]),
     }
+
+    def _action_dropdown_toggle(self, dd_type: str):
+        """响应下拉框的展开/收起切换"""
+        if dd_type == "ws_prod_mode":
+            self.state.active_dropdown = None if self.state.active_dropdown == dd_type else dd_type
+
+    def _action_dropdown_select(self, dd_type: str, val: str):
+        """响应下拉框选项点击与模式切换"""
+        if dd_type == "ws_prod_mode":
+            self.state.active_dropdown = None
+            self.state.set_workspace_production_mode(val)
+
+    def _action_dropdown_dismiss(self):
+        """点击空白区域收起下拉菜单"""
+        self.state.active_dropdown = None
 
     def _action_delete_frame(self):
         """响应删除当前选中子坐标系动作 (含详细级联影响清单与安全确认)"""

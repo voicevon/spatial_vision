@@ -100,7 +100,7 @@ class HubHitTester:
             GEOM_MODAL_CLOSE, GEOM_MODAL_SAVE, GEOM_MODAL_CANCEL,
             HELP_MODAL_W, HELP_MODAL_H,
             BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H,
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME,
             FRAME_DELETE_BTN, FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
             FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN, FRAME_ROI_SCROLL_TRACK,
@@ -357,14 +357,29 @@ class HubHitTester:
                 if 886 <= mx <= 950:
                     return "exp_restore"
 
-        # 工位大盘看板 (TAB_REPORT) 卡片内嵌按钮
+        # 工位大盘看板 (TAB_REPORT) 卡片内嵌按钮与工作流下拉框
         if state.active_tab == HubState.TAB_REPORT and state.gallery.view_mode == HubState.VIEW_STANDARD:
+            if state.active_dropdown == "ws_prod_mode":
+                dd_x, dd_y, dd_w, dd_h = WS_DROPDOWN_PROD_MODE
+                pop_x1, pop_y1 = dd_x, dd_y + dd_h + 2
+                pop_w = max(dd_w, 210)
+                pop_x2 = pop_x1 + pop_w
+                item_h = 30
+                options = HubState.PRODUCTION_MODES
+                pop_y2 = pop_y1 + len(options) * item_h + 6
+                if pop_x1 <= mx <= pop_x2 and pop_y1 <= my <= pop_y2:
+                    opt_idx = min(len(options) - 1, max(0, (my - (pop_y1 + 3)) // item_h))
+                    return ("dropdown_select", "ws_prod_mode", options[opt_idx][0])
+                if point_in_rect(mx, my, WS_DROPDOWN_PROD_MODE):
+                    return ("dropdown_toggle", "ws_prod_mode")
+                return "dropdown_dismiss"
+
+            if point_in_rect(mx, my, WS_DROPDOWN_PROD_MODE):
+                return ("dropdown_toggle", "ws_prod_mode")
             if point_in_rect(mx, my, WS_BTN_RENAME):
                 return "ws_rename"
             if point_in_rect(mx, my, WS_BTN_OPEN_DIR):
                 return "ws_open_dir"
-            if point_in_rect(mx, my, WS_BTN_TOGGLE_PROD_MODE):
-                return "ws_toggle_prod_mode"
             if point_in_rect(mx, my, WS_BTN_EDIT_DESC):
                 return "ws_edit_desc"
             if point_in_rect(mx, my, WS_BTN_SYNC_DATA):

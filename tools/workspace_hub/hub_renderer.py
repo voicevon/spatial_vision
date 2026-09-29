@@ -57,10 +57,11 @@ GRID_ROWS = 3
 HELP_MODAL_W = 860
 HELP_MODAL_H = 490
 
-# 工位大盘看板卡片内嵌按钮几何常量 (单源标准)
+# 工位大盘看板卡片内嵌按钮与下拉框几何常量 (单源标准)
 WS_BTN_RENAME = (864, 68, 74, 26)
 WS_BTN_OPEN_DIR = (864, 96, 74, 26)
-WS_BTN_TOGGLE_PROD_MODE = (864, 124, 74, 26)
+WS_DROPDOWN_PROD_MODE = (426, 124, 512, 26)
+WS_BTN_TOGGLE_PROD_MODE = WS_DROPDOWN_PROD_MODE
 WS_BTN_EDIT_DESC = (864, 152, 74, 26)
 WS_BTN_SYNC_DATA = (372, 192, 132, 28)
 WS_BTN_CLONE = (512, 192, 80, 28)
@@ -181,10 +182,13 @@ def roi_row_del_rect(idx: int) -> tuple[int, int, int, int]:
     return (874, ry + 6, 50, 24)
 
 # ==================== 坐标系专属视图几何常量 ====================
-FRAME_DELETE_BTN = (782, 58, 74, 30)
-FRAME_EDIT_POSE_BTN = (866, 58, 74, 30)
+# 内嵌于坐标系卡片 (c1_y = 60) 顶行右侧
+FRAME_EDIT_POSE_BTN = (862, 70, 70, 26)
+FRAME_DELETE_BTN = (788, 70, 66, 26)
 FRAME_ADD_ROI_BTN = (780, 58, 160, 30)
-FRAME_TAG_EDIT_SIZE_BTN = (796, 234, 144, 32)
+
+# 内嵌于 Tags 标靶卡片 (c2_y = 208) 首行右侧
+FRAME_TAG_EDIT_SIZE_BTN = (796, 222, 136, 28)
 
 # ==================== 标靶物理边长专属模态弹窗几何 ====================
 MS_MODAL_W = 460
@@ -208,12 +212,13 @@ def ms_padkey_rect(idx: int) -> tuple[int, int, int, int]:
     ky = MS_MODAL_Y + 136 + r * 40
     return (kx, ky, 96, 34)
 
-FT_GRID_X0 = 356
-FT_GRID_Y0 = 366
+# 内嵌于 Tags 标靶卡片下半部分的 10-Slot 放行矩阵
+FT_GRID_X0 = 359
+FT_GRID_Y0 = 326
 FT_CHIP_W = 110
 FT_CHIP_H = 68
 FT_GAP_X = 8
-FT_GAP_Y = 12
+FT_GAP_Y = 14
 
 def frame_tag_chip_rect(idx: int) -> tuple[int, int, int, int]:
     """计算 10-Slot Tag 芯片矩阵中第 idx (0~9) 个芯片的矩形 (2行x5列)"""
@@ -369,6 +374,7 @@ class HubRenderer:
             state.geometry.frame_modal_open,
             state.geometry.roi_modal_open,
             state.geometry.active_dropdown,
+            state.active_dropdown,
             str(state.geometry.frame_modal_data),
             str(state.geometry.roi_modal_data),
             state.mouse_x,
@@ -637,19 +643,17 @@ class HubRenderer:
     def _should_show_tag_bound_tooltip(self, state: HubState, mpos: tuple[int, int]) -> bool:
         """检测鼠标是否悬停在动标帮助提示胶囊或动标参数信息区域"""
         mx, my = mpos
-        box_x, box_y = 340, 50
-        box_w = 620
-        card_x = box_x + 16
-        c1_y = box_y + 42
+        card_x = 352
+        c1_y = 60
         # 1. 动标定义说明徽章
-        help_btn_x, help_btn_y, help_btn_w, help_btn_h = card_x + 310, c1_y + 37, 126, 22
+        help_btn_x, help_btn_y, help_btn_w, help_btn_h = card_x + 280, c1_y + 34, 126, 22
         if help_btn_x <= mx <= help_btn_x + help_btn_w and help_btn_y <= my <= help_btn_y + help_btn_h:
             return True
         # 2. 如果是动标类型坐标系，悬停在动标参数卡片上亦弹出完整解释
         cur_frame = state.geometry.get_selected_frame()
         if cur_frame and cur_frame.type == "tag_bound":
-            tag_box_y = c1_y + 70
-            if card_x + 16 <= mx <= card_x + (box_w - 32) - 16 and tag_box_y <= my <= tag_box_y + 44:
+            tag_box_y = c1_y + 64
+            if card_x + 16 <= mx <= card_x + 596 - 16 and tag_box_y <= my <= tag_box_y + 44:
                 return True
         return False
 

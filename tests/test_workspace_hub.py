@@ -742,6 +742,38 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(len(state.gallery.prod_images), 2)
         self.assertEqual(len(state.gallery.current_images), 2)
 
+    def test_prod_mode_dropdown_interaction(self):
+        """测试大盘看板中工作流模式下拉框的展开、选项切换与点击外部收起闭环"""
+        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "dd_test_settings.json"))
+        app.state.active_tab = HubState.TAB_REPORT
+        ws = app.state.get_selected_workspace()
+        self.assertIsNotNone(ws)
+
+        # 初始状态：下拉菜单关闭
+        self.assertIsNone(app.state.active_dropdown)
+
+        # 1. 点击下拉触发器 (x=450, y=137，落在 WS_DROPDOWN_PROD_MODE 矩形内)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 450, 137, 0, None)
+        self.assertEqual(app.state.active_dropdown, "ws_prod_mode")
+
+        # 2. 验证渲染展开浮层无异常
+        canvas = app.renderer.render(app.state)
+        self.assertIsNotNone(canvas)
+
+        # 3. 点击选项浮层的第 2 项 ("wheel_inspection")
+        # 浮层 y 起始于 124 + 26 + 2 = 152，每项高 30，第 2 项 y 范围 [182, 212]
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 450, 195, 0, None)
+        self.assertIsNone(app.state.active_dropdown)
+        self.assertEqual(ws.production.get("mode"), "wheel_inspection")
+        self.assertIn("分选轮在席质检生产线", ws.production.get("name"))
+
+        # 4. 再次点击展开，然后点击外部区域测试 dismiss
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 450, 137, 0, None)
+        self.assertEqual(app.state.active_dropdown, "ws_prod_mode")
+        # 点击外部 (左侧列表区 x=200, y=200)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 200, 200, 0, None)
+        self.assertIsNone(app.state.active_dropdown)
+
 
 if __name__ == "__main__":
     unittest.main()
