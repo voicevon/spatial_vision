@@ -23,6 +23,8 @@ AprilTag 空间建图工作站 (Spatial Mapping Studio)
 import os
 import sys
 import time
+import json
+import atexit
 import threading
 import argparse
 from typing import Dict, List, Optional, Tuple, Any
@@ -88,6 +90,8 @@ DEFAULT_MAP_PATH = os.path.join(PROJECT_ROOT, "data", "workspaces", "default", "
 MANIFEST_PATH = os.path.join(_ws_fallback, "tag_observations.yaml")
 
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+APP_ID = "spatial_mapping_studio"
+GUI_SETTINGS_FILE = os.path.join(PROJECT_ROOT, "config", "gui_settings.json")
 
 
 class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
@@ -103,16 +107,30 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         win_w: int = 1920,
         win_h: int = 1080,
         manifest_path: Optional[str] = None,
-        workspace_id: Optional[str] = None
+        workspace_id: Optional[str] = None,
+        settings_file: Optional[str] = None
     ):
         self.win_w = win_w
         self.win_h = win_h
+        self.settings_file = settings_file or GUI_SETTINGS_FILE
 
         # 工位管理器感知与初始目标工位装配
         try:
             self.workspace_mgr = WorkspaceManager()
-            if workspace_id:
-                ws = self.workspace_mgr.get_workspace_by_id(workspace_id)
+            target_ws_id = workspace_id
+            if not target_ws_id and not image_dir:
+                try:
+                    if os.path.exists(self.settings_file):
+                        with open(self.settings_file, "r", encoding="utf-8") as f:
+                            root = json.load(f)
+                        saved_ws_id = (root.get(APP_ID) or {}).get("dropdown_state", {}).get("workspace_id")
+                        if saved_ws_id and self.workspace_mgr.get_workspace_by_id(saved_ws_id):
+                            target_ws_id = saved_ws_id
+                except Exception:
+                    pass
+
+            if target_ws_id:
+                ws = self.workspace_mgr.get_workspace_by_id(target_ws_id)
             elif image_dir:
                 norm_target = os.path.normpath(image_dir)
                 ws = next((s for s in self.workspace_mgr.list_workspaces()
@@ -225,7 +243,10 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         self.toast_sticky = True  # True = 持久显示, 仅用户点击 ❌ 才关闭
 
         # 7b. 世界坐标系对齐质检单报告卡片数据
-        self.alignment_report: Optional[Dict[str, Any]] = None
+        self.alignment_report: Optional[Dict[str, Any]] = (
+            (self.data_mgr.tags_map_data or {}).get("world_anchor", {}).get("alignment_report")
+            if getattr(self, "data_mgr", None) else None
+        )
         self.alignment_report_sort: str = "id"  # "id" 或 "err_desc"
 
         # 8. GUI 交互按钮注册表
@@ -266,6 +287,103 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
 
         # 首次预热并计算全集残差指标
         self.refresh_all_frame_metrics()
+
+        # 13. 从持久化配置恢复各下拉选项状态
+        self._load_dropdown_state()
+
+        # 注册退出持久化钩子保底
+        try:
+            atexit.register(self.save_dropdown_state)
+        except Exception:
+            pass
+
+    # ------------------------------ 下拉选项持久化 ------------------------------
+    def _load_dropdown_state(self):
+        """从 settings_file (config/gui_settings.json) 恢复建图工作站下拉选择偏好"""
+        try:
+            if not os.path.exists(self.settings_file):
+                return
+            with open(self.settings_file, "r", encoding="utf-8") as f:
+                root = json.load(f)
+            if not isinstance(root, dict):
+                return
+            node = root.get(APP_ID, {})
+            if not isinstance(node, dict):
+                return
+            state = node.get("dropdown_state") or node.get("viewer_state") or {}
+            if not isinstance(state, dict):
+                return
+
+            from tools.spatial_mapping_studio.mapping_ui_common import (
+                FILTER_MODE_OPTIONS,
+                SORT_MODE_OPTIONS,
+                BA_VIEW_OPTIONS,
+                OBS_VIEW_OPTIONS,
+            )
+
+            # 1. 筛选范围下拉 (filter_mode)
+            valid_filters = [k for k, _ in FILTER_MODE_OPTIONS]
+            if state.get("filter_mode") in valid_filters:
+                self.filter_mode = state["filter_mode"]
+
+            # 2. 排序方式下拉 (sort_mode)
+            valid_sorts = [k for k, _ in SORT_MODE_OPTIONS]
+            if state.get("sort_mode") in valid_sorts:
+                self.sort_mode = state["sort_mode"]
+
+            # 3. BA 理论视口显示下拉 (ba_view_mode)
+            valid_ba = [k for k, _ in BA_VIEW_OPTIONS]
+            if state.get("ba_view_mode") in valid_ba:
+                self.ba_view_mode = state["ba_view_mode"]
+
+            # 4. 实测识别视口显示下拉 (obs_view_mode)
+            valid_obs = [k for k, _ in OBS_VIEW_OPTIONS]
+            if state.get("obs_view_mode") in valid_obs:
+                self.obs_view_mode = state["obs_view_mode"]
+
+            # 5. Z 轴特殊点 / XY 平面显示下拉 (plane_z, show_xy_plane)
+            if "show_xy_plane" in state:
+                self.show_xy_plane_on = bool(state["show_xy_plane"])
+            if "plane_z" in state:
+                try:
+                    self.plane_z = float(state["plane_z"])
+                except (ValueError, TypeError):
+                    pass
+        except Exception as e:
+            log.warning(f"恢复建图工作站下拉偏好设置失败，使用默认配置: {e}")
+
+    def save_dropdown_state(self):
+        """保存当前建图工作站下拉选择偏好至 settings_file (config/gui_settings.json)"""
+        try:
+            root = {}
+            if os.path.exists(self.settings_file):
+                try:
+                    with open(self.settings_file, "r", encoding="utf-8") as f:
+                        loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        root = loaded
+                except Exception:
+                    root = {}
+
+            node = root.setdefault(APP_ID, {})
+            state_data = {
+                "workspace_id": str(self.current_workspace_id or ""),
+                "filter_mode": str(self.filter_mode),
+                "sort_mode": str(self.sort_mode),
+                "ba_view_mode": str(self.ba_view_mode),
+                "obs_view_mode": str(self.obs_view_mode),
+                "show_xy_plane": bool(self.show_xy_plane_on),
+                "plane_z": float(self.plane_z),
+            }
+            node["dropdown_state"] = state_data
+            node["viewer_state"] = state_data.copy()
+            node["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+            os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+            with open(self.settings_file, "w", encoding="utf-8") as f:
+                json.dump(root, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            log.warning(f"保存建图工作站下拉偏好设置失败: {e}")
 
     @property
     def workspace_options(self):
@@ -321,8 +439,13 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         # 5. 重新装载当前工位的多坐标系与 ROI 空间物件管理器
         self._load_workspace_geometry()
 
+        # 6. 同步更新/重置世界坐标系对齐质检单（避免残留旧工位质检卡片）
+        new_rep = (self.data_mgr.tags_map_data or {}).get("world_anchor", {}).get("alignment_report")
+        self.alignment_report = new_rep if new_rep else None
+
         self.set_toast(f"已热重载切换至场景: 【{target_ws.name}】(共 {len(self.data_mgr.image_files)} 帧)")
         log.info(f"[SPATIAL_MAPPING] 成功切换场景至: {target_ws.name} ({target_ws.workspace_id})")
+        self.save_dropdown_state()
 
     def _load_workspace_geometry(self):
         """从当前工位装载坐标系树与 ROI 空间物件集合管理器 (缺失则空)"""
@@ -931,6 +1054,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                     next_idx = (curr_idx + 1) % len(presets)
                     self.ba_view_mode, self.obs_view_mode, desc = presets[next_idx]
                     self.set_toast(f"视口模式: {desc}")
+                    self.save_dropdown_state()
                 elif key in (ord('z'), ord('Z'), ord('0')):  # Z / 0 键 -> 重置缩放
                     self.reset_viewport_zoom()
                 elif key in (ord('t'), ord('T'), 32):  # T 键或空格键 -> 翻转状态
@@ -953,12 +1077,15 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 elif key in (ord('y'), ord('Y')):      # Y 键 -> 开关 XY 平面网格
                     self.show_xy_plane_on = not self.show_xy_plane_on
                     self.set_toast(f"XY 平面网格{'已开启' if self.show_xy_plane_on else '已关闭'} ({self.get_current_plane_z_label()})")
+                    self.save_dropdown_state()
                 elif key in (ord('['), 219):           # [ 键 -> XY 平面高度升档
                     self.step_plane_z(direction=+1)
                     self.set_toast(f"XY 平面高度升档: {self.get_current_plane_z_label()}")
+                    self.save_dropdown_state()
                 elif key in (ord(']'), 221):           # ] 键 -> XY 平面高度降档
                     self.step_plane_z(direction=-1)
                     self.set_toast(f"XY 平面高度降档: {self.get_current_plane_z_label()}")
+                    self.save_dropdown_state()
                 elif key in (8, 127):                  # Backspace 或 Delete (DEL) -> 一键复位地图
                     self.reset_map()
                     self.set_toast("立体地图已复位清空 (备份为 .bak)，恢复为纯观测模式")
@@ -967,6 +1094,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
 
 
         finally:
+            self.save_dropdown_state()
             cv2.destroyAllWindows()
 
 

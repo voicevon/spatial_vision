@@ -19,6 +19,7 @@ import glob
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch, MagicMock
 import numpy as np
 import cv2
 import yaml
@@ -765,8 +766,46 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         )
         self.assertGreater(np.count_nonzero(disp_frame), 100, "XY 平面网格与坐标轴应在画布上产生像素绘制")
 
+    @patch("src.utils.dialog_utils.show_error_dialog")
+    def test_align_world_datum_failure_triggers_error_dialog(self, mock_show_error):
+        """测试世界坐标系校准失败时，触发带红叉的 Critical 报警对话框、清空旧质检单并输出工位诊断信息"""
+        # 预设旧质检单模拟跨工位残留
+        self.studio.alignment_report = {"fake_old": True}
+        # 模拟 BA Runner 执行世界系校准失败
+        with patch.object(self.studio.ba_runner, "execute_world_alignment", return_value=(False, "工位未配置已知世界锚点！", None)):
+            self.studio.align_current_workspace_world_datum()
+
+            mock_show_error.assert_called_once()
+            args, _ = mock_show_error.call_args
+            title, msg = args
+            self.assertIn("世界坐标系校准失败", title)
+            self.assertIn("工位未配置已知世界锚点", msg)
+            self.assertIn("【当前工位】", msg)
+            self.assertIn("【工位配置已知锚点】", msg)
+            self.assertIn("排查指引", msg)
+
+            # 校验失败时旧质检单必须被清空
+            self.assertIsNone(self.studio.alignment_report)
+
+            # 同时底栏状态 Toast 带有 ❌ 标识
+            self.assertIn("❌", self.studio.status_toast)
+            self.assertIn("工位未配置已知世界锚点", self.studio.status_toast)
+
+    def test_switch_workspace_resets_alignment_report(self):
+        """测试热切换工位时，旧工位残留的 alignment_report 会被彻底重置/同步"""
+        self.studio.alignment_report = {"stale_tag_ids": [5, 6, 7, 8]}
+        if self.studio.workspace_mgr:
+            all_ws = self.studio.workspace_mgr.list_workspaces()
+            if all_ws:
+                target_ws = all_ws[0]
+                self.studio.switch_workspace(target_ws.workspace_id)
+                # 切换后若新工位地图未包含 world_anchor.alignment_report，则应为 None，绝不残留旧工位的 [5, 6, 7, 8]
+                new_rep = (self.studio.data_mgr.tags_map_data or {}).get("world_anchor", {}).get("alignment_report")
+                self.assertEqual(self.studio.alignment_report, new_rep)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

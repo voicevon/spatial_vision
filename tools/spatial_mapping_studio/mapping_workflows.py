@@ -202,5 +202,27 @@ class MappingWorkflowMixin:
                 self.alignment_report = rep
             if hasattr(self, "_load_workspace_geometry"):
                 self._load_workspace_geometry()
-        self.set_toast(msg)
+            self.set_toast(msg)
+        else:
+            from src.utils.dialog_utils import show_error_dialog
+            self.alignment_report = None
+            cur_ws_name = getattr(self, "current_workspace_name", "未知工位")
+            cur_ws_id = getattr(self, "current_workspace_id", "")
+            configured_anchors = sorted(self.ba_runner.anchor_tags.keys()) if (hasattr(self, "ba_runner") and getattr(self.ba_runner, "anchor_tags", None)) else []
+            observed_tags = sorted(list(self.data_mgr.tags_map_data.get("tags", {}).keys())) if (hasattr(self, "data_mgr") and getattr(self.data_mgr, "tags_map_data", None) and "tags" in self.data_mgr.tags_map_data) else []
+            intersection_anchors = sorted(list(set(configured_anchors) & set(observed_tags)))
+
+            detail_msg = (
+                f"【当前工位】{cur_ws_name} ({cur_ws_id})\n"
+                f"【工位配置已知锚点】Tag {configured_anchors}\n"
+                f"【当前平差有效检出锚点】Tag {intersection_anchors}\n\n"
+                f"世界坐标系校准拦截失败：\n"
+                f"{msg}\n\n"
+                f"【排查指引】\n"
+                f"1. 确认当前工位是否已先执行阶段一【自由平差 (B)】生成相对底图；\n"
+                f"2. 检查当前工位世界锚点配置（anchor_tags.yaml 或 tag_whitelist.yaml）；\n"
+                f"3. 确认锚点标靶是否在观测数据中至少检出 >= 3 个且空间分布不共线（XY 坐标不可重合）。"
+            )
+            self.set_toast(f"❌ 校准失败: {msg}")
+            show_error_dialog("世界坐标系校准失败 (World Datum Error)", detail_msg)
 

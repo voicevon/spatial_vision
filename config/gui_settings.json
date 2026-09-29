@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-29 16:19:24"
+    "updated_at": "2026-09-29 16:59:10"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -34,13 +34,13 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-29 16:19:20",
+    "updated_at": "2026-09-29 16:36:14",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260923_204026_Workspace_5"
+    "selected_workspace_id": "20260916_145246_Home_real"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -155,5 +155,26 @@
     "canvas_w": 1366,
     "canvas_h": 705,
     "updated_at": "2026-09-29 09:33:40"
+  },
+  "spatial_mapping_studio": {
+    "dropdown_state": {
+      "workspace_id": "20260929_171520_C",
+      "filter_mode": "all",
+      "sort_mode": "name_asc",
+      "ba_view_mode": "3d",
+      "obs_view_mode": "3d",
+      "show_xy_plane": false,
+      "plane_z": 0.0
+    },
+    "viewer_state": {
+      "workspace_id": "20260929_171520_C",
+      "filter_mode": "all",
+      "sort_mode": "name_asc",
+      "ba_view_mode": "3d",
+      "obs_view_mode": "3d",
+      "show_xy_plane": false,
+      "plane_z": 0.0
+    },
+    "updated_at": "2026-09-29 17:15:21"
   }
 }

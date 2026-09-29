@@ -179,6 +179,8 @@ class MappingEventMixin:
         elif btn_id == "TOGGLE_DRAW_XY_PLANE":
             self.show_xy_plane_on = not self.show_xy_plane_on
             self.set_toast(f"XY 平面网格{'已开启' if self.show_xy_plane_on else '已关闭'} ({self.get_current_plane_z_label()})")
+            if hasattr(self, "save_dropdown_state"):
+                self.save_dropdown_state()
         elif btn_id == "TOGGLE_PLANE_Z_DROPDOWN":
             self.active_dropdown = None if self.active_dropdown == "PLANE_Z_DROPDOWN" else "PLANE_Z_DROPDOWN"
         elif btn_id.startswith("DD_SELECT_"):
@@ -214,6 +216,8 @@ class MappingEventMixin:
                 self.scroll_offset = 0
                 lbl = dict(SORT_MODE_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"排序方式已切换为: {lbl}")
+            if hasattr(self, "save_dropdown_state"):
+                self.save_dropdown_state()
             self.active_dropdown = None
         elif btn_id.startswith("SELECT_FRAME_"):
             orig_idx = int(extra)

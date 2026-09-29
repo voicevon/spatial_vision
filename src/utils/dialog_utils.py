@@ -129,3 +129,78 @@ def prompt_input_text(title: str, prompt_text: str, initial: str = "", default: 
         return val
     except Exception:
         return ""
+
+
+def show_error_dialog(title: str, message: str) -> None:
+    """
+    弹出跨平台原生错误报警对话框 (带红底白叉 ❌ 图标，Windows Critical Error 风格)。
+    具备系统级置顶、报警音效和阻塞式强制确认交互。
+
+    :param title: 弹窗标题
+    :param message: 报警详情与排查指导
+    """
+    log.error(f"[CRITICAL_DIALOG] {title}: {message}")
+
+    # 1. Windows 原生内核 API: 微秒级原生 Critical Error 红色大叉框 (MB_ICONERROR)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            MB_OK = 0x00000000
+            MB_ICONERROR = 0x00000010      # 红色圆圈白叉 (Critical Error)
+            MB_TOPMOST = 0x00040000        # 系统级置顶，防任何全屏/大窗口遮挡
+            MB_SETFOREGROUND = 0x00010000  # 强制获取焦点
+            ctypes.windll.user32.MessageBoxW(0, str(message), str(title), MB_OK | MB_ICONERROR | MB_TOPMOST | MB_SETFOREGROUND)
+            return
+        except Exception as e:
+            log.warning(f"Windows 原生 MessageBoxW 错误框调用异常，尝试备用方案: {e}")
+
+    # 2. Linux 环境原生对话框 (zenity / kdialog)
+    if sys.platform.startswith("linux"):
+        if shutil.which("zenity"):
+            try:
+                cmd = ["zenity", "--error", "--title", title, "--text", message]
+                subprocess.run(cmd, capture_output=True)
+                return
+            except Exception as e:
+                log.warning(f"zenity error 调用异常: {e}")
+        elif shutil.which("kdialog"):
+            try:
+                cmd = ["kdialog", "--title", title, "--error", message]
+                subprocess.run(cmd, capture_output=True)
+                return
+            except Exception as e:
+                log.warning(f"kdialog error 调用异常: {e}")
+
+    # 3. macOS 原生弹窗 (osascript)
+    if sys.platform == "darwin":
+        try:
+            script = f'display alert "{title}" message "{message}" as critical'
+            subprocess.run(["osascript", "-e", script], capture_output=True)
+            return
+        except Exception as e:
+            log.warning(f"osascript alert 调用异常: {e}")
+
+    # 4. 跨平台图形环境兜底 (受控 Tkinter 弹窗)
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        messagebox.showerror(title, message, parent=root)
+        root.destroy()
+        return
+    except Exception:
+        pass
+
+    # 5. 无图形界面兜底
+    print(f"\n[CRITICAL ERROR] ========================================")
+    print(f"[*] 标题: {title}")
+    print(f"[*] 内容:\n{message}")
+    print(f"========================================================\n")
+
+
+# 别名兼容
+show_critical_message = show_error_dialog
+prompt_error = show_error_dialog
+

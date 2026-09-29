@@ -20,6 +20,12 @@ import numpy as np
 
 from src.utils.gui_theme import GuiTheme
 from src.utils.text_rendering import draw_text, get_cached_font, measure_text, put_text
+from src.utils.dialog_utils import (
+    show_error_dialog,
+    show_critical_message,
+    prompt_confirm,
+    prompt_input_text,
+)
 
 
 def draw_dropdown_button(
