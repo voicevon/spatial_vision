@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-28 20:21:38"
+    "updated_at": "2026-09-29 09:33:45"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -152,8 +152,8 @@
   },
   "isolate_wheels_production": {
     "scale_pct": 100,
-    "canvas_w": 1280,
-    "canvas_h": 830,
-    "updated_at": "2026-09-28 20:18:28"
+    "canvas_w": 1366,
+    "canvas_h": 705,
+    "updated_at": "2026-09-29 09:33:40"
   }
 }
