@@ -21,6 +21,7 @@ from tools.isolate_wheels_debug.app import (
     BTN_CLEAR_COUNTS, BTN_SEND_LOAD, BTN_QUIT,
     BTN_DIR_FWD, BTN_DIR_REV,
     TAB_SINGLE, TAB_MULTI, BTN_SEND_MOTOR, MULTI_ANGLE_OPTS, POPUP_ROW_H,
+    BOX_LOAD_SPEED, LOAD_SPEED_OPTS, SPEED_POPUP_ROW_H,
 )
 
 
@@ -95,7 +96,7 @@ class TestIsolateWheelsDebug(unittest.TestCase):
         self.assertFalse(self.app.send_load())
 
     def test_send_load_publishes_json(self):
-        """连接且 idle 时下发 JSON 载荷到 cmd 主题"""
+        """连接且 idle 时下发 JSON 载荷到 cmd 主题 (含默认 speed=1.0)"""
         self.app._connected = True
         self.app.devices["F8EC"] = "idle"
         self.app.counts = [1, 0, 2, 0, 0, 0, 0, 3]
@@ -105,8 +106,34 @@ class TestIsolateWheelsDebug(unittest.TestCase):
         self.assertEqual(len(fake.published), 1)
         topic, payload = fake.published[0]
         self.assertEqual(topic, "flux/loader/F8EC/cmd")
-        self.assertEqual(json.loads(payload), {"cmd": "load", "counts": [1, 0, 2, 0, 0, 0, 0, 3]})
+        self.assertEqual(json.loads(payload), {"cmd": "load", "counts": [1, 0, 2, 0, 0, 0, 0, 3], "speed": 1.0})
         self.assertEqual(self.app.last_cmd_json, payload)
+
+    def test_load_speed_selection_and_publish(self):
+        """测试点击速度框展开弹层并选择 0.5x, 验证发送 load 携带 speed=0.5"""
+        self.app._connected = True
+        self.app.devices["F8EC"] = "idle"
+        fake = _FakeClient()
+        self.app._client = fake
+
+        # 1. 点击速度框打开弹层
+        sx, sy, sw, sh = BOX_LOAD_SPEED
+        self.app.on_click(sx + 10, sy + 10)
+        self.assertTrue(self.app.popup_speed)
+
+        # 2. 点击 0.5x 选项 (LOAD_SPEED_OPTS 中第 2 项: 0.1, 0.2, 0.5)
+        spx, spy, spw, sph = self.app._speed_popup_rect()
+        target_row = 2  # 0.5
+        row_y = spy + 4 + target_row * SPEED_POPUP_ROW_H + 5
+        self.app.on_click(spx + 20, row_y)
+        self.assertFalse(self.app.popup_speed)
+        self.assertEqual(self.app.load_speed, 0.5)
+
+        # 3. 发送 load，验证载荷
+        self.assertTrue(self.app.send_load())
+        _, payload = fake.published[-1]
+        data = json.loads(payload)
+        self.assertEqual(data["speed"], 0.5)
 
     # ---------- v1.1 motor 单电机调试 ----------
     def test_send_motor_requires_connection_and_idle(self):

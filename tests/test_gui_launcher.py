@@ -25,7 +25,7 @@ class TestGuiLauncher(unittest.TestCase):
     def test_tools_catalog_integrity(self):
         """测试工具目录数据结构完整性与快捷键不重复"""
         catalog = build_tools_catalog()
-        self.assertEqual(len(catalog), 12)
+        self.assertEqual(len(catalog), 13)
 
         seen_keys = set()
         seen_shortcuts = set()
@@ -111,10 +111,10 @@ class TestGuiLauncher(unittest.TestCase):
         self.app._handle_keyboard(38)
         self.assertEqual(self.app.selected_tool_idx, 0)
 
-        # 测试 D 组边界 (row=5: idx 9; 按下键不再越界)
-        self.app.selected_tool_idx = 9
+        # 测试 D 组边界 (row=7: idx 12; 按下键不再越界)
+        self.app.selected_tool_idx = 12
         self.app._handle_keyboard(40)
-        self.assertEqual(self.app.selected_tool_idx, 9)
+        self.assertEqual(self.app.selected_tool_idx, 12)
 
     def test_toast_message(self):
         """测试动态 Toast 提示设置"""
@@ -234,37 +234,48 @@ class TestGuiLauncher(unittest.TestCase):
             self.assertLessEqual(w, 200)
 
     def test_asparagus_card_position_and_shortcuts(self):
-        """测试芦笋离线验证卡片位于 B 组 (idx=3)，快捷键为 4，卡片与快捷键顺移无冲突"""
+        """测试芦笋离线验证卡片位于 B 组 (idx=3)，快捷键为 4，B 组生产卡片与 D 组硬件调试卡片快捷键对齐"""
         catalog = build_tools_catalog()
         ids = [t.key_id for t in catalog]
         self.assertEqual(ids[3], "asparagus_offline")
         self.assertEqual(catalog[3].shortcut, "4")
         self.assertEqual(catalog[3].category, "B — 标定建图与生产验证")
         self.assertTrue(catalog[3].is_gui)
-        # 数字快捷键与卡片一一对应且顺移无冲突: 1~8
-        expected = ["1", "2", "3", "4", "5", "6", "7", "8"]
-        for idx, sc in enumerate(expected):
-            self.assertEqual(catalog[idx].shortcut, sc)
+
+        # 核心生产双工位均归属于 B 大类
         self.assertEqual(catalog[4].key_id, "scara_production")
-        self.assertEqual(catalog[5].key_id, "d435_live")
-        self.assertEqual(catalog[6].key_id, "scara_debug")
-        self.assertEqual(catalog[7].key_id, "isolate_wheels_debug")
+        self.assertEqual(catalog[4].shortcut, "5")
+        self.assertEqual(catalog[4].category, "B — 标定建图与生产验证")
+
+        self.assertEqual(catalog[5].key_id, "isolate_wheels_production")
+        self.assertEqual(catalog[5].shortcut, "0")
+        self.assertEqual(catalog[5].category, "B — 标定建图与生产验证")
+
+        # D 组硬件调试
+        self.assertEqual(catalog[6].key_id, "d435_live")
+        self.assertEqual(catalog[6].shortcut, "6")
+        self.assertEqual(catalog[7].key_id, "scara_debug")
+        self.assertEqual(catalog[7].shortcut, "7")
+        self.assertEqual(catalog[8].key_id, "isolate_wheels_debug")
+        self.assertEqual(catalog[8].shortcut, "8")
 
     def test_grid_layout_two_plus_two_plus_one(self):
-        """测试 B/D 两组网格布局几何正确 (共 10 张卡片: A 1张全宽, B 2x2, D 2+2+1)"""
-        rects = [self.app._get_card_rect(i) for i in range(10)]
-        # B 组: idx 1/2 第一行, 3/4 第二行
+        """测试 B/D 两组网格布局几何正确 (A 1张全宽, B 2x2+1, D 2+2+2+1)"""
+        rects = [self.app._get_card_rect(i) for i in range(13)]
+        # B 组: idx 1/2 第一行, 3/4 第二行, 5 第三行左列
         self.assertEqual(rects[1][1], rects[2][1])
         self.assertEqual(rects[3][1], rects[4][1])
         self.assertGreater(rects[3][1], rects[1][1])
-        # D 组: idx 5/6 第一行, 7/8 第二行, 9 第三行仅左列
-        self.assertEqual(rects[5][1], rects[6][1])
-        self.assertEqual(rects[7][1], rects[8][1])
-        self.assertGreater(rects[7][1], rects[5][1])
-        self.assertGreater(rects[9][1], rects[7][1])
-        self.assertEqual(rects[9][0], rects[5][0])          # 第三行仅左列
-        # D 组整体低于 B 组
         self.assertGreater(rects[5][1], rects[3][1])
+        self.assertEqual(rects[5][0], rects[1][0])
+
+        # D 组 (从 idx 6 开始): 6/7 第一行, 8/9 第二行
+        self.assertEqual(rects[6][1], rects[7][1])
+        self.assertEqual(rects[8][1], rects[9][1])
+        self.assertGreater(rects[8][1], rects[6][1])
+
+        # D 组整体低于 B 组
+        self.assertGreater(rects[6][1], rects[5][1])
         # 全部卡片在 1000px 基准画布内
         for r in rects:
             self.assertLess(r[1] + r[3], 1000)

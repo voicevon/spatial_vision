@@ -219,6 +219,27 @@ def build_tools_catalog() -> List[ToolCardMeta]:
             quick_tips="快捷键: [5] 启动 | [SPACE] 启动/暂停自动生产 | [S] 单拍测试 | [R] 换箱复位"
         ),
 
+        ToolCardMeta(
+            key_id="isolate_wheels_production",
+            shortcut="0",
+            title="分离轮生产工作台",
+            subtitle="[0] 8 通道自动分选与连续生产",
+            category="B — 标定建图与生产验证",
+            is_gui=True,
+            command=[sys.executable, "-m", "tools.isolate_wheels_production"],
+            tag_color=COLOR_B,
+            summary="分离轮 8 通道自动化生产工作台，支持配方出料调度、速度倍率缩放、PPM 效能监视与连续自动循环生产。",
+            details=[
+                "实时物流拓扑：8 托架槽位横向流水线（1->8 流向），出口指示与实时出料统计",
+                "自动化调度：单拍步进出料与连续无人化循环生产，根据 idle/done 自动节拍闭环",
+                "速度与节拍调优：集成 0.1x~2.0x 动态速度缩放及 0.5s~3.0s 循环间隔设置",
+                "生产效能统计：实时统计总节拍数、累计出料件数、平均节拍耗时 (CT) 与 PPM 速率"
+            ],
+            inputs=["MQTT Broker (voicevon.vicp.io:1883, 账号 von)"],
+            outputs=["节拍命令下发、自动连续循环生产、实时生产效能监控看板"],
+            quick_tips="快捷键: [0] 启动 | [SPACE] 启动/暂停自动循环 | [S] 单拍出料 | [C] 重置统计"
+        ),
+
         # ===== D — 硬件调试与系统运维 =====
         ToolCardMeta(
             key_id="d435_live",
@@ -624,27 +645,27 @@ class GuiLauncherApp:
 
         # 方向键：将卡片索引映射到 (row, col) 坐标后导航
         # row 0: idx 0 (A Workspace，全宽)
-        # rows 1-2: idx 1-4 (B 区 4张: 2+2)
-        # rows 3-5: idx 5-10 (D 区 6张: 2+2+2)
+        # rows 1-3: idx 1-5 (B 区 5张: 2+2+1)
+        # rows 4-7: idx 6-12 (D 区 7张: 2+2+2+1)
         def idx_to_rc(i: int) -> Tuple[int, int]:
             if i <= 0:
                 return (0, 0)
-            if 1 <= i <= 4:   # B 区 4张 (row1: idx 1, 2; row2: idx 3, 4)
+            if 1 <= i <= 5:   # B 区 5张 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5)
                 b = i - 1
                 return (b // 2 + 1, b % 2)
-            d = i - 5         # D 区 6张 (row3: idx 5, 6; row4: idx 7, 8; row5: idx 9, 10)
-            return (d // 2 + 3, d % 2)
+            d = i - 6         # D 区 7张 (row4: idx 6, 7; row5: idx 8, 9; row6: idx 10, 11; row7: idx 12)
+            return (d // 2 + 4, d % 2)
 
         def rc_to_idx(r: int, c: int) -> int:
             if r == 0:
                 return 0
-            if 1 <= r <= 2:   # B 区 (row1: idx 1, 2; row2: idx 3, 4)
+            if 1 <= r <= 3:   # B 区 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5)
                 base_b = (r - 1) * 2
-                return min(1 + base_b + c, 4)
-            if 3 <= r <= 5:   # D 区 (row3: idx 5, 6; row4: idx 7, 8; row5: idx 9, 10)
-                base_d = (r - 3) * 2
-                return min(5 + base_d + c, 10)
-            return 10
+                return min(1 + base_b + c, 5)
+            if 4 <= r <= 7:   # D 区 (row4: idx 6, 7; row5: idx 8, 9; row6: idx 10, 11; row7: idx 12)
+                base_d = (r - 4) * 2
+                return min(6 + base_d + c, 12)
+            return 12
 
         row, col = idx_to_rc(self.selected_tool_idx)
 
@@ -656,7 +677,7 @@ class GuiLauncherApp:
             return
 
         if raw_key in (2621440, 65364, 40):    # 下
-            if row < 5:
+            if row < 7:
                 row += 1
             self.selected_tool_idx = rc_to_idx(row, col)
             self.hover_tool_idx = self.selected_tool_idx
@@ -706,7 +727,8 @@ class GuiLauncherApp:
             '2': "tag_wizard",            # B 图像采集 (双用途)
             '3': "spatial_mapping_studio", # B 空间建图工作站
             '4': "asparagus_offline",     # B 芦笋抓取位姿离线解算
-            '5': "scara_production",      # C SCARA 抓取生产工作台
+            '5': "scara_production",      # B SCARA 抓取生产工作台
+            '0': "isolate_wheels_production", # B 分离轮生产工作台
             '6': "d435_live",             # D RealSense 诊断
             '7': "scara_debug",           # D SCARA 机械臂调试
             '8': "isolate_wheels_debug",  # D Isolator WHEELS 调试
@@ -728,10 +750,10 @@ class GuiLauncherApp:
     def _get_card_rect(self, idx: int) -> Tuple[int, int, int, int]:
         """返回第 idx 张卡片的 (x, y, w, h)，与渲染布局严格保持一致
 
-        布局 (7行，3分组，共 12 张卡片):
+        布局 (8行，3分组，共 13 张卡片):
           row 0     A Workspace (1张全宽: idx 0)
-          rows 1-2  B 标定建图与生产验证流水线 (4张: 2+2, idx 1~4)
-          rows 3-6  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 5~11)
+          rows 1-3  B 标定建图与生产验证流水线 (5张: 2+2+1, idx 1~5)
+          rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 6~12)
         """
         s = self.scale_pct / 100.0
         LH = max(14, int(20 * s))
@@ -747,14 +769,14 @@ class GuiLauncherApp:
         if idx == 0:          # A: 顶部全宽卡片 (Workspace)
             return X0, Y0 + LH, FW, CH
 
-        if 1 <= idx <= 4:     # B: 4张 (2+2, 2行: idx 1~4)
+        if 1 <= idx <= 5:     # B: 5张 (2+2+1, 3行: idx 1~5)
             b = idx - 1
             base_y = Y0 + LH + CH + GY + LH
             return X0 + (b % 2) * (CW + SX), base_y + (b // 2) * (CH + SY), CW, CH
 
-        # D: 7张 (2+2+2+1, 4行: idx 5~11)
-        d = idx - 5
-        base_y = Y0 + LH + CH + GY + LH + 2 * (CH + SY) + GY + LH
+        # D: 7张 (2+2+2+1, 4行: idx 6~12)
+        d = idx - 6
+        base_y = Y0 + LH + CH + GY + LH + 3 * (CH + SY) + GY + LH
         return X0 + (d % 2) * (CW + SX), base_y + (d // 2) * (CH + SY), CW, CH
 
     def _hit_test_cards(self, x: int, y: int) -> int:
@@ -1004,7 +1026,7 @@ class GuiLauncherApp:
         group_headers = [
             (self._get_card_rect(0)[1] - LH,  FW, "A  Workspace",                                 (195, 155,  45)),
             (self._get_card_rect(1)[1] - LH,  FW, "B  标定建图与生产验证 (Pipelines)",           ( 65, 175, 160)),
-            (self._get_card_rect(5)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
+            (self._get_card_rect(6)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
         ]
         for hy, hw, label, accent in group_headers:
             cv2.rectangle(canvas, (X0, hy), (X0 + hw, hy + LH - max(1, int(2 * s))), (18, 22, 30), -1)

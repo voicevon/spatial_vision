@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1280,
     "canvas_h": 1000,
-    "updated_at": "2026-09-27 22:11:48"
+    "updated_at": "2026-09-28 20:21:38"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -28,19 +28,19 @@
     "scale_pct": 100,
     "canvas_w": 1366,
     "canvas_h": 705,
-    "updated_at": "2026-09-19 07:33:36"
+    "updated_at": "2026-09-28 15:46:32"
   },
   "workspace_hub": {
     "scale_pct": 120,
-    "canvas_w": 1366,
-    "canvas_h": 705,
-    "updated_at": "2026-09-27 21:47:55",
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-09-28 15:40:38",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260923_204026_Workspace_5"
+    "selected_workspace_id": "20260916_145246_Home_real"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -52,7 +52,7 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-25 10:01:10",
+    "updated_at": "2026-09-28 08:45:27",
     "viewer_state": {
       "camera_type": "realsense",
       "resolution": "1920x1080",
@@ -69,7 +69,7 @@
     "scale_pct": 100,
     "canvas_w": 1024,
     "canvas_h": 620,
-    "updated_at": "2026-09-19 22:26:42",
+    "updated_at": "2026-09-28 08:46:31",
     "viewer_state": {
       "camera_type": "realsense",
       "resolution": "1280x720",
@@ -85,7 +85,7 @@
     "scale_pct": 120,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-27 21:45:25",
+    "updated_at": "2026-09-28 08:45:49",
     "studio_state": {
       "pipeline_key": "feng_green_axis_v2",
       "selected_sample_name": "view_0009.png",
@@ -127,13 +127,13 @@
     "scale_pct": 130,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-25 09:17:09"
+    "updated_at": "2026-09-28 20:21:14"
   },
   "net_camera_debug": {
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-22 19:46:06"
+    "updated_at": "2026-09-28 08:46:57"
   },
   "tag_manager": {
     "scale_pct": 100,
@@ -148,6 +148,12 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-27 21:59:38"
+    "updated_at": "2026-09-28 08:46:13"
+  },
+  "isolate_wheels_production": {
+    "scale_pct": 100,
+    "canvas_w": 1280,
+    "canvas_h": 830,
+    "updated_at": "2026-09-28 20:18:28"
   }
 }
