@@ -521,6 +521,15 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             stat = "⚠️ 偏差过大" if row.get("is_warn") else "🟢 吻合"
             lines.append(f"| {tag_str} | {tgt} | {fit} | {delta} | {dist} | {stat} |")
 
+        conflict_pairs = rep.get("conflict_pairs", [])
+        if conflict_pairs:
+            from src.calibration.world_datum_aligner import format_conflict_pairs_report
+            conflict_diag = format_conflict_pairs_report(conflict_pairs)
+            if conflict_diag:
+                lines.append("")
+                lines.append("## 锚点几何形变与测距冲突报告")
+                lines.append(conflict_diag)
+
         text = "\n".join(lines)
         try:
             import subprocess

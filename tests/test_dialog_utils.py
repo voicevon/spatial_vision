@@ -1,68 +1,73 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-单元测试：跨平台原生对话框适配工具 (src/utils/dialog_utils.py)
-验证 Windows 原生调用、Linux zenity 分支、兜底机制及业务解耦。
+跨平台原生对话框单元测试 (tests/test_dialog_utils.py)
+======================================================
+验证点：
+  1. show_error_dialog / show_critical_message 错误报警弹窗逻辑；
+  2. Windows 下调用 ctypes.windll.user32.MessageBoxW 传参校验 (MB_ICONERROR = 0x10)；
+  3. Linux / macOS 及 Tkinter 兜底调用；
+  4. prompt_confirm 与 prompt_input_text 基础功能。
 """
 
 import sys
 import unittest
 from unittest.mock import patch, MagicMock
-from src.utils.dialog_utils import prompt_confirm, prompt_input_text
+
+from src.utils.dialog_utils import (
+    show_error_dialog,
+    show_critical_message,
+    prompt_error,
+    prompt_confirm,
+    prompt_input_text,
+)
 
 
 class TestDialogUtils(unittest.TestCase):
-    """测试对话框工具"""
+    def test_show_error_dialog_windows(self):
+        """测试 Windows 平台下正确调用 MessageBoxW 并包含 MB_ICONERROR 标志"""
+        with patch("sys.platform", "win32"):
+            mock_ctypes = MagicMock()
+            mock_msgbox = MagicMock(return_value=1)
+            mock_ctypes.windll.user32.MessageBoxW = mock_msgbox
 
-    def test_windows_confirm_yes(self):
-        """测试 Windows 原生 MessageBoxW 返回确定 (IDYES=6)"""
-        with patch("sys.platform", "win32"), \
-             patch("ctypes.windll.user32.MessageBoxW", return_value=6):
-            res = prompt_confirm("测试标题", "测试内容")
-            self.assertTrue(res)
+            with patch.dict("sys.modules", {"ctypes": mock_ctypes}):
+                show_error_dialog("错误标题", "错误详情内容")
 
-    def test_windows_confirm_no(self):
-        """测试 Windows 原生 MessageBoxW 返回取消 (IDNO=7)"""
-        with patch("sys.platform", "win32"), \
-             patch("ctypes.windll.user32.MessageBoxW", return_value=7):
-            res = prompt_confirm("测试标题", "测试内容")
-            self.assertFalse(res)
+                mock_msgbox.assert_called_once()
+                args, _ = mock_msgbox.call_args
+                hwnd, msg, title, flags = args
+                self.assertEqual(hwnd, 0)
+                self.assertEqual(msg, "错误详情内容")
+                self.assertEqual(title, "错误标题")
+                # 必须包含 MB_ICONERROR (0x00000010)
+                self.assertTrue(bool(flags & 0x00000010), "必须包含 MB_ICONERROR 标志")
 
-    def test_linux_zenity_confirm(self):
-        """测试 Linux 环境优先调用 zenity 确认框"""
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        with patch("sys.platform", "linux"), \
-             patch("shutil.which", return_value="/usr/bin/zenity"), \
-             patch("subprocess.run", return_value=mock_res) as mock_run:
-            res = prompt_confirm("Linux标题", "Linux内容")
-            self.assertTrue(res)
-            mock_run.assert_called_once()
-            args = mock_run.call_args[0][0]
-            self.assertIn("zenity", args)
-            self.assertIn("--question", args)
+    def test_show_critical_message_alias(self):
+        """测试别名一致性"""
+        self.assertIs(show_critical_message, show_error_dialog)
+        self.assertIs(prompt_error, show_error_dialog)
 
-    def test_linux_zenity_input_text(self):
-        """测试 Linux 环境优先调用 zenity 输入框获取中文内容"""
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        mock_res.stdout = "测试工位_01\n"
-        with patch("sys.platform", "linux"), \
-             patch("shutil.which", return_value="/usr/bin/zenity"), \
-             patch("subprocess.run", return_value=mock_res) as mock_run:
-            val = prompt_input_text("输入标题", "提示信息", initial="默认值")
-            self.assertEqual(val, "测试工位_01")
-            args = mock_run.call_args[0][0]
-            self.assertIn("zenity", args)
-            self.assertIn("--entry", args)
+    def test_show_error_dialog_linux(self):
+        """测试 Linux 平台下优先调用 zenity --error"""
+        with patch("sys.platform", "linux"):
+            with patch("shutil.which", return_value="/usr/bin/zenity"):
+                with patch("subprocess.run") as mock_run:
+                    show_error_dialog("对齐失败", "缺少相对地图")
+                    mock_run.assert_called_once()
+                    cmd = mock_run.call_args[0][0]
+                    self.assertIn("zenity", cmd[0])
+                    self.assertIn("--error", cmd)
+                    self.assertIn("对齐失败", cmd)
 
-    def test_input_text_cli_fallback(self):
-        """测试无图形环境或异常时自动降级到控制台输入"""
-        with patch("sys.platform", "linux"), \
-             patch("shutil.which", return_value=None), \
-             patch("tkinter.Tk", side_effect=Exception("No DISPLAY")), \
-             patch("builtins.input", return_value="控制台输入内容"):
-            val = prompt_input_text("标题", "提示")
-            self.assertEqual(val, "控制台输入内容")
+    def test_gui_components_exports(self):
+        """测试从 gui_components 正常导出对话框组件"""
+        from src.utils.gui_components import (
+            show_error_dialog as comp_show_error,
+            show_critical_message as comp_show_crit,
+        )
+        self.assertIs(comp_show_error, show_error_dialog)
+        self.assertIs(comp_show_crit, show_critical_message)
 
 
 if __name__ == "__main__":

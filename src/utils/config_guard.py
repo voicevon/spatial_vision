@@ -49,9 +49,10 @@ def _parse_anchor_entry(entry: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(known_raw, (list, tuple)) or len(known_raw) != 3:
         known_raw = [True, True, True]
     known = [bool(v) for v in known_raw]
-    if not any(known):
-        return None
-    return {"xyz_mm": xyz_f, "known": known}
+    res = {"xyz_mm": xyz_f, "known": known}
+    if entry.get("frame_id"):
+        res["frame_id"] = str(entry["frame_id"])
+    return res
 
 
 def parse_anchor_mapping(raw: Any) -> Dict[int, Dict[str, Any]]:

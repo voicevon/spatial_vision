@@ -443,7 +443,11 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         cv2.rectangle(canvas, (cx1, cy1), (cx2, cy2), border_color, 2)
 
         # 1. 顶部操作栏
-        if has_warn:
+        conflict_pairs = rep.get("conflict_pairs", [])
+        if conflict_pairs:
+            title_txt = f"⚠️ 世界坐标系对齐质检单 (检出 {len(conflict_pairs)} 组锚点距离严重冲突!)"
+            title_col = (0, 165, 255)
+        elif has_warn:
             title_txt = "⚠️ 世界坐标系对齐质检单 (注意：检测到标靶物理残差偏大)"
             title_col = (0, 215, 255)
         else:
@@ -486,7 +490,8 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         mean_mm = rep.get("mean_mm", 0.0)
         max_mm = rep.get("max_mm", 0.0)
         warn_th = rep.get("warn_threshold_mm", 3.0)
-        sum_str = f"解算算法: {solver}  |  锚点总数: {len(rows)} 枚  |  均值物理残差: {mean_mm:.2f} mm  |  最大残差: {max_mm:.2f} mm  |  告警阈值: > {warn_th:.1f} mm"
+        conflict_str = f"  |  ⚠️ 几何超差冲突: {len(conflict_pairs)} 对" if conflict_pairs else ""
+        sum_str = f"解算算法: {solver}  |  锚点总数: {len(rows)} 枚  |  均值残差: {mean_mm:.2f} mm  |  最大残差: {max_mm:.2f} mm{conflict_str}  |  告警阈值: > {warn_th:.1f} mm"
         put_text(canvas, sum_str, (cx1 + 16, cy1 + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (165, 178, 195), 1, cv2.LINE_AA)
 
         # 3. 表头栏

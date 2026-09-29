@@ -202,6 +202,22 @@ class MappingWorkflowMixin:
                 self.alignment_report = rep
             if hasattr(self, "_load_workspace_geometry"):
                 self._load_workspace_geometry()
+
+            # 校验是否存在锚点几何严重冲突 (即使强制对齐成功，也必须在 GUI 弹出 Warning 提醒)
+            conflict_pairs = world_map.get("world_anchor", {}).get("conflict_pairs", [])
+            if conflict_pairs:
+                from src.calibration.world_datum_aligner import format_conflict_pairs_report
+                from src.utils.dialog_utils import show_error_dialog
+                conflict_text = format_conflict_pairs_report(conflict_pairs)
+                cur_ws_name = getattr(self, "current_workspace_name", "当前工位")
+                warn_dialog_msg = (
+                    f"【当前工位】{cur_ws_name}\n\n"
+                    f"世界坐标系校准已解算完成，但在锚点间检测到严重几何形变/测距冲突：\n\n"
+                    f"{conflict_text}\n\n"
+                    f"⚠️ 提示：上述标靶的世界坐标标称值与视觉实测距离存在显著超差，可能严重影响下游机械臂或作业定位精度，请仔细核对已知锚点坐标！"
+                )
+                show_error_dialog("世界坐标系校准警告 (几何形变冲突)", warn_dialog_msg)
+
             self.set_toast(msg)
         else:
             from src.utils.dialog_utils import show_error_dialog
@@ -223,6 +239,7 @@ class MappingWorkflowMixin:
                 f"2. 检查当前工位世界锚点配置（anchor_tags.yaml 或 tag_whitelist.yaml）；\n"
                 f"3. 确认锚点标靶是否在观测数据中至少检出 >= 3 个且空间分布不共线（XY 坐标不可重合）。"
             )
-            self.set_toast(f"❌ 校准失败: {msg}")
+            brief_err = msg.splitlines()[0] if msg else "未知异常"
+            self.set_toast(f"❌ 校准失败: {brief_err}")
             show_error_dialog("世界坐标系校准失败 (World Datum Error)", detail_msg)
 

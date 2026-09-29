@@ -27,6 +27,42 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
+def format_conflict_pairs_report(conflict_pairs: List[Dict[str, Any]]) -> str:
+    """
+    将锚点几何冲突转化为易读的结构化排查诊断文本与线索分析 (向用户明示标称距离与实测距离的超差)
+    """
+    if not conflict_pairs:
+        return ""
+    lines = ["⚠️ 【锚点几何严重冲突 (标称距离 vs 视觉实测测距超差)】:"]
+    tag_freq: Dict[int, int] = {}
+    for c in conflict_pairs:
+        pair = c.get("pair", (0, 0))
+        t1, t2 = pair[0], pair[1]
+        tag_freq[t1] = tag_freq.get(t1, 0) + 1
+        tag_freq[t2] = tag_freq.get(t2, 0) + 1
+        dw = c.get("world_dist_mm", 0.0)
+        dm = c.get("measured_dist_mm", 0.0)
+        diff = c.get("diff_mm", 0.0)
+        rel_err = c.get("rel_error", 0.0)
+        lines.append(
+            f"  • Tag #{t1} ⇋ Tag #{t2}: "
+            f"标称世界距离 {dw:.1f} mm, 视觉重构测距 {dm:.1f} mm "
+            f"(偏差 {diff:.1f} mm, 相对误差 {rel_err*100.0:.1f}%)"
+        )
+
+    # 智能线索分析：找出冲突频次最高的标靶 ID
+    sorted_tags = sorted(tag_freq.items(), key=lambda x: x[1], reverse=True)
+    if sorted_tags:
+        max_cnt = sorted_tags[0][1]
+        suspects = [f"Tag #{t} (涉及 {cnt} 组冲突)" for t, cnt in sorted_tags if cnt == max_cnt]
+        lines.append("")
+        lines.append("🔍 【智能纠错线索分析】:")
+        lines.append(f"  • 高疑故障源: {', '.join(suspects)}")
+        lines.append("  • 建议排查方向: 请优先核验上述高疑标靶在工位 anchor_tags.yaml 中的世界坐标录入，或检查现场标靶物理张贴间距是否与图纸存在严重偏差。")
+
+    return "\n".join(lines)
+
+
 class WorldDatumAligner:
     """3D 空间世界坐标系基准对齐器"""
 
@@ -60,7 +96,7 @@ class WorldDatumAligner:
             return None
         out: Dict[int, Dict[str, Any]] = {}
 
-        def _add(tid: Any, xyz: Any, known: Any) -> None:
+        def _add(tid: Any, xyz: Any, known: Any, fid: Optional[str] = None) -> None:
             try:
                 tid_i = int(tid)
                 xyz_f = [float(v) for v in xyz]
@@ -72,16 +108,19 @@ class WorldDatumAligner:
             known_b = [bool(v) for v in (known_raw + [True, True, True])[:3]]
             if not any(known_b):
                 return
-            out[tid_i] = {"xyz_mm": xyz_f, "known": known_b}
+            entry = {"xyz_mm": xyz_f, "known": known_b}
+            if fid:
+                entry["frame_id"] = str(fid)
+            out[tid_i] = entry
 
         if "origin_xyz_mm" in anchor_input or "align_xyz_mm" in anchor_input:
-            # 旧双锚点格式: origin/align 均视为三轴全知
-            _add(anchor_input.get("origin_tag_id", 0), anchor_input.get("origin_xyz_mm"), [True, True, True])
-            _add(anchor_input.get("align_tag_id", 1), anchor_input.get("align_xyz_mm"), [True, True, True])
+            # 旧双锚点格式: origin/align 均视为三轴全知世界标靶
+            _add(anchor_input.get("origin_tag_id", 0), anchor_input.get("origin_xyz_mm"), [True, True, True], "world")
+            _add(anchor_input.get("align_tag_id", 1), anchor_input.get("align_xyz_mm"), [True, True, True], "world")
         else:
             for k, v in anchor_input.items():
                 if isinstance(v, dict):
-                    _add(k, v.get("xyz_mm"), v.get("known"))
+                    _add(k, v.get("xyz_mm"), v.get("known"), v.get("frame_id"))
         return out or None
 
     @staticmethod
@@ -191,23 +230,34 @@ class WorldDatumAligner:
         p_ba = {tid: tag_poses[tid][:3, 3].astype(np.float64) for tid in usable}
         tids = sorted(usable.keys())
 
-        # ① 收集全部可用锚点对在共同已知轴下的距离比 (尺度观测)
+        # ① 收集全部可用锚点对的真实几何尺度观测
+        # 旋转不变性原则: 只有三轴全知 (3D 空间直线欧氏距离) 或水平面内 XY 两轴全知才能作为旋转不变量!
+        # 单轴已知 (如仅已知 Y 轴距离) 在未知旋转与未知偏航角下，BA 系投影与世界系投影不具有等价性，严禁直接相除或作为 3D 测距冲突
         scale_obs: List[Tuple[int, int, float, float, float]] = []
         for i in range(len(tids)):
             for j in range(i + 1, len(tids)):
                 ia, ib = tids[i], tids[j]
                 a, b = usable[ia], usable[ib]
                 common = [k for k in range(3) if a["known"][k] and b["known"][k]]
-                if not common:
+
+                if len(common) == 3:
+                    # 严格 3D 空间直线几何距离 (任意 3D 旋转下严格保持不变)
+                    d_w = math.sqrt(sum((a["xyz_mm"][k] - b["xyz_mm"][k]) ** 2 for k in range(3)))
+                    d_b = math.sqrt(sum((p_ba[ia][k] - p_ba[ib][k]) ** 2 for k in range(3)))
+                elif 0 in common and 1 in common:
+                    # 水平面 2D 几何距离 (在重力水平面先验约束下保持不变)
+                    d_w = math.hypot(a["xyz_mm"][0] - b["xyz_mm"][0], a["xyz_mm"][1] - b["xyz_mm"][1])
+                    d_b = math.hypot(p_ba[ia][0] - p_ba[ib][0], p_ba[ia][1] - p_ba[ib][1])
+                else:
+                    # 单轴已知点对 (如仅已知 Y 轴分量): 无法作为旋转不变量计算 3D 空间欧氏测距，跳过
                     continue
-                d_w = math.sqrt(sum((a["xyz_mm"][k] - b["xyz_mm"][k]) ** 2 for k in common))
-                d_b = math.sqrt(sum((p_ba[ia][k] - p_ba[ib][k]) ** 2 for k in common))
+
                 if d_w < 1e-6 or d_b < 1e-6:
-                    continue  # 世界系或 BA 系在共同已知轴上重合, 该对无尺度信息
+                    continue  # 重合点无尺度信息
                 scale_obs.append((ia, ib, d_w / d_b, d_w, d_b))
 
         if not scale_obs:
-            return "none", {"reason": "无任何锚点对存在共同已知轴 (或全部重合), 尺度不可解 — 不允许以打印边长兜底"}
+            return "none", {"reason": "无任何锚点对具备三维空间 (XYZ) 或水平面 (XY) 确定几何距离 (单轴已知标靶在姿态未定时不可测距)"}
 
         ratios = [r[2] for r in scale_obs]
         scale_median = float(np.median(ratios))
@@ -265,7 +315,7 @@ class WorldDatumAligner:
                             yaw_obs.append(math.atan2(wdy, wdx) - math.atan2(bdy, bdx))
 
             if not yaw_obs:
-                return "none", {"reason": "无任何共同已知 XY 的锚点对, 偏航不可解"}
+                return "none", {"reason": "无任何共同已知 XY 的锚点对, 偏航不可解", "conflict_pairs": conflict_pairs}
 
             scale = scale_median
             yaw = math.atan2(sum(math.sin(v) for v in yaw_obs), sum(math.cos(v) for v in yaw_obs))
@@ -325,7 +375,7 @@ class WorldDatumAligner:
 
         mean_mm = round(float(np.mean(np.abs(all_res))), 3) if all_res else 0.0
         max_mm = round(float(np.max(np.abs(all_res))), 3) if all_res else 0.0
-        has_warn = any(r["is_warn"] for r in report_rows)
+        has_warn = any(r["is_warn"] for r in report_rows) or bool(conflict_pairs)
 
         alignment_report = {
             "solver_type": solver_type,
@@ -333,7 +383,8 @@ class WorldDatumAligner:
             "max_mm": max_mm,
             "has_warn": has_warn,
             "warn_threshold_mm": WARN_DIST_THRESHOLD_MM,
-            "rows": report_rows
+            "rows": report_rows,
+            "conflict_pairs": conflict_pairs
         }
 
         residuals = {
@@ -387,21 +438,45 @@ class WorldDatumAligner:
                 raise ValueError("anchor_to_absolute_world: 锚点配置为空或字段不合法 (FR-9.6 禁止兜底)")
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, "锚点配置为空或字段不合法")
 
-        dof = self.evaluate_anchor_dof(anchor_tags)
+        # 坐标系隔离过滤: 世界基准系 (world) 对齐仅能使用属于 world 的锚点，严禁将未解算的子坐标系局部标靶混入世界系
+        world_anchors = {}
+        for tid, a in anchor_tags.items():
+            fid = a.get("frame_id")
+            if fid is None or fid == "world":
+                world_anchors[tid] = a
+            else:
+                log.info(f"[WORLD_ALIGN] 标靶 Tag #{tid} 归属于子坐标系 [{fid}]，已隔离不参与阶段二世界基准系对齐")
+        active_anchors = world_anchors if world_anchors else anchor_tags
+
+        # 预先检查尺度与几何形变冲突 (提前为用户挖掘测距异常线索，绝不让终端 warning 沉没)
+        pre_conflict_diag = ""
+        try:
+            _, solve_chk = self.solve_similarity_from_anchors(tag_poses, active_anchors)
+            conflicts = solve_chk.get("conflict_pairs", [])
+            if conflicts:
+                pre_conflict_diag = format_conflict_pairs_report(conflicts)
+        except Exception:
+            pass
+
+        dof = self.evaluate_anchor_dof(active_anchors)
         if dof["mode"] == "none":
             if strict:
+                conflict_sec = f"\n\n{pre_conflict_diag}" if pre_conflict_diag else ""
                 raise ValueError(
-                    f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}"
+                    f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}{conflict_sec}"
                     " — 请增配已知世界坐标的 tag 或放宽当前部分已知标记 (FR-9.6 禁止兜底)"
                 )
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, dof["reason"])
 
-        mode, solve = self.solve_similarity_from_anchors(tag_poses, anchor_tags)
+        mode, solve = self.solve_similarity_from_anchors(tag_poses, active_anchors)
         if mode == "none":
             if strict:
+                conflict_pairs = solve.get("conflict_pairs", [])
+                conflict_diag = format_conflict_pairs_report(conflict_pairs)
+                conflict_sec = f"\n\n{conflict_diag}" if conflict_diag else ""
                 raise ValueError(
-                    f"锚点求解退化: {solve['reason']}"
-                    " — 请检查锚点 tag 之间的已知轴距离与 XY 共线方向 (FR-9.6 禁止兜底)"
+                    f"锚点求解退化: {solve['reason']}{conflict_sec}"
+                    "\n\n— 请检查锚点 tag 之间的已知轴距离与 XY 共线方向 (FR-9.6 禁止兜底)"
                 )
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, solve["reason"])
 
