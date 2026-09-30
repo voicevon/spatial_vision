@@ -73,7 +73,7 @@ class TestHubSmartRoiGui(unittest.TestCase):
         self.assertFalse(state.geometry.roi_modal_open)
 
         # 6. 从持久化磁盘重新读取验证
-        reloaded_mgr = RoiSpaceManager(self.ws.workspace_id, rois_yaml_path=self.ws.rois_path)
+        reloaded_mgr = RoiSpaceManager(self.ws.workspace_id, spatial_scene_path=self.ws.spatial_scene_path)
         saved_roi = reloaded_mgr.get_roi("tray_slot_1")
         self.assertIsNotNone(saved_roi)
         self.assertEqual(saved_roi.role, "destination")

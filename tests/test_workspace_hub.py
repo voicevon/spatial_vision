@@ -577,25 +577,15 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertFalse(state.whitelist.anchor_modal_open)
 
     def test_legacy_whitelist_migration(self):
-        """测试旧格式白名单一次性迁移: whitelist_tag_ids → allowed_ids 写回 (保留其余字段, 同义旧键移除)"""
+        """【无向后兼容原则】旧格式 whitelist_tag_ids 不再被兼容迁移，必须使用标准 allowed_ids"""
         import yaml
         from src.calibration.workspace_manager import load_workspace_tag_whitelist
         ws_dir = os.path.join(self.test_root, "ws_legacy_wl")
         os.makedirs(ws_dir, exist_ok=True)
         p = os.path.join(ws_dir, "tag_whitelist.yaml")
         with open(p, "w", encoding="utf-8") as f:
-            f.write("description: 旧格式白名单\nwhitelist_tag_ids:\n- 0\n- 18\n- 29\nworkspace_id: legacy\n")
+            f.write("description: 标准白名单\nallowed_ids:\n- 0\n- 18\n- 29\nworkspace_id: legacy\n")
 
-        # 首次读取触发迁移, 返回旧名单语义
-        self.assertEqual(load_workspace_tag_whitelist(ws_dir), [0, 18, 29])
-        with open(p, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        self.assertEqual(data["allowed_ids"], [0, 18, 29])
-        self.assertNotIn("whitelist_tag_ids", data)
-        self.assertEqual(data["description"], "旧格式白名单")
-        self.assertEqual(data["workspace_id"], "legacy")
-
-        # 再次读取幂等, 且新格式空 allowed_ids 保持探索模式不被迁移
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [0, 18, 29])
         with open(p, "w", encoding="utf-8") as f:
             f.write("workspace_id: legacy\nallowed_ids: []\n")

@@ -349,9 +349,9 @@ class GeometryState:
         """
         级联深度清理并删除指定子坐标系：
         1. 绝对世界基准 (world) 严禁删除；
-        2. 级联清理依附于该坐标系的所有 3D ROI 空间物件 (写穿 rois.yaml)；
+        2. 级联清理依附于该坐标系的所有 3D ROI 空间物件 (写穿 spatial_scene.yaml)；
         3. 回收工位 tag_whitelist.yaml 中该坐标系专属分段内所有已放行的 Tag ID；
-        4. 从坐标系树中移除该坐标系，将以其为父的子坐标系重定向到 world，写穿 frames.yaml；
+        4. 从坐标系树中移除该坐标系，将以其为父的子坐标系重定向到 world，写穿 spatial_scene.yaml；
         5. 安全重置左侧工位树选中项至当前工位的绝对世界坐标系 (world)；
         6. 强制刷新几何缓存与视图。
         """
@@ -382,7 +382,7 @@ class GeometryState:
                 deleted_rois_count += 1
             if deleted_rois_count > 0:
                 self.roi_mgr.save()
-                log.info(f"[CascadeDelete] 已级联清除 {deleted_rois_count} 个归属于 [{frame_id}] 的 3D ROI")
+                log.info(f"[CascadeDelete] 已级联清除 {deleted_rois_count} 个归属于 [{frame_id}] 的 3D ROI 并写穿 spatial_scene.yaml")
 
         # 3. 回收该坐标系专属分段内所有已放行的 Tag 标靶 (同步更新 tag_whitelist.yaml)
         cleaned_tags_count = 0
@@ -405,7 +405,7 @@ class GeometryState:
         except Exception as e:
             log.warning(f"[CascadeDelete] 回收专属 Tag 发生异常 ({e})")
 
-        # 4. 从坐标系树中移除该坐标系 (下级子坐标系自动上挂至 world)，并写穿 frames.yaml
+        # 4. 从坐标系树中移除该坐标系 (下级子坐标系自动上挂至 world)，并写穿 spatial_scene.yaml
         ok = self.coord_mgr.remove_frame(frame_id)
         if not ok:
             return False, f"从坐标系树中删除 [{frame_id}] 失败"

@@ -262,8 +262,7 @@ flux_vision_3d/
 ├── run.bat / run.ps1              # 一键交互式控制终端启动入口
 │
 ├── config/                        # ⚙️ 生产配置文件沙盒
-│   ├── tags_map.yaml              #    生产在线 AprilTag 空间地图 (唯一生产基准)
-│   └── tags_map.yaml.bak          #    发布生产时的自动时间戳历史备份
+│   └── tags_map.yaml              #    生产在线 AprilTag 空间地图 (唯一生产基准)
 │
 ├── docs/                          # 📚 深度工程与设计文档库
 │   ├── CHANGELOG.md               #    版本更新日志与重大演进历程记录

@@ -188,14 +188,14 @@ class IsolateWheelsProductionApp(BaseCvApp):
         log.info(f"[Production] 切换工位 -> {ws.name} ({ws_id})")
 
     def _load_workspace_rois(self, ws: Workspace):
-        """加载工位下的 rois.yaml 配置"""
-        rois_file = os.path.join(ws.workspace_dir, "rois.yaml")
-        if os.path.exists(rois_file):
-            self.detector.load_rois(rois_file)
-            log.info(f"[Production] 已加载工位 ROI 配置: {rois_file}")
+        """加载工位下的 spatial_scene.yaml 配置"""
+        scene_file = ws.spatial_scene_path
+        if os.path.exists(scene_file):
+            self.detector.load_rois(scene_file)
+            log.info(f"[Production] 已加载工位空间场景 ROI 配置: {scene_file}")
         else:
             self.detector.generate_default_rois(self.camera_w, self.camera_h)
-            log.info(f"[Production] 工位无专用 rois.yaml，采用等距 8 分区标准布局")
+            log.info(f"[Production] 工位无专用 spatial_scene.yaml，采用等距 8 分区标准布局")
 
     # ==================== 相机启停与分辨率切换 ====================
     def open_camera(self) -> bool:

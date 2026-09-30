@@ -22,7 +22,7 @@ class TestDecoupledBARunner(unittest.TestCase):
         self.td = tempfile.TemporaryDirectory()
         self.ws_dir = self.td.name
         self.map_path = os.path.join(self.ws_dir, "tags_map.yaml")
-        self.raw_map_path = os.path.join(self.ws_dir, "tags_map_raw.yaml")
+        self.raw_map_path = os.path.join(self.ws_dir, "calibration", "tags_map_raw.yaml")
         self.manifest_path = os.path.join(self.ws_dir, "tag_observations.yaml")
 
         K = np.array([[1000.0, 0.0, 640.0], [0.0, 1000.0, 360.0], [0.0, 0.0, 1.0]], dtype=np.float64)
@@ -118,7 +118,7 @@ class TestDecoupledBARunner(unittest.TestCase):
                 7: {"xyz_mm": [0.0, 470.0, 0.0], "known": [True, True, True]}
             }
         }
-        with open(os.path.join(self.ws_dir, "anchor_tags.yaml"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.ws_dir, "tag_whitelist.yaml"), "w", encoding="utf-8") as f:
             yaml.safe_dump(anchors_cfg, f)
 
         # 模拟工作站工位引用
@@ -158,7 +158,7 @@ class TestDecoupledBARunner(unittest.TestCase):
                 7: {"xyz_mm": [470.0, 0.0, 0.0], "known": [True, True, True]}  # 错录为 [470, 0, 0]
             }
         }
-        with open(os.path.join(self.ws_dir, "anchor_tags.yaml"), "w", encoding="utf-8") as f:
+        with open(os.path.join(self.ws_dir, "tag_whitelist.yaml"), "w", encoding="utf-8") as f:
             yaml.safe_dump(bad_anchors_cfg, f)
 
         bad_succ, bad_msg, bad_map = runner.execute_world_alignment()

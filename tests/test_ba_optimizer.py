@@ -172,10 +172,10 @@ class TestConstraintAnchor(unittest.TestCase):
         self.optimizer = BundleAdjustmentOptimizer(camera_matrix=K, dist_coeffs=np.zeros(5), marker_size_mm=50.0)
 
     def test_normalize_anchor_tags(self):
-        """测试新旧两种锚点配置格式归一化"""
-        legacy = {"origin_tag_id": 0, "origin_xyz_mm": [0.0, 0.0, 405.0],
-                  "align_tag_id": 1, "align_xyz_mm": [0.0, 520.0, 196.0]}
-        out = BundleAdjustmentOptimizer.normalize_anchor_tags(legacy)
+        """测试锚点配置格式归一化 (支持完整坐标与包含 null 轴的已知/未知掩码自动推导)"""
+        norm_fmt = {0: {"xyz_mm": [0.0, 0.0, 405.0]},
+                    1: {"xyz_mm": [0.0, 520.0, 196.0]}}
+        out = BundleAdjustmentOptimizer.normalize_anchor_tags(norm_fmt)
         self.assertEqual(set(out.keys()), {0, 1})
         self.assertEqual(out[0]["known"], [True, True, True])
         self.assertEqual(out[1]["xyz_mm"], [0.0, 520.0, 196.0])
@@ -243,11 +243,11 @@ class TestConstraintAnchor(unittest.TestCase):
         self.assertLess(result["world_anchor"]["anchor_residual_mm"]["max_mm"], 0.01)
         # 尺度同步作用于边长模型
         self.assertAlmostEqual(self.optimizer.marker_size_mm, 50.0 * scale_gt, places=2)
-        # 旧格式输入等价
+        # 验证单真理源 anchor_tags 字典格式
         self.optimizer.marker_size_mm = 50.0
-        legacy = {"origin_tag_id": 0, "origin_xyz_mm": world_pts[0],
-                  "align_tag_id": 1, "align_xyz_mm": world_pts[1]}
-        result2 = self.optimizer.anchor_to_absolute_world(poses, legacy)
+        anchors_dict = {0: {"xyz_mm": world_pts[0]},
+                        1: {"xyz_mm": world_pts[1]}}
+        result2 = self.optimizer.anchor_to_absolute_world(poses, anchors_dict)
         self.assertEqual(result2["anchor_mode"], "full")
         np.testing.assert_allclose(result2["tags"][1]["position_mm"], [0.0, 520.0, 196.0], atol=0.01)
 
@@ -293,9 +293,9 @@ class TestConstraintAnchor(unittest.TestCase):
         self.assertTrue(result.get("anchor_skip_reason"))
 
     def test_load_anchor_tags_migration(self):
-        """测试 config_guard 锚点表读取: anchor_tags 优先, 旧 world_anchor 自动迁移"""
+        """【无向后兼容原则】旧 world_anchor 不再支持，仅加载标准的 calibration.anchor_tags"""
         with tempfile.TemporaryDirectory() as td:
-            # 旧 world_anchor 格式迁移
+            # 旧 world_anchor 格式不再被解析
             p_old = os.path.join(td, "old.yaml")
             with open(p_old, "w", encoding="utf-8") as f:
                 f.write("calibration:\n"
@@ -304,22 +304,18 @@ class TestConstraintAnchor(unittest.TestCase):
                         "    origin_xyz_mm: [0.0, 0.0, 405.0]\n"
                         "    align_tag_id: 1\n"
                         "    align_xyz_mm: [0.0, 520.0, 196.0]\n")
-            anchors = load_anchor_tags(p_old)
-            self.assertEqual(set(anchors.keys()), {0, 1})
-            self.assertEqual(anchors[0]["xyz_mm"], [0.0, 0.0, 405.0])
-            self.assertEqual(anchors[1]["known"], [True, True, True])
+            anchors_old = load_anchor_tags(p_old)
+            self.assertEqual(anchors_old, {}, "旧格式不再解析为有效锚点")
 
-            # 新 anchor_tags 格式 (含部分已知)
+            # 新 anchor_tags 格式 (含部分已知与 null 轴)
             p_new = os.path.join(td, "new.yaml")
             with open(p_new, "w", encoding="utf-8") as f:
                 f.write("calibration:\n"
                         "  anchor_tags:\n"
                         "    0:\n"
                         "      xyz_mm: [0.0, 0.0, 405.0]\n"
-                        "      known: [true, true, true]\n"
                         "    5:\n"
-                        "      xyz_mm: [100.0, 200.0, 0.0]\n"
-                        "      known: [true, true, false]\n")
+                        "      xyz_mm: [100.0, 200.0, null]\n")
             anchors = load_anchor_tags(p_new)
             self.assertEqual(set(anchors.keys()), {0, 5})
             self.assertEqual(anchors[5]["known"], [True, True, False])

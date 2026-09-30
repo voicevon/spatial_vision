@@ -34,17 +34,17 @@ class TestWorldDatumAligner(unittest.TestCase):
         self.assertIn(1, res_new)
         self.assertEqual(res_new[1]["known"], [True, True, True])
 
-        # 2. 旧双锚点格式输入
-        raw_legacy = {
-            "origin_tag_id": 5,
-            "origin_xyz_mm": [0.0, 0.0, 0.0],
-            "align_tag_id": 6,
-            "align_xyz_mm": [300.0, 0.0, 0.0]
+        # 2. 支持 null 轴输入并自动推导 known 掩码
+        raw_null = {
+            5: {"xyz_mm": [0.0, 0.0, None]},
+            6: {"xyz_mm": [300.0, None, 0.0]}
         }
-        res_legacy = WorldDatumAligner.normalize_anchor_tags(raw_legacy)
-        self.assertIsNotNone(res_legacy)
-        self.assertIn(5, res_legacy)
-        self.assertIn(6, res_legacy)
+        res_null = WorldDatumAligner.normalize_anchor_tags(raw_null)
+        self.assertIsNotNone(res_null)
+        self.assertIn(5, res_null)
+        self.assertIn(6, res_null)
+        self.assertEqual(res_null[5]["known"], [True, True, False])
+        self.assertEqual(res_null[6]["known"], [True, False, True])
 
     def test_evaluate_anchor_dof(self):
         # 3个全知点 -> full (5/5 DoF)

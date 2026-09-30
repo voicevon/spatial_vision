@@ -233,15 +233,15 @@ class FrameDefinition:
 class CoordinateTreeManager:
     """工位坐标系树管理与几何变换求解器"""
 
-    def __init__(self, workspace_id: str = "", frames_yaml_path: Optional[str] = None):
+    def __init__(self, workspace_id: str = "", spatial_scene_path: Optional[str] = None):
         self.workspace_id = workspace_id
-        self.frames_yaml_path = frames_yaml_path
+        self.spatial_scene_path = spatial_scene_path
         self.active_frame_id: str = "world"
         self._frames: Dict[str, FrameDefinition] = {}
         self._tags_map: Dict[int, np.ndarray] = {}  # {tag_id: 4x4 T_world_from_tag}
 
         # 默认加载或提供初始世界坐标系
-        if frames_yaml_path and os.path.exists(frames_yaml_path):
+        if spatial_scene_path and os.path.exists(spatial_scene_path):
             self.load()
         else:
             self._init_default_world()
@@ -558,8 +558,8 @@ class CoordinateTreeManager:
         return transformed[:, :3]
 
     def load(self, filepath: Optional[str] = None) -> bool:
-        """从 frames.yaml 文件加载坐标系配置"""
-        path = filepath or self.frames_yaml_path
+        """从 spatial_scene.yaml 文件加载坐标系配置"""
+        path = filepath or self.spatial_scene_path
         if not path or not os.path.exists(path):
             self._init_default_world()
             return False
@@ -583,6 +583,7 @@ class CoordinateTreeManager:
                     name="绝对世界坐标系",
                     parent_frame_id=None,
                     type="world",
+                    status="calibrated",
                     description="工位绝对基准坐标系",
                 )
 
@@ -590,31 +591,40 @@ class CoordinateTreeManager:
             if self.active_frame_id not in self._frames:
                 self.active_frame_id = "world"
 
-            log.debug(f"[FrameTree] 成功加载 {len(self._frames)} 个坐标系: {path}")
+            log.debug(f"[FrameTree] 成功从空间场景加载 {len(self._frames)} 个坐标系: {path}")
             return True
         except Exception as e:
-            log.error(f"[FrameTree] 加载坐标系配置失败 ({path}): {e}")
+            log.error(f"[FrameTree] 加载空间场景坐标系配置失败 ({path}): {e}")
             self._init_default_world()
             return False
 
     def save(self, filepath: Optional[str] = None) -> bool:
-        """持久化保存至 frames.yaml 文件"""
-        path = filepath or self.frames_yaml_path
+        """持久化保存至 spatial_scene.yaml 文件 (原子保留 rois 节)"""
+        path = filepath or self.spatial_scene_path
         if not path:
             return False
 
         try:
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            data = {
-                "version": "1.0",
-                "workspace_id": self.workspace_id,
-                "active_frame_id": self.active_frame_id,
-                "frames": [f.to_dict() for f in self.list_frames()],
-            }
+            existing_data = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        existing_data = yaml.safe_load(f) or {}
+                except Exception:
+                    existing_data = {}
+
+            existing_data["version"] = "2.0"
+            existing_data["workspace_id"] = self.workspace_id
+            existing_data["active_frame_id"] = self.active_frame_id
+            existing_data["frames"] = [f.to_dict() for f in self.list_frames()]
+            if "rois" not in existing_data:
+                existing_data["rois"] = []
+
             with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, sort_keys=False, indent=2)
-            log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个): {path}")
+                yaml.dump(existing_data, f, allow_unicode=True, sort_keys=False, indent=2)
+            log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个) 至空间场景: {path}")
             return True
         except Exception as e:
-            log.error(f"[FrameTree] 保存坐标系配置失败 ({path}): {e}")
+            log.error(f"[FrameTree] 保存空间场景坐标系配置失败 ({path}): {e}")
             return False

@@ -99,13 +99,26 @@ class WorldDatumAligner:
         def _add(tid: Any, xyz: Any, known: Any, fid: Optional[str] = None) -> None:
             try:
                 tid_i = int(tid)
-                xyz_f = [float(v) for v in xyz]
             except (TypeError, ValueError):
                 return
-            if len(xyz_f) != 3:
+            if not isinstance(xyz, (list, tuple)) or len(xyz) != 3:
                 return
-            known_raw = list(known) if isinstance(known, (list, tuple)) else []
-            known_b = [bool(v) for v in (known_raw + [True, True, True])[:3]]
+            xyz_f = []
+            known_from_xyz = []
+            for v in xyz:
+                if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+                    xyz_f.append(0.0)
+                    known_from_xyz.append(False)
+                else:
+                    try:
+                        xyz_f.append(float(v))
+                        known_from_xyz.append(True)
+                    except (TypeError, ValueError):
+                        return
+            if isinstance(known, (list, tuple)) and len(known) == 3:
+                known_b = [bool(known_from_xyz[i] and known[i]) for i in range(3)]
+            else:
+                known_b = known_from_xyz
             if not any(known_b):
                 return
             entry = {"xyz_mm": xyz_f, "known": known_b}
@@ -113,15 +126,10 @@ class WorldDatumAligner:
                 entry["frame_id"] = str(fid)
             out[tid_i] = entry
 
-        if "origin_xyz_mm" in anchor_input or "align_xyz_mm" in anchor_input:
-            # 旧双锚点格式: origin/align 均视为三轴全知世界标靶
-            _add(anchor_input.get("origin_tag_id", 0), anchor_input.get("origin_xyz_mm"), [True, True, True], "world")
-            _add(anchor_input.get("align_tag_id", 1), anchor_input.get("align_xyz_mm"), [True, True, True], "world")
-        else:
-            for k, v in anchor_input.items():
-                if isinstance(v, dict):
-                    xyz = v.get("xyz_mm", v.get("coords", v.get("position_mm")))
-                    _add(k, xyz, v.get("known"), v.get("frame_id"))
+        for k, v in anchor_input.items():
+            if isinstance(v, dict):
+                xyz = v.get("xyz_mm", v.get("coords", v.get("position_mm")))
+                _add(k, xyz, v.get("known"), v.get("frame_id"))
         return out or None
 
     @staticmethod

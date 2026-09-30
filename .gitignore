@@ -31,3 +31,10 @@ data/**
 
 # 工具缓存
 .ruff_cache/
+
+# 临时调试与草稿目录 (禁止入库)
+reports/
+scratch/
+temp/
+tmp/
+*.bak

@@ -92,7 +92,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         self.assertTrue(ok, f"Save frame failed: {msg}")
         self.assertFalse(state.geometry.frame_modal_open)
 
-        # 验证底层 frames.yaml 真正写穿
+        # 验证底层 spatial_scene.yaml 真正写穿
         frames = state.geometry.get_coordinate_frames()
         frame_ids = [f.frame_id for f in frames]
         self.assertIn("frame_flange", frame_ids)
@@ -190,7 +190,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         self.assertTrue(ok_good, f"Save roi failed: {msg_good}")
         self.assertFalse(state.geometry.roi_modal_open)
 
-        # 验证底层 rois.yaml 真正写穿
+        # 验证底层 spatial_scene.yaml 真正写穿
         rois = state.geometry.get_roi_spaces()
         roi_ids = [r.roi_id for r in rois]
         self.assertIn("roi_gripper_zone", roi_ids)
@@ -256,16 +256,15 @@ class TestHubFramesRoisGui(unittest.TestCase):
         self.assertTrue(ok_tag)
         wl_data = app.state.whitelist.get_tag_whitelist()
         self.assertIn(5, wl_data.get("allowed_ids", []))
-        self.assertEqual(wl_data.get("tag_anchors", {}).get(5), {
-            "xyz_mm": [12.5, -45.0, 100.0],
-            "known": [True, True, True]
+        self.assertEqual(wl_data.get("anchor_tags", {}).get(5), {
+            "xyz_mm": [12.5, -45.0, 100.0]
         })
 
         # 清除 Tag #05 坐标标注
         ok_clr, _ = app.state.whitelist.update_tag_anchor(5, None)
         self.assertTrue(ok_clr)
         wl_data_clr = app.state.whitelist.get_tag_whitelist()
-        self.assertNotIn(5, wl_data_clr.get("tag_anchors", {}))
+        self.assertNotIn(5, wl_data_clr.get("anchor_tags", {}))
 
         # 8.2 专用坐标编辑弹窗
         app.state.whitelist.open_anchor_editor(5)
@@ -377,7 +376,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         self.assertTrue(ok, f"Delete cascade failed: {msg}")
 
         # 7. 级联结果验证：
-        # (a) frame_sub_1 已从 frames.yaml 移除
+        # (a) frame_sub_1 已从 spatial_scene.yaml 移除
         frames_after = state.geometry.get_coordinate_frames()
         frame_ids_after = [f.frame_id for f in frames_after]
         self.assertNotIn("frame_sub_1", frame_ids_after)

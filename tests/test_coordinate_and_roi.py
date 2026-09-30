@@ -171,9 +171,8 @@ def test_yaml_persistence_and_workspace_clone():
         ws_mgr = WorkspaceManager(workspaces_dir=tmp_root)
         ws_a = ws_mgr.create_workspace(alias="工位A")
 
-        # 检查初始 frames.yaml 和 rois.yaml 是否已建立
-        assert os.path.exists(ws_a.frames_path)
-        assert os.path.exists(ws_a.rois_path)
+        # 检查初始 spatial_scene.yaml 是否已建立
+        assert os.path.exists(ws_a.spatial_scene_path)
 
         # 向工位 A 写入自定义坐标系和 ROI
         coord_mgr = load_workspace_coordinate_manager(ws_a)
@@ -200,8 +199,7 @@ def test_yaml_persistence_and_workspace_clone():
         # 克隆工位 A -> 工位 B
         ws_b = ws_mgr.clone_workspace(ws_a.workspace_id, new_alias="工位B")
         assert ws_b is not None
-        assert os.path.exists(ws_b.frames_path)
-        assert os.path.exists(ws_b.rois_path)
+        assert os.path.exists(ws_b.spatial_scene_path)
 
         # 验证工位 B 是否完整继承了坐标系和 ROI (包括 Smart ROI 扩展属性)
         coord_mgr_b = load_workspace_coordinate_manager(ws_b)

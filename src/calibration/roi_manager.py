@@ -105,12 +105,12 @@ class RoiDefinition:
 class RoiSpaceManager:
     """工位 ROI 空间物件集合管理器"""
 
-    def __init__(self, workspace_id: str = "", rois_yaml_path: Optional[str] = None):
+    def __init__(self, workspace_id: str = "", spatial_scene_path: Optional[str] = None):
         self.workspace_id = workspace_id
-        self.rois_yaml_path = rois_yaml_path
+        self.spatial_scene_path = spatial_scene_path
         self._rois: Dict[str, RoiDefinition] = {}
 
-        if rois_yaml_path and os.path.exists(rois_yaml_path):
+        if spatial_scene_path and os.path.exists(spatial_scene_path):
             self.load()
 
     def add_roi(self, roi: RoiDefinition):
@@ -282,8 +282,8 @@ class RoiSpaceManager:
             return points_world[~mask]
 
     def load(self, filepath: Optional[str] = None) -> bool:
-        """从 rois.yaml 文件加载 ROI 集合"""
-        path = filepath or self.rois_yaml_path
+        """从 spatial_scene.yaml 文件加载 ROI 集合"""
+        path = filepath or self.spatial_scene_path
         if not path or not os.path.exists(path):
             self._rois = {}
             return False
@@ -301,30 +301,41 @@ class RoiSpaceManager:
                 loaded[roi.roi_id] = roi
 
             self._rois = loaded
-            log.debug(f"[RoiSpace] 成功加载 {len(self._rois)} 个 ROI 物件: {path}")
+            log.debug(f"[RoiSpace] 成功从空间场景加载 {len(self._rois)} 个 ROI 物件: {path}")
             return True
         except Exception as e:
-            log.error(f"[RoiSpace] 加载 ROI 集合失败 ({path}): {e}")
+            log.error(f"[RoiSpace] 加载空间场景 ROI 集合失败 ({path}): {e}")
             self._rois = {}
             return False
 
     def save(self, filepath: Optional[str] = None) -> bool:
-        """持久化保存至 rois.yaml 文件"""
-        path = filepath or self.rois_yaml_path
+        """持久化保存至 spatial_scene.yaml 文件 (原子保留 frames 节)"""
+        path = filepath or self.spatial_scene_path
         if not path:
             return False
 
         try:
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            data = {
-                "version": "1.0",
-                "workspace_id": self.workspace_id,
-                "rois": [r.to_dict() for r in self.list_rois()],
-            }
+            existing_data = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        existing_data = yaml.safe_load(f) or {}
+                except Exception:
+                    existing_data = {}
+
+            existing_data["version"] = "2.0"
+            existing_data["workspace_id"] = self.workspace_id
+            if "active_frame_id" not in existing_data:
+                existing_data["active_frame_id"] = "world"
+            if "frames" not in existing_data:
+                existing_data["frames"] = []
+            existing_data["rois"] = [r.to_dict() for r in self.list_rois()]
+
             with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, allow_unicode=True, sort_keys=False, indent=2)
-            log.info(f"[RoiSpace] 成功写穿 ROI 集合 ({len(self._rois)} 个): {path}")
+                yaml.dump(existing_data, f, allow_unicode=True, sort_keys=False, indent=2)
+            log.info(f"[RoiSpace] 成功写穿 ROI 集合 ({len(self._rois)} 个) 至空间场景: {path}")
             return True
         except Exception as e:
-            log.error(f"[RoiSpace] 保存 ROI 集合失败 ({path}): {e}")
+            log.error(f"[RoiSpace] 保存空间场景 ROI 集合失败 ({path}): {e}")
             return False

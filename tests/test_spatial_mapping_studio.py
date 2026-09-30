@@ -407,9 +407,9 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.assertEqual(len(self.studio.tags_map_data.get("tags", {})), 0, "复位后 tags 字典应为空")
         self.assertEqual(len(self.studio.pnp_solver.tags_map.get("tags", {})), 0, "求解器内绑定的地图也应同步清空")
 
-        # 验证 .bak 备份文件存在
+        # 验证彻底杜绝 .bak 垃圾文件
         bak_file = self.studio.map_path + ".bak"
-        self.assertTrue(os.path.exists(bak_file), "复位前应自动生成地图 .bak 备份")
+        self.assertFalse(os.path.exists(bak_file), "复位后严禁生成任何 .bak 垃圾备份文件")
 
     def test_reset_all_keep_status(self):
         """测试一键复位所有观测保留状态"""

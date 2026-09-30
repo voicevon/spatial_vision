@@ -175,16 +175,15 @@ class MappingDataActionsMixin:
     def reset_map(self) -> bool:
         """
         清空当前解算的空间立体地图，使工作站完全复位为未建图的初始状态
-        同时将已存在的 tags_map.yaml 自动备份为 tags_map.yaml.bak 并写空
         """
-        if os.path.exists(self.map_path):
+        # 清理可能存在的相对底图缓存
+        calib_raw_path = os.path.join(os.path.dirname(self.map_path), "calibration", "tags_map_raw.yaml") if self.map_path else ""
+        if calib_raw_path and os.path.exists(calib_raw_path):
             try:
-                bak_path = self.map_path + ".bak"
-                import shutil
-                shutil.copyfile(self.map_path, bak_path)
-                log.info(f"[*] [STUDIO] 旧地图已安全备份至: {bak_path}")
+                os.remove(calib_raw_path)
+                log.info(f"[*] [STUDIO] 标定相对底图已同步清理: {calib_raw_path}")
             except Exception as e:
-                log.warning(f"备份地图失败: {e}")
+                log.warning(f"清理相对底图失败: {e}")
 
         # 清空内存与地图
         self.tags_map_data = {"version": "2.0_reset", "tags": {}}

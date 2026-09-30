@@ -123,40 +123,14 @@ class WhitelistState:
         self._close_anchor_modal()
 
     def _save_whitelist_yaml(self):
-        """写穿当前编辑集合到 tag_whitelist.yaml (保留其余字段, 更新 mtime 联动全链路缓存)"""
+        """写穿当前编辑集合到 tag_whitelist.yaml (更新 mtime 联动全链路缓存)"""
+        from src.calibration.workspace_manager import save_workspace_tag_config
         ws = self.hub.get_selected_workspace()
         if not ws:
             return
-        path = self.hub.workspace_mgr.get_tag_whitelist_path(ws.workspace_id)
-        doc = {}
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    doc = yaml.safe_load(f) or {}
-            except Exception:
-                doc = {}
-        doc["workspace_id"] = ws.workspace_id
-        doc["workspace_name"] = ws.name
-        doc["allowed_ids"] = sorted(self.whitelist_edit_ids)
-        if "tag_default_size_mm" not in doc:
-            size_val = 35.5
-            if os.path.isfile(ws.map_path):
-                try:
-                    with open(ws.map_path, "r", encoding="utf-8") as mf:
-                        mdata = yaml.safe_load(mf) or {}
-                    if mdata.get("marker_size_mm"):
-                        size_val = float(mdata["marker_size_mm"])
-                except Exception:
-                    pass
-            doc["tag_default_size_mm"] = size_val
-        doc.setdefault("description", f"Workspace {ws.name} 标靶白名单配置")
-        doc.setdefault("notes", "工位物理白名单恒启用 (名单内容即行为): allowed_ids 非空时仅放行名单内标靶 (权威约束)；留空 = 探索模式放行所有检测标靶")
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(doc, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        except Exception as e:
-            log.warning(f"写回 tag_whitelist.yaml 失败: {e}")
-            self.hub.set_toast(f"写回白名单失败: {e}")
+        ok = save_workspace_tag_config(ws, allowed_ids=list(self.whitelist_edit_ids))
+        if not ok:
+            self.hub.set_toast("写回白名单失败")
             return
         self.refresh_whitelist_cache()
 
@@ -188,64 +162,28 @@ class WhitelistState:
         self._close_anchor_modal()
 
     def _reload_anchor_map(self):
-        """载入当前工位锚点 (Tag 锚点统一为工位独立数据, 未写穿前以当前标定为基础)"""
-        from src.calibration.workspace_manager import load_workspace_anchor_tags, load_workspace_tag_anchors
+        """载入当前工位锚点 (单一真理源 tag_whitelist.yaml)"""
+        from src.calibration.workspace_manager import load_workspace_anchor_tags
         ws = self.hub.get_selected_workspace()
         if not ws:
             self.anchor_map = {}
             return
         m = load_workspace_anchor_tags(ws.workspace_dir)
-        if m is None:
-            m = load_workspace_tag_anchors(ws.workspace_dir)
         self.anchor_map = m or {}
 
     def get_anchor_map(self) -> dict:
-        """获取当前工位完整的 AprilTag 物理锚点映射表 (优先取 anchor_tags.yaml，回退 tag_whitelist.yaml)"""
+        """获取当前工位完整的 AprilTag 物理锚点映射表 (单一真理源 tag_whitelist.yaml)"""
         self._reload_anchor_map()
         return self.anchor_map or {}
 
     def _persist_anchor_map(self) -> bool:
-        """写穿当前工位锚点文件并同步写穿 tag_whitelist.yaml (统一采用标准结构)"""
-        from src.calibration.workspace_manager import save_workspace_anchor_tags
+        """写穿当前工位标靶配置 (统一采用方案 B 单一真理源 tag_whitelist.yaml)"""
+        from src.calibration.workspace_manager import save_workspace_tag_config
         ws = self.hub.get_selected_workspace()
         if ws is None:
             return False
-        ok = save_workspace_anchor_tags(ws, self.anchor_map)
-        path = self.hub.workspace_mgr.get_tag_whitelist_path(ws.workspace_id)
-        if os.path.isfile(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    cfg = yaml.safe_load(f) or {}
-                cfg["tag_anchors"] = {
-                    tid: {
-                        "xyz_mm": [float(v) for v in a["xyz_mm"]],
-                        "known": [bool(b) for b in a.get("known", [True, True, True])],
-                        **({"frame_id": str(a["frame_id"])} if a.get("frame_id") else {}),
-                    }
-                    for tid, a in sorted(self.anchor_map.items())
-                }
-                # 自动将具有已知轴约束的 tag 加入 allowed_ids
-                allowed_set = set(cfg.get("allowed_ids", []))
-                for tid, a in self.anchor_map.items():
-                    if any(a.get("known", [])):
-                        allowed_set.add(tid)
-                cfg["allowed_ids"] = sorted(list(allowed_set))
-                if "tag_default_size_mm" not in cfg:
-                    size_val = 35.5
-                    if os.path.isfile(ws.map_path):
-                        try:
-                            with open(ws.map_path, "r", encoding="utf-8") as mf:
-                                mdata = yaml.safe_load(mf) or {}
-                            if mdata.get("marker_size_mm"):
-                                size_val = float(mdata["marker_size_mm"])
-                        except Exception:
-                            pass
-                    cfg["tag_default_size_mm"] = size_val
-                with open(path, "w", encoding="utf-8") as f:
-                    yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-                self.refresh_whitelist_cache()
-            except Exception as e:
-                log.warning(f"同步 tag_whitelist.yaml tag_anchors 异常: {e}")
+        ok = save_workspace_tag_config(ws, anchor_tags=self.anchor_map)
+        self.refresh_whitelist_cache()
         return ok
 
     def _close_anchor_modal(self):
@@ -260,13 +198,30 @@ class WhitelistState:
         entry = self.anchor_map.get(tag_id) if self.anchor_map else None
         if not entry:
             wl = self.get_tag_whitelist()
-            anchors = wl.get("tag_anchors", {}) if isinstance(wl, dict) else {}
+            anchors = wl.get("anchor_tags", {}) if isinstance(wl, dict) else {}
             cand = anchors.get(tag_id) or anchors.get(str(tag_id))
             if isinstance(cand, dict) and "xyz_mm" in cand:
                 entry = cand
         if entry:
-            self.anchor_modal_xyz = [float(v) for v in entry["xyz_mm"]]
-            self.anchor_modal_known = [bool(b) for b in entry.get("known", [True, True, True])]
+            raw_xyz = entry.get("xyz_mm", [0.0, 0.0, 0.0])
+            raw_k = entry.get("known", [True, True, True])
+            xyz_vals = []
+            known_vals = []
+            for i in range(3):
+                v = raw_xyz[i] if i < len(raw_xyz) else 0.0
+                k = raw_k[i] if i < len(raw_k) else True
+                if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+                    xyz_vals.append(0.0)
+                    known_vals.append(False)
+                else:
+                    try:
+                        xyz_vals.append(float(v))
+                        known_vals.append(bool(k))
+                    except (TypeError, ValueError):
+                        xyz_vals.append(0.0)
+                        known_vals.append(False)
+            self.anchor_modal_xyz = xyz_vals
+            self.anchor_modal_known = known_vals
         else:
             self.anchor_modal_xyz = [0.0, 0.0, 0.0]
             self.anchor_modal_known = [False, False, False]

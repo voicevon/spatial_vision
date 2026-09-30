@@ -17,7 +17,6 @@ from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
 from src.calibration.manifest_repository import ManifestRepository
 from src.calibration.workspace_manager import (
     load_workspace_anchor_tags,
-    load_workspace_tag_anchors,
 )
 from src.calibration.world_datum_aligner import WorldDatumAligner
 from src.calibration.multiframe_milestone_solver import (
@@ -50,11 +49,16 @@ class MappingBARunner:
         self.optimizer = optimizer
         self.manifest_repo = manifest_repo
         self.map_path = map_path
-        self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "tags_map_raw.yaml") if self.map_path else ""
+        self.workspace = workspace  # 当前工位对象引用 (用于锚点装载)
+        if self.workspace and hasattr(self.workspace, "raw_map_path"):
+            self.raw_map_path = self.workspace.raw_map_path
+        elif self.map_path:
+            self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "calibration", "tags_map_raw.yaml")
+        else:
+            self.raw_map_path = ""
         self.manifest_path = manifest_path
         self.marker_size_mm = marker_size_mm
         self.on_status_change = on_status_change
-        self.workspace = workspace  # 当前工位对象引用 (用于锚点装载)
         self.latest_milestone_report: Optional[MultiFrameMilestoneReport] = None
 
         # 运行状态与指标
@@ -91,8 +95,10 @@ class MappingBARunner:
         Tag 数据已 100% 下沉至工位沙盒, 全局 config.yaml 不再持有任何 Tag ID/世界坐标.
         工位两源全空 → BA 后续将抛错终止.
         """
-        if self.map_path:
-            self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "tags_map_raw.yaml")
+        if self.workspace and hasattr(self.workspace, "raw_map_path"):
+            self.raw_map_path = self.workspace.raw_map_path
+        elif self.map_path:
+            self.raw_map_path = os.path.join(os.path.dirname(self.map_path), "calibration", "tags_map_raw.yaml")
         try:
             import yaml
             cfg_path = os.path.join(PROJECT_ROOT, "config", "config.yaml")
@@ -107,25 +113,17 @@ class MappingBARunner:
             ws = self.workspace
             ws_dir = getattr(ws, "workspace_dir", None) if ws else None
 
-            # ① 工位 anchor_tags.yaml
+            # 方案 B 统一真理源: 从 tag_whitelist.yaml 加载标靶配置与锚点
             if ws_dir:
-                ws_anchors = load_workspace_anchor_tags(ws_dir)
-                if ws_anchors:
-                    self.anchor_tags = ws_anchors
-                    log.info(f"[SPATIAL_MAPPING] 锚点源① 命中 (anchor_tags.yaml): {sorted(self.anchor_tags.keys())}")
+                cfg_anchors = load_workspace_anchor_tags(ws_dir)
+                if cfg_anchors:
+                    self.anchor_tags = cfg_anchors
+                    log.info(f"[SPATIAL_MAPPING] 标靶配置真理源命中 (tag_whitelist.yaml): {sorted(self.anchor_tags.keys())}")
                     return
 
-            # ② 工位 tag_whitelist.yaml 的 tag_anchors
-            if ws_dir:
-                wl_anchors = load_workspace_tag_anchors(ws_dir)
-                if wl_anchors:
-                    self.anchor_tags = wl_anchors
-                    log.info(f"[SPATIAL_MAPPING] 锚点源② 命中 (tag_whitelist.yaml/tag_anchors): {sorted(self.anchor_tags.keys())}")
-                    return
-
-            # 工位两源缺失 — 严格禁止静默 fallback, 后续 BA 求解将抛错
+            # 工位未配置已知锚点
             self.anchor_tags = None
-            log.warning("[SPATIAL_MAPPING] 锚点全源缺失: BA 平差将拒绝以打印边长兜底 (需在工位 anchor_tags.yaml 或 tag_whitelist.yaml.tag_anchors 录入已知世界坐标)")
+            log.warning("[SPATIAL_MAPPING] 锚点配置缺失: BA 平差将拒绝以打印边长兜底 (需在工位 tag_whitelist.yaml 录入已知世界坐标)")
         except Exception as e:
             log.warning(f"[SPATIAL_MAPPING] 读取对齐标靶配置异常: {e}")
             self.anchor_tags = None
@@ -179,9 +177,11 @@ class MappingBARunner:
                 "tags": tags_dict,
                 "raw_relative_poses": opt_res.get("raw_relative_poses", {})
             }
-            # 1. 固化持久化相对底图 tags_map_raw.yaml
-            ManifestRepository.save_map(raw_map, self.raw_map_path)
-            log.info(f"[SPATIAL_MAPPING] 相对底图已持久化至: {self.raw_map_path}")
+            # 1. 固化持久化相对底图 tags_map_raw.yaml (存放于 calibration/ 专区)
+            if self.raw_map_path:
+                os.makedirs(os.path.dirname(self.raw_map_path), exist_ok=True)
+                ManifestRepository.save_map(raw_map, self.raw_map_path)
+                log.info(f"[SPATIAL_MAPPING] 相对底图已持久化至: {self.raw_map_path}")
 
             # 2. 同步更新视口预览地图 (若尚未做世界对齐, 视口可查看相对三维构型)
             ManifestRepository.save_map(raw_map, self.map_path)
@@ -251,15 +251,15 @@ class MappingBARunner:
             self.data_mgr.set_marker_size_mm(world_map["marker_size_mm"])
         self.data_mgr.refresh_all_frame_metrics()
 
-        # 5. 【阶段三: 保存子坐标系树 frames.yaml (若有外参更新)】
+        # 5. 【阶段三: 保存空间几何场景 (若有子坐标系外参更新)】
         if coord_mgr:
             try:
                 succ_frames = sum(1 for s in milestone_rep.sub_frames.values() if s.extrinsic_solved)
                 if succ_frames > 0:
                     coord_mgr.save()
-                    log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_frames} 个成功) 并已写穿 frames.yaml")
+                    log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_frames} 个成功) 并已写穿 spatial_scene.yaml")
             except Exception as e:
-                log.warning(f"[SPATIAL_MAPPING] [PHASE 3] 保存 frames.yaml 失败: {e}")
+                log.warning(f"[SPATIAL_MAPPING] [PHASE 3] 保存空间场景配置失败: {e}")
 
         w_info = world_map.get("world_anchor", {})
         res = w_info.get("anchor_residual_mm", {})
@@ -304,7 +304,7 @@ class MappingBARunner:
             succ_count = sum(1 for item in solved_summary.values() if item.get("success"))
             if succ_count > 0:
                 coord_mgr.save()
-                log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_count} 个成功) 并已写穿 frames.yaml: {list(solved_summary.keys())}")
+                log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_count} 个成功) 并已写穿 spatial_scene.yaml: {list(solved_summary.keys())}")
             return solved_summary
         except Exception as e:
             log.warning(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推异常 (跳过): {e}")

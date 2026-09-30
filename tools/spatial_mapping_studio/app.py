@@ -887,7 +887,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             self.set_toast("ROI 物件绘制模式：已关闭")
 
     def reset_map(self) -> bool:
-        """一键复位清空空间立体地图 (自动备份为 tags_map.yaml.bak)"""
+        """一键复位清空空间立体地图"""
         return self.data_mgr.reset_map()
 
     def reset_all_keep_status(self) -> int:

@@ -35,20 +35,40 @@ def load_raw_config(config_path: str = SYSTEM_CONFIG_PATH) -> Dict[str, Any]:
 
 
 def _parse_anchor_entry(entry: Any) -> Optional[Dict[str, Any]]:
-    """解析单条锚点: {"xyz_mm": [x,y,z], "known": [b,b,b]}，无效/全未知条目返回 None"""
+    """
+    解析单条锚点:
+    - 标准格式: {"xyz_mm": [x,y,z], "known": [b,b,b]}
+    - 极简格式: {"xyz_mm": [x, y, null]} (直接以 null / None / ~ 表示未知轴, 自动推导 known)
+    - 无效/全未知条目返回 None
+    """
     if not isinstance(entry, dict):
         return None
-    xyz = entry.get("xyz_mm")
-    if xyz is None or len(xyz) != 3:
+    xyz = entry.get("xyz_mm") or entry.get("coords") or entry.get("position_mm")
+    if xyz is None or not isinstance(xyz, (list, tuple)) or len(xyz) != 3:
         return None
-    try:
-        xyz_f = [float(v) for v in xyz]
-    except (TypeError, ValueError):
+
+    xyz_f = []
+    known_from_xyz = []
+    for v in xyz:
+        if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+            xyz_f.append(0.0)
+            known_from_xyz.append(False)
+        else:
+            try:
+                xyz_f.append(float(v))
+                known_from_xyz.append(True)
+            except (TypeError, ValueError):
+                return None
+
+    known_raw = entry.get("known")
+    if isinstance(known_raw, (list, tuple)) and len(known_raw) == 3:
+        known = [bool(known_from_xyz[i] and known_raw[i]) for i in range(3)]
+    else:
+        known = known_from_xyz
+
+    if not any(known):
         return None
-    known_raw = entry.get("known", [True, True, True])
-    if not isinstance(known_raw, (list, tuple)) or len(known_raw) != 3:
-        known_raw = [True, True, True]
-    known = [bool(v) for v in known_raw]
+
     res = {"xyz_mm": xyz_f, "known": known}
     if entry.get("frame_id"):
         res["frame_id"] = str(entry["frame_id"])
@@ -76,30 +96,12 @@ def parse_anchor_mapping(raw: Any) -> Dict[int, Dict[str, Any]]:
 
 def load_anchor_tags(config_path: str = SYSTEM_CONFIG_PATH) -> Dict[int, Dict[str, Any]]:
     """
-    读取全局 config.yaml 的世界坐标锚点表 (旧版数据源, 工位未建 anchor_tags.yaml 时的兜底)。
-    当前推荐数据源为每工位独立文件 (load_workspace_anchor_tags)。
-    - 新格式: {tag_id: {"xyz_mm": [x,y,z], "known": [b,b,b]}}，known 缺省视为三轴全知
-    - 兼容迁移: 若 anchor_tags 缺失，自动从旧 world_anchor (origin/align 两枚全知锚点) 转换
+    读取全局 config.yaml 的世界坐标锚点表 (calibration.anchor_tags)。
     :return: {int tag_id: {"xyz_mm": [float x3], "known": [bool x3]}}，无有效锚点返回空字典
     """
     cfg = load_raw_config(config_path)
     calib = cfg.get("calibration", {})
-
-    anchors = parse_anchor_mapping(calib.get("anchor_tags"))
-    if anchors:
-        return anchors
-
-    # 兼容迁移: 旧 world_anchor 双锚点格式 (origin/align 均视为三轴全知)
-    wa = calib.get("world_anchor")
-    if isinstance(wa, dict):
-        for tid_key, xyz_key in (("origin_tag_id", "origin_xyz_mm"), ("align_tag_id", "align_xyz_mm")):
-            if wa.get(tid_key) is not None and wa.get(xyz_key):
-                entry = _parse_anchor_entry({"xyz_mm": wa[xyz_key], "known": [True, True, True]})
-                if entry is not None:
-                    anchors[int(wa[tid_key])] = entry
-        if anchors:
-            log.info(f"[GUARD] 已从旧 world_anchor 迁移 {len(anchors)} 枚世界锚点 (建议改用 calibration.anchor_tags)")
-    return anchors
+    return parse_anchor_mapping(calib.get("anchor_tags")) or {}
 
 
 def resolve_camera_intrinsics(
