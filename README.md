@@ -84,9 +84,6 @@ cd d:\Software\antigravity\flux_vision_3d
 pip install -r requirements.txt
 ```
 
-> [!TIP]
-> 无物理 RealSense D435 相机时，系统提供完整的脱机仿真模式（`--mock`）和快照回放机制，完全支持在离线个人电脑上开展算法验证与工具链演练。
-
 ### 一键启动 Dashboard
 
 项目提供一键启动脚本，直接拉起「芦笋上料自动化」Dashboard 大屏：
@@ -283,8 +280,8 @@ flux_vision_3d/
 │   │   ├── verification_visualizer.py #  3D 双四棱柱位姿对比与 2D 残差矢量渲染管线
 │   │   └── world_datum_aligner.py #      世界基准对齐与空间尺度相似变换解算器
 │   │
-│   ├── hardware/                  #    硬件抽象层 (HAL 外设驱动与仿真)
-│   │   ├── camera_service.py      #      统一相机服务 (RealSense / USB / Mock 优雅回退链)
+│   ├── devices/                   #    硬件外设接入层
+│   │   ├── camera_service.py      #      统一相机服务 (RealSense / USB 双物理后端)
 │   │   └── camera_streamer.py     #      跨设备高帧率相机取流与连拍适配器
 │   │
 │   ├── vision/                    #    实时视觉感知与抓取引擎
@@ -316,7 +313,7 @@ flux_vision_3d/
 │   │   ├── camera_controller.py   #      相机硬件控制器 (RealSense/USB 取流启停)
 │   │   ├── renderer.py            #      工具栏/叠加层/信息面板渲染器
 │   │   └── common.py              #      共享视觉常量与工具函数
-│   ├── d435_viewer.py             #    RealSense D435 实时相机视窗与交互探针 (含 --mock)
+│   ├── d435_viewer.py             #    RealSense D435 实时相机视窗与交互探针
 │   ├── asparagus_offline.py       #    芦笋抓取位姿离线验证 GUI (照片输入/批量解算/G-code)
 │   │
 │   ├── capture/                   # 📷 多视角采图向导 (纯预览+保存, 与标定解耦)
@@ -336,7 +333,6 @@ flux_vision_3d/
 │   ├── test_workspace_manager.py  #    工位生命周期与双业务沙盒隔离测试
 │   ├── test_tag_offline_studio.py #    离线 Studio 交互状态与平差驱动测试
 │   ├── test_real_snapshot.py      #    真实工业快照全量测试 (20 组真实工业快照 100% 通过)
-│   ├── test_mock_pipeline.py      #    仿真管线脱机回归测试
 │   ├── test_ba_optimizer.py       #    两阶段 BA 平差数学单元测试
 │   ├── test_covisibility_graph.py #    共视拓扑图论连通性单元测试
 │   ├── test_manifest_repository.py#    标定清单仓储测试

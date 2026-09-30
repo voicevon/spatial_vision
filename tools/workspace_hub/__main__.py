@@ -1,7 +1,7 @@
 """
 Workspace Hub 模块命令行直接执行入口
 ====================================
-运行命令：python -m tools.workspace_hub [--mock]
+运行命令：python -m tools.workspace_hub
 """
 
 import os

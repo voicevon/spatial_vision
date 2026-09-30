@@ -27,7 +27,7 @@
 ### 3.1 CameraService — 三套相机管理统一 ✅
 - 现状：tracker/camera_controller.py、src/calibration/camera_streamer.py、wizard 内嵌 pipeline 三套 RealSense/USB 管理，各自启停、分辨率、曝光逻辑。
 - 目标：新建 `src/calibration/camera_service.py`，向导/跟踪器/流式工具全部委托；GUI 状态（下拉选项等）留在工具层。
-- 完成：CameraService 实现 RealSense/USB/Mock 三后端 + 分级回退链 + 内参回调；camera_controller/camera_streamer/wizard 三处委托收编，公开 API 零破坏。
+- 完成：CameraService 实现 RealSense/USB 双物理后端 + 分级回退链 + 内参回调；camera_controller/camera_streamer/wizard 三处委托收编。
 - 验收：96/96 tests OK；ruff F821 通过。
 
 ### 3.2 棱柱渲染统一 ✅

@@ -17,7 +17,6 @@ from .kinematics import ScaraKinematics, ReachabilityError
 from .comm import (
     ITransceiver,
     SerialTransceiver,
-    MockTransceiver,
     MarlinProtocolHandler,
 )
 from .subsystems import GripperSubsystem
@@ -38,7 +37,6 @@ __all__ = [
     # 通信
     "ITransceiver",
     "SerialTransceiver",
-    "MockTransceiver",
     "MarlinProtocolHandler",
     # 子系统
     "GripperSubsystem",

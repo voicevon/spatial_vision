@@ -40,7 +40,7 @@
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260923_204026_Workspace_5"
+    "selected_workspace_id": "20260930_211519_workspace"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -160,21 +160,21 @@
     "dropdown_state": {
       "workspace_id": "20260923_204026_Workspace_5",
       "filter_mode": "all",
-      "sort_mode": "tag_err_desc",
-      "ba_view_mode": "3d",
-      "obs_view_mode": "3d",
-      "show_xy_plane": true,
-      "plane_z": 12.0
+      "sort_mode": "err_desc",
+      "ba_view_mode": "off",
+      "obs_view_mode": "off",
+      "show_xy_plane": false,
+      "plane_z": 200.0
     },
     "viewer_state": {
       "workspace_id": "20260923_204026_Workspace_5",
       "filter_mode": "all",
-      "sort_mode": "tag_err_desc",
-      "ba_view_mode": "3d",
-      "obs_view_mode": "3d",
-      "show_xy_plane": true,
-      "plane_z": 12.0
+      "sort_mode": "err_desc",
+      "ba_view_mode": "off",
+      "obs_view_mode": "off",
+      "show_xy_plane": false,
+      "plane_z": 200.0
     },
-    "updated_at": "2026-09-30 20:56:11"
+    "updated_at": "2026-09-30 21:15:08"
   }
 }

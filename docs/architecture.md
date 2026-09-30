@@ -46,7 +46,6 @@ graph TD
 
     subgraph L4["第四层：自动化测试与质量保证"]
         TestReal["真实快照测试 (20 组)"]
-        TestMock["仿真管线测试"]
         TestMap["BA 建图单元测试"]
         TestVerifier["AR 验证器回归测试"]
         TestHandEye["手眼矩阵兜底与防撞 G-code 测试"]
@@ -174,7 +173,6 @@ Dashboard、Tracker、Scene Hub 等 GUI 应用共享以下基础设施，统一�
 | 分组 | 测试套件 | 覆盖范围 |
 | :--- | :--- | :--- |
 | **感知管线** | `tests/test_real_snapshot.py` | 20 组现场快照：并排分离、顶层识别与 G-code 抓取决策 |
-| | `tests/test_mock_pipeline.py` | 无真实相机时的虚拟芦笋点云与三层叠压回归验证 |
 | **建图与 BA** | `tests/test_tag_map_builder.py` | 多标靶超定 PnP、BA 求解收敛、原点闭环与连通图拓扑阻断 |
 | | `tests/test_ba_optimizer.py` | BA 优化器数学模型与鲁棒核 |
 | | `tests/test_covisibility_graph.py` | 共视连通图拓扑守门员 |

@@ -5,7 +5,7 @@ flux_vision_3d | isolate_wheels_production - 分离轮自动生产工作台
 ==============================================================
 主生产运行调度程序：
 - 步骤一（工位选择）：支持动态选择与加载工位 Workspace（含 rois.yaml 标靶与区域配置）
-- 步骤二（相机与分辨率）：选择 RealSense/USB/Mock 并切换分辨率，启动/停止实时流
+- 步骤二（相机与分辨率）：选择 RealSense/USB 并切换分辨率，启动/停止实时流
 - 步骤三（视觉自动分离）：8 通道 ROI 视觉检测自动数出各轮物料数量，数字只读显示，无需人工干预
 - 步骤四（生产流水线模式）：
   * 单次生产模式：人工触发节拍下发 (S)
@@ -70,7 +70,6 @@ class IsolateWheelsProductionApp(BaseCvApp):
         self.camera_types: List[Tuple[str, str]] = [
             ("realsense", "RealSense"),
             ("usb:0", "USB 相机 0"),
-            ("mock", "Mock 模拟"),
         ]
         self.camera_type: str = "realsense"
         self.resolutions: List[Tuple[int, int]] = [(1280, 720), (640, 480)]
@@ -180,14 +179,12 @@ class IsolateWheelsProductionApp(BaseCvApp):
         ok = False
         try:
             if self.camera_type == "realsense":
-                ok = self.camera_service.start_realsense(self.camera_w, self.camera_h, fps=30, mock_fallback=True)
+                ok = self.camera_service.start_realsense(self.camera_w, self.camera_h, fps=30)
             elif self.camera_type.startswith("usb"):
                 ok = self.camera_service.start_usb(width=self.camera_w, height=self.camera_h)
-            else:
-                ok = self.camera_service.enter_mock()
         except Exception as e:
-            log.warning(f"[Production] 启动物理相机异常 ({e})，降级为 Mock 模式")
-            ok = self.camera_service.enter_mock()
+            log.warning(f"[Production] 启动物理相机异常 ({e})")
+            ok = False
 
         if ok:
             self.is_camera_running = True

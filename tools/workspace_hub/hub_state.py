@@ -56,7 +56,7 @@ class HubState:
         ("none", "通用标定观察工位", "general_viewer"),
     ]
 
-    def __init__(self, workspace_mgr: WorkspaceManager = None, force_mock: bool = False):
+    def __init__(self, workspace_mgr: WorkspaceManager = None):
         self.workspace_mgr = workspace_mgr or WorkspaceManager()
 
         self.workspaces: list[Workspace] = []

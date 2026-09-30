@@ -139,9 +139,6 @@ class ScaraDebugRenderer:
                   font_size=16, color=COL_ACCENT, bold=True)
         draw_text(canvas, "MKS Base V1.6 / Marlin 2.0", (40, 27), font_size=11, color=COL_SUB)
 
-        if app.mock_mode:
-            draw_text(canvas, "[仿真 MOCK]", (408, 13), font_size=13, color=COL_GOLD, bold=True)
-
         conn = app.robot.is_connected()
 
         # 串口下拉框 (选端口 / 刷新端口)

@@ -3,10 +3,10 @@
 """
 统一相机取流服务 (CameraService)
 ================================
-收编重复的相机硬件管理 (tools/tracker/camera_controller、src/hardware/camera_streamer、
+收编重复的相机硬件管理 (tools/tracker/camera_controller、src/devices/camera_streamer、
 tools/capture/capture_wizard)：
-  - RealSense D435 / USB 摄像头 / Mock 仿真 三后端统一启停与帧读取；
-  - 分级回退链 (帧率/分辨率逐级降级) 与 Mock 优雅降级；
+  - RealSense D435 / USB 摄像头 双物理后端统一启停与帧读取；
+  - 分级回退链 (帧率/分辨率逐级降级)；
   - 内参解析推送: RealSense 走 config_guard 标定内参 (按实际分辨率自适应)，
     USB 用近似针孔模型，经 intrinsics_callback 推送给宿主 (如 tracker 刷新引擎)。
 工具层只保留 GUI 状态与业务编排，硬件操作全部委托本服务。
@@ -38,7 +38,7 @@ except ImportError:
 
 
 class CameraService:
-    """统一相机取流服务: 硬件启停 / 帧读取 / 曝光控制 / Mock 仿真帧"""
+    """统一相机取流服务: 硬件启停 / 帧读取 / 曝光控制"""
 
     def __init__(self, intrinsics_callback=None):
         """
@@ -50,26 +50,23 @@ class CameraService:
         self.pipeline = None          # rs.pipeline (RealSense 后端)
         self.usb_capture = None       # cv2.VideoCapture (USB 后端)
         self.is_running = False
-        self.is_mock = False
         self.stream_desc = "未初始化"
         self.color_sensor = None      # rs.sensor 彩色传感器句柄 (曝光调控)
         self.last_valid_frame = None  # 最近一帧有效图像 (瞬时失败回退用)
-        self._mock_frame_idx = 0
 
     # ------------------------------ 启动 ------------------------------
-    def start_realsense(self, width, height, fps=30, fallbacks=(), mock_fallback=True) -> bool:
+    def start_realsense(self, width, height, fps=30, fallbacks=()) -> bool:
         """
         启动 RealSense 彩色流。
         :param fallbacks: ((w, h, fps), ...) 逐级降级链, 主档失败后依次尝试
-        :param mock_fallback: 全链失败时 True=优雅切 Mock 返回 True, False=抛 RuntimeError
         """
         if not HAVE_REALSENSE:
-            return self._enter_mock_or_raise("pyrealsense2 未安装, 请先安装 RealSense SDK", mock_fallback)
+            raise RuntimeError("pyrealsense2 未安装, 请先安装 RealSense SDK")
         try:
             ctx = rs.context()
             devices = list(ctx.query_devices())
             if not devices:
-                return self._enter_mock_or_raise("未检测到 RealSense 设备, 请检查 USB 连接", mock_fallback)
+                raise RuntimeError("未检测到 RealSense 设备, 请检查 USB 连接")
 
             last_err = None
             cur = (width, height, fps)
@@ -88,18 +85,17 @@ class CameraService:
                     last_err = e
                     log.info(f"[Camera] {w}x{h} @ {f}fps 请求未满足: {e}")
             else:
-                return self._enter_mock_or_raise(f"RealSense {width}x{height} 启动失败: {last_err}", mock_fallback)
+                raise RuntimeError(f"RealSense {width}x{height} 启动失败: {last_err}")
 
             self._warmup_realsense()
             self._probe_color_sensor()
-            self.is_mock = False
             self.is_running = True
             self._push_realsense_intrinsics(cur[0], cur[1])
             return True
         except RuntimeError:
             raise
         except Exception as e:
-            return self._enter_mock_or_raise(f"连接物理相机失败: {e}", mock_fallback)
+            raise RuntimeError(f"连接物理相机失败: {e}")
 
     def start_usb(self, width, height, fps=30) -> bool:
         """启动普通 USB 摄像头 (cv2.VideoCapture)，使用近似针孔内参 (未标定)"""
@@ -110,19 +106,10 @@ class CameraService:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         cap.set(cv2.CAP_PROP_FPS, fps)
         self.usb_capture = cap
-        self.is_mock = False
         self.is_running = True
         self.stream_desc = f"USB {width}x{height}"
         self._push_usb_intrinsics(width, height)
         log.warning(f"[Camera] USB 摄像头已开启 {width}x{height} (未标定内参, 世界坐标仅供流程验证)")
-        return True
-
-    def enter_mock(self) -> bool:
-        """切入 Mock 仿真流"""
-        self.is_mock = True
-        self.is_running = True
-        self.stream_desc = "仿真模拟相机 (Mock)"
-        log.warning("[Camera] 已切入 Mock 仿真模式")
         return True
 
     def stop(self):
@@ -141,18 +128,12 @@ class CameraService:
             self.usb_capture = None
         self.color_sensor = None
         self.is_running = False
-        self.is_mock = False
 
     # ------------------------------ 帧读取 ------------------------------
     def read_frame(self, timeout_ms: int = 1000):
-        """读取一帧 BGR 图像; Mock 模式生成仿真帧; 瞬时失败回退最近有效帧; 未运行返回 None"""
+        """读取一帧 BGR 图像; 瞬时失败回退最近有效帧; 未运行返回 None"""
         if not self.is_running:
             return None
-        if self.is_mock:
-            self._mock_frame_idx += 1
-            frame = self.make_mock_frame(self._mock_frame_idx)
-            self.last_valid_frame = frame
-            return frame
         try:
             if self.pipeline is not None:
                 frames = self.pipeline.wait_for_frames(timeout_ms=timeout_ms)
@@ -185,44 +166,7 @@ class CameraService:
             log.warning(f"[Camera] 切换自动曝光失败: {e}")
             return None
 
-    # ------------------------------ Mock 仿真帧 ------------------------------
-    def make_mock_frame(self, frame_idx: int) -> np.ndarray:
-        """生成带动态运动 AprilTag 的高保真仿真视频帧 (720p)"""
-        w, h = 1280, 720
-        frame = np.full((h, w, 3), 32, dtype=np.uint8)
-        for x in range(0, w, 80):
-            cv2.line(frame, (x, 0), (x, h), (44, 44, 44), 1)
-        for y in range(0, h, 80):
-            cv2.line(frame, (0, y), (w, y), (44, 44, 44), 1)
-
-        dx = int(12 * math.sin(frame_idx * 0.08))
-        dy = int(8 * math.cos(frame_idx * 0.06))
-        tag_configs = [
-            (0, 320 + dx, 220 + dy, 110),
-            (1, 640 + dx, 200 - dy, 110),
-            (2, 960 - dx, 220 + dy, 110),
-            (18, 400 - dx, 480 + dy, 100),
-            (28, 880 + dx, 480 - dy, 100),
-            (4, 640 + dx, 500 + dy, 90),
-        ]
-        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_16h5)
-        for tag_id, cx, cy, sz in tag_configs:
-            hs = sz // 2
-            x1, y1 = max(0, cx - hs), max(0, cy - hs)
-            x2, y2 = min(w, cx + hs), min(h, cy + hs)
-            tag_img = cv2.aruco.generateImageMarker(dictionary, tag_id, sz)
-            tag_bgr = cv2.cvtColor(tag_img, cv2.COLOR_GRAY2BGR)
-            h_sub, w_sub = y2 - y1, x2 - x1
-            if h_sub > 0 and w_sub > 0:
-                frame[y1:y2, x1:x2] = tag_bgr[:h_sub, :w_sub]
-        return frame
-
     # ------------------------------ 内部辅助 ------------------------------
-    def _enter_mock_or_raise(self, msg: str, mock_fallback: bool) -> bool:
-        if mock_fallback:
-            log.warning(f"[Camera] {msg}, 切至 Mock 仿真模式")
-            return self.enter_mock()
-        raise RuntimeError(msg)
 
     def _warmup_realsense(self, warmup_frames: int = 5, timeout_ms: int = 2000):
         """预热抛弃前 N 帧, 让感光元件自动曝光稳定"""

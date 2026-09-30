@@ -3,7 +3,7 @@
 SCARA 机械臂调试终端 (Flux Loader GUI)
 ========================================
 基于 loader_core 业务核心的图形化调试界面，功能与 CLI 调试器一比一：
-  - 串口连接管理 (自动枚举 / 手动输入 / 仿真 MOCK 模式)
+  - 串口连接管理 (自动枚举 / 手动输入)
   - 限位诊断 M119、一键回零 G28、设零 G92、坐标刷新 M114、释放电机 M84
   - 笛卡尔与关节角点动 (W/S/A/D/U/J/Q/E + O/L/I/K)、三档步长
   - Z 轴快捷升降与指定高度、双/单夹爪舵机控制
@@ -41,7 +41,6 @@ from loader_core import (  # noqa: E402
     Pose,
     ScaraRobot,
     SerialTransceiver,
-    MockTransceiver,
 )
 from src.utils.logger import get_logger  # noqa: E402
 from src.ui.base_cv_app import BaseCvApp  # noqa: E402
@@ -86,7 +85,7 @@ class PresetManager:
 class ScaraDebugApp(BaseCvApp):
     """SCARA 调试终端 GUI 主应用：事件循环、动作调度与日志缓冲 (基于 BaseCvApp)"""
 
-    def __init__(self, port: Optional[str] = None, mock: bool = False):
+    def __init__(self, port: Optional[str] = None):
         super().__init__(
             app_id="scara_debug",
             base_w=LOGIC_W,
@@ -95,9 +94,8 @@ class ScaraDebugApp(BaseCvApp):
             window_title="flux_vision_3d | SCARA 调试",
             enable_keyboard_zoom=False,
         )
-        self.mock_mode = mock
         self._config = LoaderConfig()
-        tx = MockTransceiver() if mock else SerialTransceiver()
+        tx = SerialTransceiver()
         self._handler = MarlinProtocolHandler(tx)
         self.robot = ScaraRobot(self._handler, self._config)
         self._handler.on_send = lambda cmd: self.add_log(f">> {cmd}")
@@ -135,7 +133,7 @@ class ScaraDebugApp(BaseCvApp):
     # 串口连接
     # ------------------------------------------------------------------
     def refresh_ports(self) -> None:
-        self.port_list = SerialTransceiver.list_ports() if not self.mock_mode else ["MOCK"]
+        self.port_list = SerialTransceiver.list_ports()
         if not self.selected_port and self.port_list:
             # 优先推荐 MKS 控制板常用端口
             self.selected_port = next(
@@ -515,10 +513,9 @@ class ScaraDebugApp(BaseCvApp):
 def main():
     parser = argparse.ArgumentParser(description="SCARA 机械臂调试终端 (Flux Loader GUI)")
     parser.add_argument("--port", "-p", type=str, default=None, help="串口号 (如 COM11)")
-    parser.add_argument("--mock", action="store_true", help="仿真模式 (不依赖真实硬件)")
     args = parser.parse_args()
 
-    app = ScaraDebugApp(port=args.port, mock=args.mock)
+    app = ScaraDebugApp(port=args.port)
     app.run()
 
 

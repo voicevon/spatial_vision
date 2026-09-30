@@ -185,7 +185,7 @@ class TestWorkspaceHealthAuditor(unittest.TestCase):
         from tools.workspace_hub.hub_renderer import HubRenderer
         renderer = HubRenderer()
         tester = HubHitTester(renderer)
-        state = HubState(workspace_mgr=self.wm, force_mock=True)
+        state = HubState(workspace_mgr=self.wm)
 
         # 点击全工位体检按钮区域 (x: 10~330, y: 628~664)
         action = tester.hit_test(150, 646, state=state)

@@ -18,7 +18,7 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
@@ -69,23 +69,25 @@ class TestIsolateWheelsProduction(unittest.TestCase):
 
     def test_camera_and_resolution(self):
         """测试步骤二: 相机切换、分辨率切换与启停"""
-        # 切换 Mock 相机
-        self.app.switch_camera_type("mock")
-        self.assertEqual(self.app.camera_type, "mock")
+        # 切换 USB 相机
+        self.app.switch_camera_type("usb:0")
+        self.assertEqual(self.app.camera_type, "usb:0")
         # 切换分辨率
         self.app.switch_resolution(640, 480)
         self.assertEqual(self.app.camera_w, 640)
         self.assertEqual(self.app.camera_h, 480)
-        # 启动相机
-        ok = self.app.open_camera()
-        self.assertTrue(ok)
-        self.assertTrue(self.app.is_camera_running)
+        # 启动相机 (使用 unittest.mock 模拟底层物理驱动返回成功)
+        with patch.object(self.app.camera_service, "start_usb", return_value=True), \
+             patch.object(self.app.camera_service, "read_frame", return_value=np.zeros((480, 640, 3), dtype=np.uint8)):
+            ok = self.app.open_camera()
+            self.assertTrue(ok)
+            self.assertTrue(self.app.is_camera_running)
 
-        # 触发一次 update 读取帧
-        self.app.update()
-        self.assertIsNotNone(self.app.current_frame)
-        self.app.close_camera()
-        self.assertFalse(self.app.is_camera_running)
+            # 触发一次 update 读取帧
+            self.app.update()
+            self.assertIsNotNone(self.app.current_frame)
+            self.app.close_camera()
+            self.assertFalse(self.app.is_camera_running)
 
     def test_vision_detector_auto_counts(self):
         """测试步骤三: 视觉分离检测自动计数 (数字只读展示，严禁人工修改)"""

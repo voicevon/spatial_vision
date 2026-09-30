@@ -273,8 +273,7 @@ class CaptureWizard(BaseCvApp):
             if self.camera_type == "realsense":
                 self._cam_srv.start_realsense(
                     w, h, fps=8 if w > 1280 else 15,
-                    fallbacks=((w, h, 8),),
-                    mock_fallback=False)
+                    fallbacks=((w, h, 8),))
             else:
                 self._cam_srv.start_usb(w, h)
         except Exception as e:

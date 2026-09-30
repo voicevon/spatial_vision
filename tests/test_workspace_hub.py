@@ -41,21 +41,17 @@ class TestWorkspaceHub(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.test_root, ignore_errors=True)
 
-    def test_camera_streamer_mock(self):
-        """测试 CameraStreamer 仿真流读取与 FPS 统计"""
-        streamer = CameraStreamer(force_mock=True)
-        self.assertTrue(streamer.start())
-        self.assertTrue(streamer.is_mock)
-        ok, frame = streamer.read()
-        self.assertTrue(ok)
-        self.assertIsNotNone(frame)
-        self.assertEqual(frame.shape, (720, 1280, 3))
+    def test_camera_streamer_init(self):
+        """测试 CameraStreamer 初始状态与资源释放契约"""
+        streamer = CameraStreamer()
+        self.assertFalse(streamer.is_running)
+        self.assertEqual(streamer.stream_desc, "未初始化")
         streamer.stop()
         self.assertFalse(streamer.is_running)
 
     def test_hub_state_navigation(self):
         """测试 HubState 工位切换与发布生产操作"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         self.assertEqual(len(state.workspaces), 2)
         # 降序排序下，最新创建的 ws2 在 index 0，先创建的 ws1 在 index 1
         self.assertEqual(state.workspaces[0].workspace_id, self.ws2.workspace_id)
@@ -79,7 +75,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_state_in_place_capture(self):
         """测试 HubState 原地连拍保存与归档"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         cur_ws = state.get_selected_workspace()
         self.assertEqual(cur_ws.image_count, 0)
 
@@ -98,7 +94,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_renderer_canvas(self):
         """测试 HubRenderer 双缓冲画布在宏观工位页签与微观坐标系页签下的渲染输出 (960x720)"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
 
         # 1. 渲染工位大盘看板 (默认)
@@ -135,14 +131,14 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_header_buttons_layout(self):
         """测试 Header 顶部按钮布局及 Help 弹窗交互响应"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
         canvas = renderer.render(state)
         self.assertEqual(canvas.shape, (720, 960, 3))
 
     def test_hub_help_modal(self):
         """测试【生效到生产系统】业务说明弹窗开启与渲染"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
 
         self.assertFalse(state.is_help_modal_open)
@@ -160,7 +156,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_clone_and_immediate_refresh(self):
         """测试工位克隆、列表实时刷新与新工位自动定位"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         initial_count = len(state.workspaces)
         self.assertEqual(initial_count, 2)
 
@@ -187,14 +183,14 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_rename_workspace(self):
         """测试工位修改名称立即生效"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         ok = state.rename_current_workspace("全新车间工况A")
         self.assertTrue(ok)
         self.assertEqual(state.get_selected_workspace().name, "全新车间工况A")
 
     def test_hub_expanded_preview_toggle(self):
         """测试 [F] 键单帧大图全宽自适应占满与标准模式切换"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
 
         self.assertEqual(state.gallery.view_mode, HubState.VIEW_STANDARD)
@@ -207,7 +203,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_top_exit_button_click(self):
         """测试点击紧贴生产相册右侧的 [退出] 按钮能够正常结束主循环"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
         self.assertTrue(app._running)
 
         # 模拟鼠标点击紧贴生产相册右侧的退出按钮 (x=880, y=20)
@@ -216,7 +212,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_hub_footer_camera_and_card_active_action(self):
         """测试 Footer 底部 Camera 状态指示以及卡片点击直接设为活动"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
         renderer = HubRenderer()
         canvas = np.zeros((720, 960, 3), dtype=np.uint8)
 
@@ -228,7 +224,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_four_tabs_switch_and_rendering(self):
         """测试右侧动态区宏观工位页签与微观坐标系页签切换与画布渲染稳定性 (960x720)"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
 
         # 1. 初始为大盘看板页签
@@ -271,7 +267,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_four_tabs_header_clicks(self):
         """测试鼠标点击顶部 Header 工位三页签 Tab 胶囊直接切换页签 (Dashboard / 标定相册 / ★ 生产相册)"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
         app.win_mgr.canvas_w = 960
         app.win_mgr.canvas_h = 720
 
@@ -292,7 +288,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_context_menu_removed_and_left_click_only(self):
         """测试工位卡片右键菜单已彻底移除，右键点击不影响状态，左键正常选中"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
 
         # 1. 模拟在第 1 张卡片上右键点击 (x=100, y=80)，验证安全无异常
         app._on_mouse_event(cv2.EVENT_RBUTTONDOWN, 100, 80, 0, None)
@@ -306,12 +302,12 @@ class TestWorkspaceHub(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             test_cfg = os.path.join(tmpdir, "hub_test_settings.json")
             # 1. 启动第一实例并缩放到 120%
-            app1 = WorkspaceHubApp(force_mock=True, settings_file=test_cfg)
+            app1 = WorkspaceHubApp(settings_file=test_cfg)
             app1.win_mgr.apply_zoom(+20)
             self.assertEqual(app1.win_mgr.scale_pct, 120)
 
             # 2. 启动第二实例，验证自动无感恢复 (基于基准 960x720)
-            app2 = WorkspaceHubApp(force_mock=True, settings_file=test_cfg)
+            app2 = WorkspaceHubApp(settings_file=test_cfg)
             self.assertEqual(app2.win_mgr.scale_pct, 120)
             self.assertEqual(app2.win_mgr.canvas_w, int(960 * 1.2))
             self.assertEqual(app2.win_mgr.canvas_h, int(720 * 1.2))
@@ -322,7 +318,7 @@ class TestWorkspaceHub(unittest.TestCase):
             app2.win_mgr.save_settings()
 
             # 4. 启动第三实例，验证 1600x900 依然被精准记住
-            app3 = WorkspaceHubApp(force_mock=True, settings_file=test_cfg)
+            app3 = WorkspaceHubApp(settings_file=test_cfg)
             self.assertEqual(app3.win_mgr.scale_pct, 120)
             self.assertEqual(app3.win_mgr.canvas_w, 1600)
             self.assertEqual(app3.win_mgr.canvas_h, 900)
@@ -330,7 +326,7 @@ class TestWorkspaceHub(unittest.TestCase):
     def test_help_modal_hit_test_and_close(self):
         """验证生产说明弹窗右上角 [X] 关闭按钮在 960 画布各种坐标下的瞬间关闭判定"""
         clean_cfg = os.path.join(self.test_root, "clean_hub_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg)
+        app = WorkspaceHubApp(settings_file=clean_cfg)
         app.win_mgr.canvas_w = 960
         app.win_mgr.canvas_h = 720
         state = app.state
@@ -392,7 +388,7 @@ class TestWorkspaceHub(unittest.TestCase):
     def test_image_deletion_and_tabs_relocation(self):
         """测试照片删除功能与页签化后的点击交互"""
         clean_cfg = os.path.join(self.test_root, "clean_tabs_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg)
+        app = WorkspaceHubApp(settings_file=clean_cfg)
         # 隔离至测试临时工位沙盒，避免读写真实项目工位数据
         app.state.workspace_mgr = self.workspace_mgr
         app.state.refresh_workspaces()
@@ -447,7 +443,7 @@ class TestWorkspaceHub(unittest.TestCase):
         """测试工位白名单自动创建与结构验证"""
         import yaml
         clean_cfg = os.path.join(self.test_root, "clean_whitelist_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
+        app = WorkspaceHubApp(settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         ws = app.state.get_selected_workspace()
         self.assertIsNotNone(ws)
 
@@ -472,7 +468,7 @@ class TestWorkspaceHub(unittest.TestCase):
         """测试坐标系专属标靶放行矩阵写穿语义: 切换即时落盘 tag_whitelist.yaml"""
         import yaml
         clean_cfg = os.path.join(self.test_root, "chip_editor_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
+        app = WorkspaceHubApp(settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         state = app.state
         ws = state.get_selected_workspace()
         wl_path = ws.whitelist_path
@@ -504,7 +500,7 @@ class TestWorkspaceHub(unittest.TestCase):
             anchor_row_rect, anchor_padkey_rect
         )
         clean_cfg = os.path.join(self.test_root, "anchor_settings.json")
-        app = WorkspaceHubApp(force_mock=True, settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
+        app = WorkspaceHubApp(settings_file=clean_cfg, workspace_mgr=self.workspace_mgr)
         state = app.state
         ws = state.get_selected_workspace()
 
@@ -618,7 +614,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_workspace_description_update(self):
         """测试工位备注(description)更新并原子持久化"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         cur_ws = state.get_selected_workspace()
         self.assertIsNotNone(cur_ws)
 
@@ -634,7 +630,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_top_tabs_and_exit_button_hit_test(self):
         """测试工位三页签Tab胶囊与退出按钮 hit_test 判定"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         renderer = HubRenderer()
 
         # 工位 3 个 Tab 胶囊
@@ -648,7 +644,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_report_panel_vertical_rendering(self):
         """测试体检报告页签垂直排列面板的渲染 (960x720)"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         state.active_tab = HubState.TAB_REPORT
         cur_ws = state.get_selected_workspace()
         cur_ws.description = "产线高精度工位备注"
@@ -662,7 +658,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_report_embedded_buttons_hit_test_and_actions(self):
         """测试体检报告卡片1内嵌的 5 个操作按钮 hit_test 判定 (960宽紧凑右对齐)"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         state.active_tab = HubState.TAB_REPORT
         renderer = HubRenderer()
 
@@ -682,7 +678,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_data_consistency_sync(self):
         """测试工位元数据记录与物理磁盘不一致时的自愈与同步刷新"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "sync_test_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "sync_test_settings.json"))
         ws = app.state.get_selected_workspace()
         self.assertIsNotNone(ws)
 
@@ -701,7 +697,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_prod_images_loading_and_gallery_separation(self):
         """测试生产相册与标定相册目录物理隔离、独立加载与大图展示"""
-        state = HubState(self.workspace_mgr, force_mock=True)
+        state = HubState(self.workspace_mgr)
         ws = state.get_selected_workspace()
         self.assertIsNotNone(ws)
 
@@ -735,7 +731,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_prod_mode_dropdown_interaction(self):
         """测试大盘看板中工作流模式下拉框的展开、选项切换与点击外部收起闭环"""
-        app = WorkspaceHubApp(force_mock=True, settings_file=os.path.join(self.test_root, "dd_test_settings.json"))
+        app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "dd_test_settings.json"))
         app.state.active_tab = HubState.TAB_REPORT
         ws = app.state.get_selected_workspace()
         self.assertIsNotNone(ws)

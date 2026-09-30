@@ -24,7 +24,7 @@ def test_roi_scrolling_and_interaction():
         ws = ws_mgr.create_workspace("TestStation", "测试工位")
         assert ws is not None, "创建工位失败"
 
-        state = HubState(workspace_mgr=ws_mgr, force_mock=True)
+        state = HubState(workspace_mgr=ws_mgr)
         renderer = HubRenderer()
         hit_tester = HubHitTester(renderer)
 

@@ -51,8 +51,7 @@ class CameraController:
             # 逐级尝试 30/15/8 fps (与建图内参一致, 按实际分辨率自适应)
             self._srv.start_realsense(
                 w, h, fps=30 if w <= 1280 else 8,
-                fallbacks=((w, h, 15), (w, h, 8)),
-                mock_fallback=False)
+                fallbacks=((w, h, 15), (w, h, 8)))
         else:
             self._srv.start_usb(w, h)
         self.pipeline_running = True

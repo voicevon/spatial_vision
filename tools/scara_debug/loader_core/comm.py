@@ -6,7 +6,6 @@
   - ITransceiver    : 纯传输抽象接口，仅定义字节级 send/readline，
                       不包含任何 Marlin ok/协议判断逻辑。
   - SerialTransceiver: 基于 pyserial 的物理串口实现。
-  - MockTransceiver  : 单元测试用仿真收发器，不依赖真实串口。
   - MarlinProtocolHandler: 包装 ITransceiver，承担 ok 握手等待、
                             超时控制，与具体传输方式解耦。
   - MarlinProtocolParser : 纯静态文本解析器，解析 M114/M119 回显。
@@ -151,52 +150,7 @@ class SerialTransceiver(ITransceiver):
 
 
 # ==============================================================================
-# 3. 仿真收发器 MockTransceiver（单元测试用）
-# ==============================================================================
-class MockTransceiver(ITransceiver):
-    """仿真收发器：不依赖真实串口，用于单元测试与离线开发。
-
-    支持预设回显序列，按调用顺序返回。
-    """
-
-    def __init__(self, responses: Optional[List[str]] = None) -> None:
-        self._connected = False
-        self._sent_lines: List[str] = []
-        # 预设回显队列；若为空则默认回复 "ok"
-        self._responses: List[str] = list(responses or [])
-
-    def connect(self, port: str = "MOCK", baudrate: int = 115200, **kwargs) -> bool:
-        self._connected = True
-        logger.info("[Mock] 仿真连接已建立 (port=%s)", port)
-        return True
-
-    def disconnect(self) -> None:
-        self._connected = False
-        logger.info("[Mock] 仿真连接已断开。")
-
-    def is_connected(self) -> bool:
-        return self._connected
-
-    def send_line(self, line: str) -> None:
-        self._sent_lines.append(line.strip())
-        logger.debug("[Mock] >> %s", line.strip())
-
-    def readline(self, timeout: float = 1.0) -> str:
-        if self._responses:
-            return self._responses.pop(0)
-        return "ok"
-
-    def flush_buffers(self) -> None:
-        pass
-
-    @property
-    def sent_lines(self) -> List[str]:
-        """返回已发送的所有指令行（测试断言用）。"""
-        return list(self._sent_lines)
-
-
-# ==============================================================================
-# 4. Marlin 协议处理器 MarlinProtocolHandler
+# 3. Marlin 协议处理器 MarlinProtocolHandler
 #    职责：包装 ITransceiver，承担 ok 握手等待与超时控制。
 #    [评审 #2] ok 等待属于 Marlin 协议语义，不放在 ITransceiver 中。
 # ==============================================================================

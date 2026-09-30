@@ -43,7 +43,7 @@ from src.ui.dialog_utils import prompt_confirm, prompt_input_text
 class WorkspaceHubApp(BaseCvApp):
     """Workspace Hub 主应用 (基于 BaseCvApp 轻量基类)"""
 
-    def __init__(self, force_mock: bool = False, settings_file: str = None, workspace_mgr: WorkspaceManager = None):
+    def __init__(self, settings_file: str = None, workspace_mgr: WorkspaceManager = None):
         super().__init__(
             app_id="workspace_hub",
             base_w=960,
@@ -53,9 +53,8 @@ class WorkspaceHubApp(BaseCvApp):
             settings_file=settings_file,
             enable_keyboard_zoom=False,
         )
-        self.force_mock = force_mock
         self.workspace_mgr = workspace_mgr or WorkspaceManager()
-        self.state = HubState(self.workspace_mgr, force_mock=force_mock)
+        self.state = HubState(self.workspace_mgr)
         self.renderer = HubRenderer()
         self.hit_tester = self.renderer.hit_tester
         self.modal_handler = ModalHandler(self)
@@ -501,10 +500,9 @@ class WorkspaceHubApp(BaseCvApp):
 
 def main():
     parser = argparse.ArgumentParser(description="工作空间综合管理中枢 (Workspace Hub)")
-    parser.add_argument("--mock", action="store_true", help="强制以模拟仿真相机模式运行")
     args = parser.parse_args()
 
-    app = WorkspaceHubApp(force_mock=args.mock)
+    app = WorkspaceHubApp()
     app.run()
 
 
