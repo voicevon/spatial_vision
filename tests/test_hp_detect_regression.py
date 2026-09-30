@@ -7,7 +7,7 @@ import unittest
 import cv2
 import numpy as np
 
-from src.calibration.tag_detector import TagDetector
+from src.vision.tag_detector import TagDetector
 from tools.tracker.app import RobotOnlineTracker
 
 

@@ -19,8 +19,8 @@ import cv2
 import yaml
 
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.pnp_solver import PnpSolver
-from src.calibration.tag_detector import TagDetector
+from src.vision.pnp_solver import PnpSolver
+from src.vision.tag_detector import TagDetector
 from tools.spatial_mapping_studio.mapping_data_actions import MappingDataActionsMixin
 from src.utils.logger import get_logger
 
@@ -423,7 +423,7 @@ class MappingDataManager(MappingDataActionsMixin):
         # 共视拓扑连通度检查
         if valid_frame_detections:
             try:
-                from src.calibration.covisibility_graph import CovisibilityGraphAnalyzer
+                from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer
                 topo = CovisibilityGraphAnalyzer.analyze(valid_frame_detections, valid_frame_names)
                 self.topology_status = {
                     "is_valid": bool(topo.get("is_valid", False)),

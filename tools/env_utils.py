@@ -20,7 +20,7 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 try:
-    from src.calibration.workspace_manager import WorkspaceManager
+    from src.workspace.workspace_manager import WorkspaceManager
 except Exception:
     WorkspaceManager = None  # type: ignore[assignment,misc]
 
@@ -117,7 +117,7 @@ def check_env_status(force_refresh: bool = False) -> dict:
     cfg_path = os.path.join(PROJECT_ROOT, "config", "config.yaml")
     valid_tag_ids: List[int] = []
     try:
-        from src.calibration.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
+        from src.workspace.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
         ws = WorkspaceManager().get_current_workspace()
         if ws:
             valid_tag_ids = load_workspace_tag_whitelist(ws.workspace_dir)

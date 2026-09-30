@@ -13,3 +13,8 @@
 3. **物理剔除冗余字段与废弃接口 (Hard Removal of Deprecated Interfaces)**：
    - 废弃的旧文件（如 `anchor_tags.yaml`）直接由单真理源（`tag_whitelist.yaml`）接管，不再保留双源读取。
    - 废弃函数直接删除，单测同步更新为直接断言新规范。
+
+4. **临时与实验文件收敛准则 (Single Fixed Temp Directory)**：
+   - 所有一次性调试脚本、临时实验图象、数据分析导出，**唯一固定存放在根目录 `temp/` 下**；
+   - 严禁在根目录或业务目录（`src/`、`tools/`、`tests/`、`data/`）下随意创建临时文件或创建其他同义目录（如 `scratch/`、`reports/` 等）；
+   - `temp/` 被 `.gitignore` 永久忽略，用完即弃，正式业务代码绝不依赖 `temp/` 内容。

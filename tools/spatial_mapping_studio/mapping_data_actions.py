@@ -319,7 +319,7 @@ class MappingDataActionsMixin:
         寻找当前全局残差最大的 Top-K 个有效标靶观测，严格受共视拓扑与最小观测度（>=2次）保护
         返回: [(image_basename, tag_id, err_px, err_mm)]
         """
-        from src.calibration.covisibility_graph import CovisibilityGraphAnalyzer
+        from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer
         import copy
 
         # 1. 收集全局所有有效观测及其残差

@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.utils.gui_theme import GuiTheme
-from src.utils.gui_components import draw_dropdown_button, render_dropdown_popup, render_floating_tooltip
-from src.utils.text_rendering import draw_text, measure_text
+from src.ui.gui_theme import GuiTheme
+from src.ui.gui_components import draw_dropdown_button, render_dropdown_popup, render_floating_tooltip
+from src.ui.text_rendering import draw_text, measure_text
 from src.vision.pipelines.base_pipeline import PipelineStep
 from tools.asparagus_pose_studio.data_io import BASE_W, CALIB_LABELS
 

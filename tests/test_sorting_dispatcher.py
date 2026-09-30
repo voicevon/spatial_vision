@@ -20,7 +20,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.roi_manager import RoiDefinition
+from src.workspace.roi_manager import RoiDefinition
 from src.vision.asparagus_analyzer import AsparagusTarget
 from src.control.sorting_dispatcher import SortingDispatcher, DestinationSlot
 from src.control.scara_motion_planner import ScaraMotionPlanner

@@ -68,7 +68,7 @@ class GeometryState:
                 self.coord_mgr = self._coord_mgr_cache[ws_id]
                 self.roi_mgr = self._roi_mgr_cache[ws_id]
             else:
-                from src.calibration.workspace_manager import (
+                from src.workspace.workspace_manager import (
                     load_workspace_coordinate_manager,
                     load_workspace_roi_manager
                 )
@@ -97,7 +97,7 @@ class GeometryState:
         ws_id = ws.workspace_id
         if ws_id in self._coord_mgr_cache:
             return self._coord_mgr_cache[ws_id]
-        from src.calibration.workspace_manager import load_workspace_coordinate_manager
+        from src.workspace.workspace_manager import load_workspace_coordinate_manager
         mgr = load_workspace_coordinate_manager(ws)
         self._coord_mgr_cache[ws_id] = mgr
         return mgr
@@ -265,7 +265,7 @@ class GeometryState:
     def save_frame_modal(self) -> tuple[bool, str]:
         if not self.coord_mgr or not self.frame_modal_data:
             return False, "无有效坐标系数据"
-        from src.calibration.coordinate_manager import FrameDefinition
+        from src.workspace.coordinate_manager import FrameDefinition
         d = self.frame_modal_data
         fid = str(d.get("frame_id", "")).strip()
         if not fid:
@@ -671,7 +671,7 @@ class GeometryState:
     def save_roi_modal(self) -> tuple[bool, str]:
         if not self.roi_mgr or not self.roi_modal_data:
             return False, "无有效 ROI 数据"
-        from src.calibration.roi_manager import RoiDefinition
+        from src.workspace.roi_manager import RoiDefinition
         d = self.roi_modal_data
         rid = str(d.get("roi_id", "")).strip()
         if not rid:

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import put_text
+from src.ui.text_rendering import put_text
 from src.vision.pipelines.base_pipeline import BaseAsparagusPipeline, PipelineResult, PipelineStep
 from src.vision.pipelines.occlusion_peeler import CandidateSpine, OcclusionPeeler
 from src.vision.pipelines.registry import PipelineRegistry

@@ -22,9 +22,9 @@ if PROJECT_ROOT not in sys.path:
 
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_renderer import HubRenderer, frame_tag_chip_rect
-from src.calibration.workspace_manager import WorkspaceManager
-from src.calibration.coordinate_manager import FrameDefinition
-from src.calibration.roi_manager import RoiDefinition
+from src.workspace.workspace_manager import WorkspaceManager
+from src.workspace.coordinate_manager import FrameDefinition
+from src.workspace.roi_manager import RoiDefinition
 
 
 def test_two_level_tree_and_tag_partitioning():

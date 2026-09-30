@@ -10,7 +10,7 @@
 4. render_floating_tooltip: 统一高对比度科技悬浮气泡浮层 (智能边界贴靠避让与翻转、语义前缀高亮、磨砂半透明融合、圆角质感)
 5. draw_rounded_rectangle: 统一抗锯齿圆角矩形绘制函数 (支持实体圆角填充与平滑发光描边)
 
-所有控件均深度绑定 src.utils.gui_theme.GuiTheme 单源调色板。
+所有控件均深度绑定 src.ui.gui_theme.GuiTheme 单源调色板。
 """
 
 from dataclasses import dataclass
@@ -18,9 +18,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
-from src.utils.gui_theme import GuiTheme
-from src.utils.text_rendering import draw_text, get_cached_font, measure_text, put_text
-from src.utils.dialog_utils import (
+from src.ui.gui_theme import GuiTheme
+from src.ui.text_rendering import draw_text, get_cached_font, measure_text, put_text
+from src.ui.dialog_utils import (
     show_error_dialog,
     show_critical_message,
     prompt_confirm,

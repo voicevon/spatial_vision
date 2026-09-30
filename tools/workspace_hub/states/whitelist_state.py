@@ -124,7 +124,7 @@ class WhitelistState:
 
     def _save_whitelist_yaml(self):
         """写穿当前编辑集合到 tag_whitelist.yaml (更新 mtime 联动全链路缓存)"""
-        from src.calibration.workspace_manager import save_workspace_tag_config
+        from src.workspace.workspace_manager import save_workspace_tag_config
         ws = self.hub.get_selected_workspace()
         if not ws:
             return
@@ -163,7 +163,7 @@ class WhitelistState:
 
     def _reload_anchor_map(self):
         """载入当前工位锚点 (单一真理源 tag_whitelist.yaml)"""
-        from src.calibration.workspace_manager import load_workspace_anchor_tags
+        from src.workspace.workspace_manager import load_workspace_anchor_tags
         ws = self.hub.get_selected_workspace()
         if not ws:
             self.anchor_map = {}
@@ -178,7 +178,7 @@ class WhitelistState:
 
     def _persist_anchor_map(self) -> bool:
         """写穿当前工位标靶配置 (统一采用方案 B 单一真理源 tag_whitelist.yaml)"""
-        from src.calibration.workspace_manager import save_workspace_tag_config
+        from src.workspace.workspace_manager import save_workspace_tag_config
         ws = self.hub.get_selected_workspace()
         if ws is None:
             return False
@@ -312,7 +312,7 @@ class WhitelistState:
         ws = self.hub.get_selected_workspace()
         if not ws:
             return None
-        from src.calibration.workspace_manager import load_workspace_marker_size_mm
+        from src.workspace.workspace_manager import load_workspace_marker_size_mm
         return load_workspace_marker_size_mm(ws.workspace_dir)
 
     def open_marker_size_editor(self):

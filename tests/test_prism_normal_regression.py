@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from tools.tracker.common import _tag_local_frame
-from src.calibration.pnp_solver import PnpSolver
+from src.vision.pnp_solver import PnpSolver
 
 
 class TestTagLocalFrameNormal(unittest.TestCase):

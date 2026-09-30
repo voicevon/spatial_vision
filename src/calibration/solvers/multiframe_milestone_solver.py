@@ -23,16 +23,16 @@ from typing import Any, Dict, List, Optional, Tuple, Set
 
 import numpy as np
 
-from src.calibration.coordinate_manager import (
+from src.workspace.coordinate_manager import (
     CoordinateTreeManager,
     FrameDefinition,
     rot_mat_to_rpy_deg,
 )
-from src.calibration.frame_extrinsic_solver import (
+from src.calibration.solvers.frame_extrinsic_solver import (
     FrameExtrinsicSolver,
     rigid_transform_3d,
 )
-from src.calibration.world_datum_aligner import (
+from src.calibration.solvers.world_datum_aligner import (
     WorldDatumAligner,
     format_conflict_pairs_report,
 )

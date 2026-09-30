@@ -27,11 +27,11 @@ if PROJECT_ROOT not in sys.path:
 
 GUI_SETTINGS_FILE = os.path.join(PROJECT_ROOT, "config", "gui_settings.json")
 
-from src.calibration.workspace_manager import WorkspaceManager
-from src.utils.gui_theme import GuiTheme
-from src.utils.gui_window_manager import GuiWindowManager
-from src.utils.terminal_panel import TerminalPanel
-from src.utils.text_rendering import draw_text, get_cached_font, put_text
+from src.workspace.workspace_manager import WorkspaceManager
+from src.ui.gui_theme import GuiTheme
+from src.ui.gui_window_manager import GuiWindowManager
+from src.ui.terminal_panel import TerminalPanel
+from src.ui.text_rendering import draw_text, get_cached_font, put_text
 from src.utils.logger import get_logger
 from tools.env_utils import check_env_status
 

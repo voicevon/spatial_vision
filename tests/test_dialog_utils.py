@@ -14,7 +14,7 @@ import sys
 import unittest
 from unittest.mock import patch, MagicMock
 
-from src.utils.dialog_utils import (
+from src.ui.dialog_utils import (
     show_error_dialog,
     show_critical_message,
     prompt_error,
@@ -62,7 +62,7 @@ class TestDialogUtils(unittest.TestCase):
 
     def test_gui_components_exports(self):
         """测试从 gui_components 正常导出对话框组件"""
-        from src.utils.gui_components import (
+        from src.ui.gui_components import (
             show_error_dialog as comp_show_error,
             show_critical_message as comp_show_crit,
         )

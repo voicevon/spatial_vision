@@ -36,11 +36,11 @@ if sys.platform == "win32":
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.workspace_manager import WorkspaceManager, Workspace
-from src.hardware.camera_service import CameraService
-from src.utils.text_rendering import draw_text
+from src.workspace.workspace_manager import WorkspaceManager, Workspace
+from src.devices.camera_service import CameraService
+from src.ui.text_rendering import draw_text
 from src.utils.logger import get_logger
-from src.utils.base_cv_app import BaseCvApp
+from src.ui.base_cv_app import BaseCvApp
 from tools.capture.renderer import (
     CaptureRenderer, COLOR_ACCENT, COLOR_TEXT_SUB, COL_YELLOW)
 

@@ -5,12 +5,12 @@
 ============================================================
 本模块仅保留空间建图工作站特定数据管理与过滤排序常量。
 通用 UI 交互控件及 3D 棱柱/位姿视觉语言已全面提升至公共基础层：
-- 控件：src.utils.gui_components (draw_dropdown_button, render_dropdown_popup, draw_dashboard_button)
-- 主题与 3D 视觉语言：src.utils.gui_theme (GuiTheme)
+- 控件：src.ui.gui_components (draw_dropdown_button, render_dropdown_popup, draw_dashboard_button)
+- 主题与 3D 视觉语言：src.ui.gui_theme (GuiTheme)
 """
 
-from src.utils.gui_theme import GuiTheme
-from src.utils.gui_components import (
+from src.ui.gui_theme import GuiTheme
+from src.ui.gui_components import (
     draw_dropdown_button,
     draw_dashboard_button,
     render_dropdown_popup,

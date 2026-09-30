@@ -22,8 +22,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.workspace_manager import WorkspaceManager
-from src.utils.base_cv_app import BaseCvApp
+from src.workspace.workspace_manager import WorkspaceManager
+from src.ui.base_cv_app import BaseCvApp
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.handlers import ModalHandler, WorkspaceHandler
 from tools.workspace_hub.hub_renderer import (
@@ -37,7 +37,7 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-from src.utils.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import prompt_confirm, prompt_input_text
 
 
 class WorkspaceHubApp(BaseCvApp):

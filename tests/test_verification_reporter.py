@@ -20,7 +20,7 @@ import shutil
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.verification_reporter import VerificationReporter
+from src.calibration.verification.verification_reporter import VerificationReporter
 
 
 class TestVerificationReporter(unittest.TestCase):

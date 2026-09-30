@@ -15,7 +15,7 @@ from typing import Dict, Optional
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import put_text
+from src.ui.text_rendering import put_text
 
 # Studio 双棱柱配色 (VerificationVisualizer 历史样式)
 COLORS_THEORY = dict(  # BA 理论 (翡翠绿)

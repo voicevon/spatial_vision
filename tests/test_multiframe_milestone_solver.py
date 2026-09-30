@@ -7,8 +7,8 @@
 import unittest
 import numpy as np
 
-from src.calibration.coordinate_manager import CoordinateTreeManager, FrameDefinition
-from src.calibration.multiframe_milestone_solver import (
+from src.workspace.coordinate_manager import CoordinateTreeManager, FrameDefinition
+from src.calibration.solvers.multiframe_milestone_solver import (
     MultiFrameMilestoneSolver,
     check_sub_frame_local_rigidity,
     extract_tag_positions_from_map,

@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from typing import Any
 
-from src.utils.gui_components import draw_text, put_text
+from src.ui.gui_components import draw_text, put_text
 from tools.workspace_hub.hub_state import HubState
 
 

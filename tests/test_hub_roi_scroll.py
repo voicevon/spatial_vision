@@ -6,9 +6,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.calibration.workspace_manager import WorkspaceManager
-from src.calibration.coordinate_manager import FrameDefinition
-from src.calibration.roi_manager import RoiDefinition
+from src.workspace.workspace_manager import WorkspaceManager
+from src.workspace.coordinate_manager import FrameDefinition
+from src.workspace.roi_manager import RoiDefinition
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_renderer import (
     HubRenderer, FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN,

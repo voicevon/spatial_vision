@@ -14,7 +14,7 @@ import os
 import yaml
 import tempfile
 
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 from src.vision.tag_localizer import TagLocalizer
 
 

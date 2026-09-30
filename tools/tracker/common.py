@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from src.utils.gui_theme import GuiTheme
+from src.ui.gui_theme import GuiTheme
 
 # ============================ 视觉样式常量 (BGR, 统一取自 GuiTheme 主题单源) ============================
 COLOR_BG = GuiTheme.BG           # 工具栏 / 占位背景

@@ -18,19 +18,19 @@ import cv2
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.utils.gui_window_manager import GuiWindowManager
-from src.utils.gui_theme import GuiTheme
-from src.utils.text_rendering import draw_text
-from src.utils.gui_components import draw_app_header, TabBar, TabItem
+from src.ui.gui_window_manager import GuiWindowManager
+from src.ui.gui_theme import GuiTheme
+from src.ui.text_rendering import draw_text
+from src.ui.gui_components import draw_app_header, TabBar, TabItem
 from src.utils.config_guard import load_raw_config
-from src.calibration.workspace_manager import (
+from src.workspace.workspace_manager import (
     WorkspaceManager,
     load_workspace_anchor_tags,
     load_workspace_tag_whitelist,
     save_workspace_anchor_tags,
     save_workspace_tag_whitelist,
 )
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 
 # 复用旧代码的图纸生成函数 (不修改旧代码)
 from tools.calibration.generate_apriltags import generate_tags

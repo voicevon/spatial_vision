@@ -15,7 +15,7 @@ from typing import List, Optional, Dict, Tuple, Any
 from dataclasses import dataclass, field
 import numpy as np
 
-from src.calibration.roi_manager import RoiDefinition
+from src.workspace.roi_manager import RoiDefinition
 from src.vision.asparagus_analyzer import AsparagusTarget
 from src.control.scara_motion_planner import ScaraPickTask
 from src.utils.logger import get_logger

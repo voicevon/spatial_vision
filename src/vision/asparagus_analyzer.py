@@ -17,7 +17,7 @@ from typing import List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import put_text
+from src.ui.text_rendering import put_text
 
 
 @dataclass

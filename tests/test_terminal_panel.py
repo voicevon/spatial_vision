@@ -12,7 +12,7 @@ import unittest
 
 import numpy as np
 
-from src.utils.terminal_panel import TerminalPanel, DEFAULT_FG
+from src.ui.terminal_panel import TerminalPanel, DEFAULT_FG
 
 
 class TestTerminalPanel(unittest.TestCase):
@@ -53,7 +53,7 @@ class TestTerminalPanel(unittest.TestCase):
         panel._commit_line(long_text)
         self.assertGreater(len(panel._rows), 1)
         # 每个可视行的总像素宽 ≤ body_w (允许单字符溢出容差)
-        from src.utils.terminal_panel import get_cached_font
+        from src.ui.terminal_panel import get_cached_font
         font = get_cached_font(panel.font_size)
         for row in panel._rows:
             w = sum(font.getlength(t) for t, _ in row)

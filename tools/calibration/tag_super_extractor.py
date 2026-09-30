@@ -36,7 +36,7 @@ if sys.platform == "win32":
         pass  # 编码重配置失败无伤大雅，终端仍可正常运行
 
 try:
-    from src.calibration.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
+    from src.workspace.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
     _cur_ws = WorkspaceManager().get_current_workspace()
     DEFAULT_IMAGE_DIR = _cur_ws.calib_raw_images_dir
     DEFAULT_MANIFEST_PATH = _cur_ws.calib_manifest_path
@@ -45,7 +45,7 @@ except Exception:
     DEFAULT_MANIFEST_PATH = os.path.join(PROJECT_ROOT, "data", "workspaces", "default", "calibration", "tag_observations.yaml")
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")  # 相机内参兜底, 不再持有 Tag 数据
 
-from src.utils.text_rendering import measure_text, put_text
+from src.ui.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -494,7 +494,7 @@ def main():
     # 标靶物理边长: 显式传入优先, 否则从当前工位 tag_whitelist.yaml.tag_default_size_mm 读取
     if args.marker_size is None:
         try:
-            from src.calibration.workspace_manager import WorkspaceManager, load_workspace_marker_size_mm
+            from src.workspace.workspace_manager import WorkspaceManager, load_workspace_marker_size_mm
             ws = WorkspaceManager().get_current_workspace()
             args.marker_size = load_workspace_marker_size_mm(ws.workspace_dir) if ws else None
         except Exception:

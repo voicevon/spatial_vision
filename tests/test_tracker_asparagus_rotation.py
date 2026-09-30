@@ -25,8 +25,8 @@ from tools.tracker.common import (
 )
 from tools.tracker.app import RobotOnlineTracker
 from tools.tracker.renderer import TrackerRenderer
-from src.calibration.pnp_solver import PnpSolver
-from src.calibration.tag_detector import TagDetector
+from src.vision.pnp_solver import PnpSolver
+from src.vision.tag_detector import TagDetector
 
 
 class TestTrackerAsparagusRotation(unittest.TestCase):
@@ -311,7 +311,7 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
 
     def test_robot_serial_set_z_height_servo_mapping(self):
         """测试 RobotSerial.set_z_height 正确将物理高度换算为 Servo 0 角度并同步 G92"""
-        from src.control.robot_serial import RobotSerial
+        from src.devices.robot_serial import RobotSerial
 
         rs = RobotSerial(port="")
         sent = []
@@ -334,7 +334,7 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
     def test_robot_serial_m114_e_axis_parsing(self):
         """测试 RobotSerial 对带有 E 轴的 M114 响应行的正确解析"""
         import io
-        from src.control.robot_serial import RobotSerial
+        from src.devices.robot_serial import RobotSerial
 
         rs = RobotSerial(port="")
         mock_ser = io.BytesIO(b"X:150.25 Y:280.50 Z:80.00 E:45.30 Count X: ...\r\nok\r\n")

@@ -15,9 +15,9 @@ import tempfile
 import unittest
 import numpy as np
 
-from src.calibration.workspace_manager import WorkspaceManager
-from src.calibration.roi_manager import RoiSpaceManager, RoiDefinition
-from src.calibration.coordinate_manager import CoordinateTreeManager, FrameDefinition
+from src.workspace.workspace_manager import WorkspaceManager
+from src.workspace.roi_manager import RoiSpaceManager, RoiDefinition
+from src.workspace.coordinate_manager import CoordinateTreeManager, FrameDefinition
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_renderer import HubRenderer
 from tools.workspace_hub.hub_hit_tester import HubHitTester

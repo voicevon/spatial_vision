@@ -15,8 +15,8 @@ from typing import Any, Tuple, List, Optional
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import draw_text
-from src.utils.gui_components import (
+from src.ui.text_rendering import draw_text
+from src.ui.gui_components import (
     GuiTheme,
     draw_dropdown_button,
     render_dropdown_popup,

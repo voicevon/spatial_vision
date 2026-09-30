@@ -42,7 +42,7 @@ except ImportError:
     force_window_focus = None
 
 try:
-    from src.utils.viewport_manager import (
+    from src.ui.viewport_manager import (
         ViewportManager, get_safe_screen_size,
         draw_styled_button, draw_segmented_toggle
     )
@@ -52,9 +52,9 @@ except ImportError:
     draw_styled_button = None
     draw_segmented_toggle = None
 
-from src.utils.text_rendering import measure_text, put_text
+from src.ui.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
-from src.calibration.workspace_manager import load_workspace_marker_size_mm
+from src.workspace.workspace_manager import load_workspace_marker_size_mm
 
 log = get_logger(__name__)
 
@@ -74,7 +74,7 @@ class TagManifestReviewer:
         """
         if manifest_path is None:
             try:
-                from src.calibration.workspace_manager import WorkspaceManager
+                from src.workspace.workspace_manager import WorkspaceManager
                 manifest_path = WorkspaceManager().get_current_workspace().calib_manifest_path
             except Exception:
                 manifest_path = ""
@@ -179,7 +179,7 @@ class TagManifestReviewer:
         缺失时抛出明确错误, 不允许任何硬编码兜底.
         """
         try:
-            from src.calibration.workspace_manager import WorkspaceManager
+            from src.workspace.workspace_manager import WorkspaceManager
             ws = WorkspaceManager().get_current_workspace()
             loaded = load_workspace_marker_size_mm(ws.workspace_dir) if ws else None
         except Exception as e:

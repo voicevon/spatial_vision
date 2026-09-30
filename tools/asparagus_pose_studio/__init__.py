@@ -7,7 +7,7 @@
 提供芦笋 3D/2D 抓取位姿解算、算法流水线对比、多阶段特征图视口缩放与 G-code 导出。
 """
 
-from src.calibration.workspace_manager import WorkspaceManager
+from src.workspace.workspace_manager import WorkspaceManager
 from tools.asparagus_pose_studio.data_io import (
     APP_ID,
     BASE_H,

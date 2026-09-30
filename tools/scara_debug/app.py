@@ -44,13 +44,13 @@ from loader_core import (  # noqa: E402
     MockTransceiver,
 )
 from src.utils.logger import get_logger  # noqa: E402
-from src.utils.base_cv_app import BaseCvApp  # noqa: E402
+from src.ui.base_cv_app import BaseCvApp  # noqa: E402
 from tools.scara_debug.renderer import ScaraDebugRenderer, LOGIC_W, LOGIC_H  # noqa: E402
 
 log = get_logger(__name__)
 
 
-from src.utils.dialog_utils import prompt_input_text
+from src.ui.dialog_utils import prompt_input_text
 
 
 class PresetManager:

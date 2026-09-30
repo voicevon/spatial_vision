@@ -6,7 +6,7 @@
 所有 cv2 GUI 的颜色统一从此处取值，实现"一处修改，全部 GUI 生效"。
 
 用法：
-    from src.utils.gui_theme import GuiTheme
+    from src.ui.gui_theme import GuiTheme
     GuiTheme.apply("dark")            # 启动时选择主题 (默认暗色工业风)
     canvas = np.full(shape, GuiTheme.BG, dtype=np.uint8)
 

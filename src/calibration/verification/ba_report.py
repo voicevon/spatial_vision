@@ -16,7 +16,7 @@ import numpy as np
 import cv2
 
 from src.utils.logger import get_logger
-from src.utils.text_rendering import put_text
+from src.ui.text_rendering import put_text
 
 log = get_logger(__name__)
 
@@ -72,7 +72,7 @@ def export_diagnostic_report(final_tags_map: Dict[str, Any],
     """
     cur_ws = None
     try:
-        from src.calibration.workspace_manager import WorkspaceManager
+        from src.workspace.workspace_manager import WorkspaceManager
         cur_ws = WorkspaceManager().get_current_workspace()
     except Exception:
         pass

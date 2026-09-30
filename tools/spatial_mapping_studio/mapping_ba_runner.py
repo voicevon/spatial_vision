@@ -13,13 +13,13 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.workspace_manager import (
+from src.workspace.workspace_manager import (
     load_workspace_anchor_tags,
 )
-from src.calibration.world_datum_aligner import WorldDatumAligner
-from src.calibration.multiframe_milestone_solver import (
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
+from src.calibration.solvers.multiframe_milestone_solver import (
     MultiFrameMilestoneSolver,
     MultiFrameMilestoneReport,
 )
@@ -217,7 +217,7 @@ class MappingBARunner:
         coord_mgr = None
         if self.workspace:
             try:
-                from src.calibration.workspace_manager import load_workspace_coordinate_manager
+                from src.workspace.workspace_manager import load_workspace_coordinate_manager
                 coord_mgr = load_workspace_coordinate_manager(self.workspace)
             except Exception as e:
                 log.debug(f"[SPATIAL_MAPPING] load_workspace_coordinate_manager: {e}")
@@ -291,8 +291,8 @@ class MappingBARunner:
         if not ws:
             return {}
         try:
-            from src.calibration.workspace_manager import load_workspace_coordinate_manager
-            from src.calibration.frame_extrinsic_solver import FrameExtrinsicSolver
+            from src.workspace.workspace_manager import load_workspace_coordinate_manager
+            from src.calibration.solvers.frame_extrinsic_solver import FrameExtrinsicSolver
 
             coord_mgr = load_workspace_coordinate_manager(ws)
             if not coord_mgr:

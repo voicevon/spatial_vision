@@ -47,16 +47,16 @@ if sys.platform == "win32":
     except Exception:
         pass  # 编码重配置失败无伤大雅，终端仍可正常运行
 
-from src.calibration.pnp_solver import PnpSolver, get_tag_world_transform, get_tag_world_corners
-from src.calibration.tag_detector import TagDetector
-from src.control.robot_serial import RobotSerial
-from src.utils.gui_window_manager import GuiWindowManager
+from src.vision.pnp_solver import PnpSolver, get_tag_world_transform, get_tag_world_corners
+from src.vision.tag_detector import TagDetector
+from src.devices.robot_serial import RobotSerial
+from src.ui.gui_window_manager import GuiWindowManager
 from tools.tracker.camera_controller import CameraController
 from tools.scara_debug.loader_core.config import LoaderConfig
 from tools.tracker.common import (
     COLOR_ACCENT, COLOR_TEXT_SUB, COL_CYAN, COL_YELLOW,
     TOOLBAR_H, fmt_point, list_serial_ports)
-from src.utils.text_rendering import draw_text
+from src.ui.text_rendering import draw_text
 from tools.tracker.renderer import TrackerRenderer
 from src.utils.logger import get_logger
 
@@ -187,7 +187,7 @@ class RobotOnlineTracker:
     def _load_workspace_selection(self):
         """初始化工作空间管理器并恢复上次选中的工位 (持久化于 config/gui_settings.json)"""
         try:
-            from src.calibration.workspace_manager import WorkspaceManager
+            from src.workspace.workspace_manager import WorkspaceManager
             self.ws_manager = WorkspaceManager()
         except Exception as e:
             log.warning(f"WorkspaceManager 初始化失败, 工作空间下拉不可用: {e}")
@@ -219,7 +219,7 @@ class RobotOnlineTracker:
             if ws and os.path.exists(ws.map_path) and os.path.getsize(ws.map_path) > 50:
                 return ws.map_path
         try:
-            from src.calibration.workspace_manager import WorkspaceManager
+            from src.workspace.workspace_manager import WorkspaceManager
             return WorkspaceManager().get_current_workspace().map_path
         except Exception:
             return ""

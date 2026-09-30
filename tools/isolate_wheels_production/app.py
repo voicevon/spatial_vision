@@ -25,10 +25,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.workspace_manager import Workspace, WorkspaceManager
+from src.workspace.workspace_manager import Workspace, WorkspaceManager
 from src.control.isolate_wheels_controller import IsolateWheelsController
-from src.hardware.camera_service import CameraService
-from src.utils.base_cv_app import BaseCvApp
+from src.devices.camera_service import CameraService
+from src.ui.base_cv_app import BaseCvApp
 from src.utils.logger import get_logger
 from tools.isolate_wheels_production.renderer import (
     COLOR_BG,

@@ -16,8 +16,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.workspace_manager import WorkspaceManager
-from src.hardware.camera_streamer import CameraStreamer
+from src.workspace.workspace_manager import WorkspaceManager
+from src.devices.camera_streamer import CameraStreamer
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_renderer import HubRenderer, HELP_MODAL_W, HELP_MODAL_H
 from tools.workspace_hub.app import WorkspaceHubApp
@@ -495,7 +495,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_anchor_editor_partial_and_clear(self):
         """测试锚点坐标编辑弹窗: 逐轴输入/部分已知/负号/清除单轴/删除锚点 (写穿工位 anchor_tags.yaml)"""
-        from src.calibration.workspace_manager import load_workspace_anchor_tags
+        from src.workspace.workspace_manager import load_workspace_anchor_tags
         from tools.workspace_hub.hub_renderer import (
             anchor_row_rect, anchor_padkey_rect
         )
@@ -579,7 +579,7 @@ class TestWorkspaceHub(unittest.TestCase):
     def test_legacy_whitelist_migration(self):
         """【无向后兼容原则】旧格式 whitelist_tag_ids 不再被兼容迁移，必须使用标准 allowed_ids"""
         import yaml
-        from src.calibration.workspace_manager import load_workspace_tag_whitelist
+        from src.workspace.workspace_manager import load_workspace_tag_whitelist
         ws_dir = os.path.join(self.test_root, "ws_legacy_wl")
         os.makedirs(ws_dir, exist_ok=True)
         p = os.path.join(ws_dir, "tag_whitelist.yaml")
@@ -593,7 +593,7 @@ class TestWorkspaceHub(unittest.TestCase):
 
     def test_workspace_tag_whitelist_runtime_semantics(self):
         """测试工位白名单恒启用语义: allowed_ids 非空 → 权威过滤; 空/缺失/旧 enabled 字段 → 探索模式"""
-        from src.calibration.workspace_manager import load_workspace_tag_whitelist
+        from src.workspace.workspace_manager import load_workspace_tag_whitelist
         ws_dir = os.path.join(self.test_root, "ws_wl_semantics")
         os.makedirs(ws_dir, exist_ok=True)
 

@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import put_text
-from src.utils.gui_theme import GuiTheme
-from src.utils.gui_components import draw_dropdown_button, draw_dashboard_button
+from src.ui.text_rendering import put_text
+from src.ui.gui_theme import GuiTheme
+from src.ui.gui_components import draw_dropdown_button, draw_dashboard_button
 
 BA_VIEW_OPTIONS = GuiTheme.BA_VIEW_OPTIONS
 OBS_VIEW_OPTIONS = GuiTheme.OBS_VIEW_OPTIONS

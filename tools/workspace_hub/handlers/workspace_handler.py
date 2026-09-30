@@ -16,7 +16,7 @@ import sys
 import subprocess
 from typing import Any
 
-from src.utils.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import prompt_confirm, prompt_input_text
 
 
 class WorkspaceHandler:

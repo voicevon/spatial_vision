@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from src.calibration.world_datum_aligner import WorldDatumAligner
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
 
 
 class TestWorldDatumAligner(unittest.TestCase):
@@ -169,7 +169,7 @@ class TestWorldDatumAligner(unittest.TestCase):
 
     def test_format_conflict_pairs_report(self):
         """测试几何冲突报告格式化输出与智能纠错线索分析"""
-        from src.calibration.world_datum_aligner import format_conflict_pairs_report
+        from src.calibration.solvers.world_datum_aligner import format_conflict_pairs_report
         conflicts = [
             {"pair": (0, 1), "world_dist_mm": 520.0, "measured_dist_mm": 960.1, "diff_mm": 440.1, "rel_error": 0.458},
             {"pair": (1, 11), "world_dist_mm": 520.0, "measured_dist_mm": 344.2, "diff_mm": 175.8, "rel_error": 0.511},

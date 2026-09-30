@@ -22,7 +22,7 @@ log = get_logger(__name__)
 def get_default_report_dir() -> str:
     """获取当前激活工位的标定报告输出目录"""
     try:
-        from src.calibration.workspace_manager import WorkspaceManager
+        from src.workspace.workspace_manager import WorkspaceManager
         return WorkspaceManager().get_current_workspace().calib_reports_dir
     except Exception:
         return os.path.abspath(

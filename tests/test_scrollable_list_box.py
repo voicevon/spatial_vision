@@ -14,7 +14,7 @@
 import unittest
 import numpy as np
 
-from src.utils.gui_components import ScrollableListBox
+from src.ui.gui_components import ScrollableListBox
 
 
 class TestScrollableListBox(unittest.TestCase):

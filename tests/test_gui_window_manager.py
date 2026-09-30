@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src.utils.gui_window_manager import GuiWindowManager
+from src.ui.gui_window_manager import GuiWindowManager
 
 
 class TestGuiWindowManager(unittest.TestCase):

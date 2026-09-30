@@ -12,9 +12,9 @@ from typing import Any
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import measure_text, put_text
-from src.utils.viewport_manager import draw_styled_button
-from src.utils.gui_components import draw_dropdown_button
+from src.ui.text_rendering import measure_text, put_text
+from src.ui.viewport_manager import draw_styled_button
+from src.ui.gui_components import draw_dropdown_button
 from tools.spatial_mapping_studio.mapping_ui_common import FILTER_MODE_OPTIONS, SORT_MODE_OPTIONS
 
 

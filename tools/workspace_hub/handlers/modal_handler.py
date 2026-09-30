@@ -12,7 +12,7 @@ Workspace Hub 模态弹窗事件处理器 (ModalHandler)
 """
 
 from typing import Any
-from src.utils.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import prompt_confirm, prompt_input_text
 
 
 class ModalHandler:

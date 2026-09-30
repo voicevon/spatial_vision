@@ -48,12 +48,12 @@ except ImportError:
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.pnp_solver import PnpSolver
-from src.calibration.tag_detector import TagDetector
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
-from src.calibration.verification_reporter import VerificationReporter
-from src.calibration.verification_visualizer import VerificationVisualizer
-from src.calibration.workspace_manager import (
+from src.vision.pnp_solver import PnpSolver
+from src.vision.tag_detector import TagDetector
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.verification.verification_reporter import VerificationReporter
+from src.calibration.verification.verification_visualizer import VerificationVisualizer
+from src.workspace.workspace_manager import (
     load_workspace_coordinate_manager,
     load_workspace_marker_size_mm,
     load_workspace_roi_manager,
@@ -62,14 +62,14 @@ from tools.spatial_mapping_studio.mapping_state import MappingDataManager
 from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
 from tools.spatial_mapping_studio.mapping_ba_runner import MappingBARunner
 from tools.spatial_mapping_studio.mapping_renderer import MappingRenderer
-from src.utils.viewport_manager import (
+from src.ui.viewport_manager import (
     ViewportManager
 )
-from src.utils.gui_components import ScrollableListBox
+from src.ui.gui_components import ScrollableListBox
 from src.utils.logger import get_logger
 from tools.spatial_mapping_studio.mapping_events import MappingEventMixin
 from tools.spatial_mapping_studio.mapping_workflows import MappingWorkflowMixin
-from src.calibration.workspace_manager import WorkspaceManager
+from src.workspace.workspace_manager import WorkspaceManager
 
 try:
     from tools.window_helper import force_window_focus
@@ -523,7 +523,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
 
         conflict_pairs = rep.get("conflict_pairs", [])
         if conflict_pairs:
-            from src.calibration.world_datum_aligner import format_conflict_pairs_report
+            from src.calibration.solvers.world_datum_aligner import format_conflict_pairs_report
             conflict_diag = format_conflict_pairs_report(conflict_pairs)
             if conflict_diag:
                 lines.append("")

@@ -20,7 +20,7 @@ from typing import Dict, List, Tuple, Optional, Any
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.covisibility_graph import CovisibilityGraphAnalyzer
+from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer
 from tools.calibration.tag_map_builder import TagMapBuilder
 from src.utils.logger import get_logger
 
@@ -214,7 +214,7 @@ def main():
     def_manifest = ""
     def_output = ""
     try:
-        from src.calibration.workspace_manager import WorkspaceManager
+        from src.workspace.workspace_manager import WorkspaceManager
         current_ws = WorkspaceManager().get_current_workspace()
         def_image_dir = current_ws.calib_raw_images_dir
         def_manifest = current_ws.calib_manifest_path
@@ -251,7 +251,7 @@ def main():
     # 标靶物理边长: 显式传入优先, 否则从当前工位 tag_whitelist.yaml.tag_default_size_mm 读取
     if args.marker_size is None:
         try:
-            from src.calibration.workspace_manager import load_workspace_marker_size_mm
+            from src.workspace.workspace_manager import load_workspace_marker_size_mm
             loaded = load_workspace_marker_size_mm(current_ws.workspace_dir) if current_ws else None
         except Exception:
             loaded = None

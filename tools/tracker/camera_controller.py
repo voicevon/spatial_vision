@@ -10,7 +10,7 @@ import os
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
-from src.hardware.camera_service import CameraService
+from src.devices.camera_service import CameraService
 
 
 class CameraController:

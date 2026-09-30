@@ -547,7 +547,7 @@ class WorkspaceManager:
             }, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # 生成初始空间几何场景 (包含 world 绝对世界坐标系与空 rois 列表)
-        from src.calibration.coordinate_manager import CoordinateTreeManager
+        from src.workspace.coordinate_manager import CoordinateTreeManager
         coord_mgr = CoordinateTreeManager(workspace_id=ws_id, spatial_scene_path=ws.spatial_scene_path)
         coord_mgr.save()
 
@@ -944,7 +944,7 @@ def save_workspace_tag_whitelist(workspace: Workspace, allowed_ids: List[int]) -
 
 def load_workspace_coordinate_manager(workspace: Workspace) -> "CoordinateTreeManager":
     """获取指定工位的多坐标系管理器 (自动挂接 tags_map.yaml，空间场景缺失自动自愈模板)"""
-    from src.calibration.coordinate_manager import CoordinateTreeManager
+    from src.workspace.coordinate_manager import CoordinateTreeManager
     mgr = CoordinateTreeManager(workspace_id=workspace.workspace_id, spatial_scene_path=workspace.spatial_scene_path)
     if not os.path.exists(workspace.spatial_scene_path):
         mgr.save()
@@ -970,7 +970,7 @@ def load_workspace_coordinate_manager(workspace: Workspace) -> "CoordinateTreeMa
 
 def load_workspace_roi_manager(workspace: Workspace) -> "RoiSpaceManager":
     """获取指定工位的 ROI 空间物件集合管理器 (空间场景缺失自动自愈模板)"""
-    from src.calibration.roi_manager import RoiSpaceManager
+    from src.workspace.roi_manager import RoiSpaceManager
     mgr = RoiSpaceManager(workspace_id=workspace.workspace_id, spatial_scene_path=workspace.spatial_scene_path)
     if not os.path.exists(workspace.spatial_scene_path):
         mgr.save()

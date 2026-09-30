@@ -21,12 +21,12 @@ from typing import Any, Dict, List, Tuple
 import cv2
 import numpy as np
 
-from src.utils.text_rendering import measure_text, put_text
+from src.ui.text_rendering import measure_text, put_text
 
 # 共享常量与模块级绘制函数已迁移至 mapping_ui_common, 此处 re-import 保持
 # 既有外部导入路径 (from tools.spatial_mapping_studio.mapping_renderer import ...) 兼容可用。
-from src.utils.gui_theme import GuiTheme
-from src.utils.gui_components import (
+from src.ui.gui_theme import GuiTheme
+from src.ui.gui_components import (
     draw_dashboard_button,
     draw_dropdown_button,
     render_dropdown_popup as common_render_dropdown_popup,

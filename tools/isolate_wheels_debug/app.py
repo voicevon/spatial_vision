@@ -26,7 +26,7 @@ from src.control.isolate_wheels_controller import (
     BROKER_HOST, BROKER_PORT, TOPIC_PREFIX, DEFAULT_DEVID,
     LOAD_SPEED_OPTS,
 )
-from src.utils.base_cv_app import BaseCvApp
+from src.ui.base_cv_app import BaseCvApp
 from src.utils.logger import get_logger
 from tools.isolate_wheels_debug.renderer import WheelDebugRenderer
 from tools.isolate_wheels_debug.ui_layout import (

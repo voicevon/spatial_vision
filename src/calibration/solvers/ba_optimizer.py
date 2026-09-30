@@ -18,9 +18,9 @@ import numpy as np
 import cv2
 from scipy.optimize import least_squares
 
-from src.calibration.covisibility_graph import CovisibilityGraphAnalyzer, CovisibilityGraphError
-from src.calibration.ba_report import compute_3d_uncertainties, export_diagnostic_report
-from src.calibration.world_datum_aligner import WorldDatumAligner
+from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer, CovisibilityGraphError
+from src.calibration.verification.ba_report import compute_3d_uncertainties, export_diagnostic_report
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
 
 from src.utils.logger import get_logger
 

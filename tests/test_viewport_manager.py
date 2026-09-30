@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from src.utils.viewport_manager import ViewportManager, get_safe_screen_size
+from src.ui.viewport_manager import ViewportManager, get_safe_screen_size
 
 
 class TestViewportManager(unittest.TestCase):

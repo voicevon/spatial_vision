@@ -9,7 +9,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 from src.calibration.manifest_repository import ManifestRepository
 from tools.spatial_mapping_studio.mapping_ba_runner import MappingBARunner
 from tools.spatial_mapping_studio.mapping_state import MappingDataManager

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from src.calibration.coordinate_manager import (
+from src.workspace.coordinate_manager import (
     CoordinateTreeManager,
     FrameDefinition,
     make_transform_matrix,

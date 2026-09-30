@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import unittest
 import yaml
-from src.calibration.workspace_manager import (
+from src.workspace.workspace_manager import (
     Workspace,
     load_workspace_tag_config,
     save_workspace_tag_config,

@@ -15,7 +15,7 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation as R
 
-from src.calibration.coordinate_manager import CoordinateTreeManager, rpy_deg_to_rot_mat
+from src.workspace.coordinate_manager import CoordinateTreeManager, rpy_deg_to_rot_mat
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

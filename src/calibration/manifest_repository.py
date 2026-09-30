@@ -28,7 +28,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 def get_default_manifest_path() -> str:
     """获取当前激活工位的标定观测清单绝对路径"""
     try:
-        from src.calibration.workspace_manager import WorkspaceManager
+        from src.workspace.workspace_manager import WorkspaceManager
         return WorkspaceManager().get_current_workspace().calib_manifest_path
     except Exception:
         return os.path.join(PROJECT_ROOT, "config", "tag_observations.yaml")

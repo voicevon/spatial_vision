@@ -140,7 +140,7 @@ def test_synthetic_bundle_adjustment():
 
 def test_covisibility_guard():
     """测试共视连通性安全守门员 (Co-visibility Guard)"""
-    from src.calibration.covisibility_graph import CovisibilityGraphError
+    from src.calibration.solvers.covisibility_graph import CovisibilityGraphError
     builder = TagMapBuilder(marker_size_mm=40.0)
 
     # 1. 正常连通图: Frame1 (0, 1), Frame2 (1, 2) -> 0-1-2 完全连通

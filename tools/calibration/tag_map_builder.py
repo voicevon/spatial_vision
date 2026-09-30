@@ -22,14 +22,14 @@ except ImportError:
     resolve_camera_intrinsics = None
     load_raw_config = None
 
-from src.calibration.covisibility_graph import (
+from src.calibration.solvers.covisibility_graph import (
     CovisibilityGraphAnalyzer,
 )
 from src.calibration.manifest_repository import ManifestRepository
-from src.calibration.ba_optimizer import BundleAdjustmentOptimizer
-from src.calibration.tag_detector import TagDetector
-from src.calibration.prism_renderer import draw_prism, COLORS_MAPPING
-from src.utils.text_rendering import measure_text, put_text
+from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
+from src.vision.tag_detector import TagDetector
+from src.calibration.verification.prism_renderer import draw_prism, COLORS_MAPPING
+from src.ui.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -59,7 +59,7 @@ class TagMapBuilder:
         # 工位物理白名单 (恒启用): allowed_ids 非空 → 权威, 名单内容即行为 (Tag ID 已 100% 下沉至工位沙盒)
         valid_tag_ids: List[int] = []
         try:
-            from src.calibration.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
+            from src.workspace.workspace_manager import WorkspaceManager, load_workspace_tag_whitelist
             wl = load_workspace_tag_whitelist(WorkspaceManager().get_current_workspace().workspace_dir)
             if wl:
                 log.info(f"[BUILDER] 工位白名单已生效: {wl}")

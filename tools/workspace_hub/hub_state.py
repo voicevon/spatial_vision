@@ -14,9 +14,9 @@ import json
 import time
 from typing import Optional
 
-from src.calibration.workspace_manager import WorkspaceManager, Workspace
+from src.workspace.workspace_manager import WorkspaceManager, Workspace
 from src.utils.logger import get_logger
-from src.utils.gui_components import TabBar, TabItem
+from src.ui.gui_components import TabBar, TabItem
 
 from tools.workspace_hub.states.gallery_state import GalleryState, imread_unicode, imwrite_unicode
 from tools.workspace_hub.states.whitelist_state import WhitelistState

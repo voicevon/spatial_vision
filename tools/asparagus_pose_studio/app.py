@@ -15,14 +15,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.utils.gui_window_manager import GuiWindowManager
+from src.ui.gui_window_manager import GuiWindowManager
 from src.utils.logger import get_logger
-from src.utils.text_rendering import put_text
-from src.calibration.workspace_manager import WorkspaceManager
+from src.ui.text_rendering import put_text
+from src.workspace.workspace_manager import WorkspaceManager
 from src.vision.asparagus_analyzer import AsparagusAnalyzer
 from src.vision.pipelines import PipelineRegistry, BaseAsparagusPipeline, PipelineResult
 
-from src.utils.base_cv_app import BaseCvApp
+from src.ui.base_cv_app import BaseCvApp
 from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
 from tools.asparagus_pose_studio.data_io import (
     APP_ID, BASE_H, BASE_W, DEFAULT_DIR, REPORT_DIR, WINDOW_KEY,
@@ -151,7 +151,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
         if tags_path and os.path.exists(tags_path) and os.path.getsize(tags_path) > 50:
             try:
                 from src.vision.tag_localizer import TagLocalizer
-                from src.calibration.workspace_manager import load_workspace_marker_size_mm
+                from src.workspace.workspace_manager import load_workspace_marker_size_mm
                 marker_size_mm = load_workspace_marker_size_mm(ws.workspace_dir) if ws else None
                 if marker_size_mm is None:
                     log.warning(

@@ -32,7 +32,7 @@ from tools.workspace_hub.hub_renderer import (
     FRAME_ADD_ROI_BTN,
 )
 from tools.workspace_hub.app import WorkspaceHubApp
-from src.calibration.workspace_manager import WorkspaceManager
+from src.workspace.workspace_manager import WorkspaceManager
 
 
 class TestHubFramesRoisGui(unittest.TestCase):
@@ -319,8 +319,8 @@ class TestHubFramesRoisGui(unittest.TestCase):
     def test_delete_frame_button_and_cascade_cleanup(self):
         """验证子坐标系删除按钮权限控制、Hit-test 判定及级联清理机制 (Tag白名单+ROI+下级重定向)"""
         from tools.workspace_hub.hub_renderer import FRAME_DELETE_BTN
-        from src.calibration.coordinate_manager import FrameDefinition
-        from src.calibration.roi_manager import RoiDefinition
+        from src.workspace.coordinate_manager import FrameDefinition
+        from src.workspace.roi_manager import RoiDefinition
 
         state = HubState(workspace_mgr=self.ws_mgr)
         renderer = HubRenderer()

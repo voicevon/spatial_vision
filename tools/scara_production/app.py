@@ -23,12 +23,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.utils.base_cv_app import BaseCvApp
-from src.utils.gui_theme import GuiTheme
-from src.utils.text_rendering import draw_text, put_text, measure_text
+from src.ui.base_cv_app import BaseCvApp
+from src.ui.gui_theme import GuiTheme
+from src.ui.text_rendering import draw_text, put_text, measure_text
 from src.utils.logger import get_logger
 
-from src.calibration.workspace_manager import (
+from src.workspace.workspace_manager import (
     WorkspaceManager, Workspace,
     load_workspace_coordinate_manager,
     load_workspace_roi_manager
@@ -36,7 +36,7 @@ from src.calibration.workspace_manager import (
 from src.vision.asparagus_analyzer import AsparagusAnalyzer, AsparagusTarget
 from src.control.sorting_dispatcher import SortingDispatcher, DestinationSlot
 from src.control.scara_motion_planner import ScaraMotionPlanner, ScaraPickTask
-from src.control.robot_serial import RobotSerial
+from src.devices.robot_serial import RobotSerial
 
 log = get_logger(__name__)
 

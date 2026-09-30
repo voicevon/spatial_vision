@@ -8,7 +8,7 @@ import unittest
 import cv2
 import numpy as np
 
-from src.calibration.pnp_solver import PnpSolver
+from src.vision.pnp_solver import PnpSolver
 
 
 def make_obs(rng, solver, theta_eff_deg, az_deg, dist=420.0, noise_px=0.5, yaw_deg=0.0, obj=None):

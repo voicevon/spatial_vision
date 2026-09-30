@@ -7,7 +7,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.workspace_manager import WorkspaceManager
+from src.workspace.workspace_manager import WorkspaceManager
 from tools.capture.capture_wizard import CaptureWizard
 from tools.spatial_mapping_studio.app import SpatialMappingStudioApp
 from tools.asparagus_pose_studio import AsparagusPoseStudioApp

@@ -8,17 +8,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.calibration.coordinate_manager import (
+from src.workspace.coordinate_manager import (
     CoordinateTreeManager,
     FrameDefinition,
     rpy_deg_to_rot_mat,
     make_transform_matrix,
 )
-from src.calibration.roi_manager import (
+from src.workspace.roi_manager import (
     RoiSpaceManager,
     RoiDefinition,
 )
-from src.calibration.workspace_manager import (
+from src.workspace.workspace_manager import (
     WorkspaceManager,
     Workspace,
     load_workspace_coordinate_manager,

@@ -13,14 +13,14 @@ from typing import Any
 import cv2
 import numpy as np
 
-from src.utils.gui_components import (
+from src.ui.gui_components import (
     render_floating_tooltip,
     draw_dropdown_button,
     render_dropdown_popup,
     draw_rounded_rectangle,
 )
-from src.utils.gui_theme import GuiTheme
-from src.utils.text_rendering import draw_text, put_text
+from src.ui.gui_theme import GuiTheme
+from src.ui.text_rendering import draw_text, put_text
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_modals_renderer import HubModalsRenderer
 from tools.workspace_hub.hub_hit_tester import HubHitTester

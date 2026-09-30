@@ -47,7 +47,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         real_map = os.path.join(PROJECT_ROOT, "config", "tags_map.yaml")
         if not os.path.exists(real_map):
             try:
-                from src.calibration.workspace_manager import WorkspaceManager
+                from src.workspace.workspace_manager import WorkspaceManager
                 ws_map = WorkspaceManager().get_current_workspace().map_path
                 if os.path.exists(ws_map):
                     real_map = ws_map
@@ -766,7 +766,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         )
         self.assertGreater(np.count_nonzero(disp_frame), 100, "XY 平面网格与坐标轴应在画布上产生像素绘制")
 
-    @patch("src.utils.dialog_utils.show_error_dialog")
+    @patch("src.ui.dialog_utils.show_error_dialog")
     def test_align_world_datum_failure_triggers_error_dialog(self, mock_show_error):
         """测试世界坐标系校准失败时，触发带红叉的 Critical 报警对话框、清空旧质检单并输出工位诊断信息"""
         # 预设旧质检单模拟跨工位残留

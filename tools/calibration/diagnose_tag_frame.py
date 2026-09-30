@@ -36,7 +36,7 @@ if sys.platform == "win32":
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 try:
-    from src.calibration.workspace_manager import WorkspaceManager
+    from src.workspace.workspace_manager import WorkspaceManager
     _cur_ws = WorkspaceManager().get_current_workspace()
     CALIB_IMAGES_DIR = _cur_ws.calib_raw_images_dir
     DIAGNOSTICS_DIR = os.path.join(_cur_ws.calibration_dir, "diagnostics")
@@ -46,7 +46,7 @@ except Exception:
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 
 from src.utils.config_guard import load_raw_config
-from src.utils.text_rendering import measure_text, put_text
+from src.ui.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

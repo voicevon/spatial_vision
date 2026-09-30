@@ -14,7 +14,7 @@ from typing import List, Optional, Tuple, Dict, Any
 import cv2
 import numpy as np
 
-from src.calibration.roi_manager import RoiSpaceManager, RoiDefinition
+from src.workspace.roi_manager import RoiSpaceManager, RoiDefinition
 from src.utils.logger import get_logger
 
 log = get_logger("flux_vision.tools.isolate_wheels_production.vision")

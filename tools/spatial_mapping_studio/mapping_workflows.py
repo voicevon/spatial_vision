@@ -124,7 +124,7 @@ class MappingWorkflowMixin:
             report_dir = self.current_workspace.calib_reports_dir
         else:
             try:
-                from src.calibration.workspace_manager import WorkspaceManager
+                from src.workspace.workspace_manager import WorkspaceManager
                 report_dir = WorkspaceManager().get_current_workspace().calib_reports_dir
             except Exception:
                 report_dir = os.path.join(PROJECT_ROOT, "data", "workspaces", "default", "calibration", "reports")
@@ -212,7 +212,7 @@ class MappingWorkflowMixin:
             conflict_pairs = world_map.get("world_anchor", {}).get("conflict_pairs", [])
 
             if has_isolated or conflict_pairs:
-                from src.utils.dialog_utils import show_error_dialog
+                from src.ui.dialog_utils import show_error_dialog
                 dialog_text = world_map.get("milestone_dialog_text", "")
                 if not dialog_text:
                     cur_ws_name = getattr(self, "current_workspace_name", "当前工位")
@@ -221,7 +221,7 @@ class MappingWorkflowMixin:
 
             self.set_toast(msg)
         else:
-            from src.utils.dialog_utils import show_error_dialog
+            from src.ui.dialog_utils import show_error_dialog
             self.alignment_report = None
             cur_ws_name = getattr(self, "current_workspace_name", "未知工位")
             cur_ws_id = getattr(self, "current_workspace_id", "")
@@ -229,7 +229,7 @@ class MappingWorkflowMixin:
             # 优先使用里程碑求解器的结构化四阶段诊断
             latest_rep = getattr(self.ba_runner, "latest_milestone_report", None)
             if latest_rep:
-                from src.calibration.multiframe_milestone_solver import MultiFrameMilestoneSolver
+                from src.calibration.solvers.multiframe_milestone_solver import MultiFrameMilestoneSolver
                 diag_content = MultiFrameMilestoneSolver.format_diagnostic_dialog_text(latest_rep)
                 detail_msg = f"【当前工位】{cur_ws_name} ({cur_ws_id})\n\n{diag_content}"
                 dialog_title = "建图里程碑多坐标系质检诊断 (Milestone Diagnostic)"
