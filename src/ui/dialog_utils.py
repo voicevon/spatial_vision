@@ -204,3 +204,70 @@ def show_error_dialog(title: str, message: str) -> None:
 show_critical_message = show_error_dialog
 prompt_error = show_error_dialog
 
+
+def show_info_dialog(title: str, message: str) -> None:
+    """
+    弹出跨平台原生信息提示对话框 (带蓝色信息 ℹ️ 图标)。
+    具备系统级置顶与确认交互。
+
+    :param title: 弹窗标题
+    :param message: 提示详情
+    """
+    log.info(f"[INFO_DIALOG] {title}: {message}")
+
+    # 1. Windows 原生内核 API (MB_ICONINFORMATION)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            MB_OK = 0x00000000
+            MB_ICONINFORMATION = 0x00000040  # 蓝色圆圈叹号 (Information)
+            MB_TOPMOST = 0x00040000        # 系统级置顶
+            MB_SETFOREGROUND = 0x00010000  # 强制获取焦点
+            ctypes.windll.user32.MessageBoxW(0, str(message), str(title), MB_OK | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND)
+            return
+        except Exception as e:
+            log.warning(f"Windows 原生 MessageBoxW 信息框调用异常: {e}")
+
+    # 2. Linux 环境原生对话框
+    if sys.platform.startswith("linux"):
+        if shutil.which("zenity"):
+            try:
+                subprocess.run(["zenity", "--info", "--title", title, "--text", message], capture_output=True)
+                return
+            except Exception:
+                pass
+        elif shutil.which("kdialog"):
+            try:
+                subprocess.run(["kdialog", "--title", title, "--msgbox", message], capture_output=True)
+                return
+            except Exception:
+                pass
+
+    # 3. macOS 原生弹窗
+    if sys.platform == "darwin":
+        try:
+            script = f'display alert "{title}" message "{message}"'
+            subprocess.run(["osascript", "-e", script], capture_output=True)
+            return
+        except Exception:
+            pass
+
+    # 4. 跨平台 Tkinter 弹窗兜底
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        messagebox.showinfo(title, message, parent=root)
+        root.destroy()
+        return
+    except Exception:
+        pass
+
+    # 5. 终端标准输出兜底
+    print(f"\n[INFO DIALOG] ==========================================")
+    print(f"[*] 标题: {title}")
+    print(f"[*] 内容:\n{message}")
+    print(f"========================================================\n")
+

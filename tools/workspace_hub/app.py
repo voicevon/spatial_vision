@@ -102,6 +102,7 @@ class WorkspaceHubApp(BaseCvApp):
     _STATIC_DISPATCH = {
         "btn_exit": lambda app: app.stop(),
         "btn_new_workspace": lambda app: app.workspace_handler.handle_create_workspace(),
+        "btn_audit_all_workspaces": lambda app: app.workspace_handler.handle_audit_all_workspaces(),
         "btn_delete_frame": lambda app: app._action_delete_frame(),
         "btn_edit_frame_pose": lambda app: app._action_edit_frame_pose(),
         "btn_edit_marker_size": lambda app: app.state.whitelist.open_marker_size_editor(),

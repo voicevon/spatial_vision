@@ -586,12 +586,17 @@ class HubRenderer:
                 f_col = (0, 255, 220) if is_sel else (200, 215, 230)
                 draw_text(canvas, f_label, (fx + 20, fy + 7), font_size=12, color=f_col, bold=is_sel)
 
-        # ==== 2. Workspace 通用全局操作区 ====
-        div_y1 = 604
+        # ==== 2. Workspace 通用全局操作区 (经典上下结构，预留56px底边距防截断) ====
+        div_y1 = 574
         cv2.line(canvas, (10, div_y1), (330, div_y1), self.COLOR_BORDER, 1)
 
-        btn1_y = div_y1 + 10
-        self._draw_button(canvas, (10, btn1_y, 320, 40), "+ 新建 Workspace", mpos)
+        btn_w = 320
+        btn_h = 36
+        btn1_y = 584
+        self._draw_button(canvas, (10, btn1_y, btn_w, btn_h), "+ 新建工位", mpos)
+
+        btn2_y = 628
+        self._draw_button(canvas, (10, btn2_y, btn_w, btn_h), "全工位体检", mpos, theme_color=(0, 200, 160))
 
     def _render_page_calib_images(self, canvas: np.ndarray, state: HubState, sc):
         """页签2: 标定相册 (委托给 GalleryPageRenderer)"""

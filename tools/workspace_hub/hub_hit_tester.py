@@ -31,7 +31,7 @@ class HubHitTester:
         """计算左侧两层树结构各项的几何矩形与数据标识，供渲染与点击测试统一使用"""
         items = []
         cur_y = 58
-        max_y = 604
+        max_y = 570
         for ws_idx, ws in enumerate(state.workspaces):
             if cur_y + 44 > max_y:
                 break
@@ -328,10 +328,15 @@ class HubHitTester:
 
         # 左侧面板按钮与两层树交互
         if 0 <= mx <= 340:
-            div_y1 = 604
-            btn1_y = div_y1 + 10
-            if 10 <= mx <= 330 and btn1_y <= my <= btn1_y + 40:
-                return "btn_new_workspace"
+            div_y1 = 574
+            btn1_y = 584
+            btn2_y = 628
+            btn_h = 36
+            if 10 <= mx <= 330:
+                if btn1_y <= my <= btn1_y + btn_h:
+                    return "btn_new_workspace"
+                if btn2_y <= my <= btn2_y + btn_h:
+                    return "btn_audit_all_workspaces"
 
             # 遍历两层树节点
             tree_items = self.get_tree_layout(state)

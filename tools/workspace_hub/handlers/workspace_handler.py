@@ -16,7 +16,8 @@ import sys
 import subprocess
 from typing import Any
 
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import prompt_confirm, prompt_input_text, show_info_dialog
+from src.workspace.health_auditor import audit_workspace, audit_all_workspaces
 
 
 class WorkspaceHandler:
@@ -158,27 +159,40 @@ class WorkspaceHandler:
             self.state.set_toast(f"删除工位失败: {msg}")
 
     def handle_sync_data_consistency(self):
-        """核验物理磁盘与元数据一致性，重新扫描并自动自愈同步"""
+        """核验物理磁盘与元数据一致性，修剪幽灵标靶，重新扫描并自动自愈同步"""
         ws = self.state.get_selected_workspace()
         if not ws:
             self.state.set_toast("未选中任何工位，无法核验！")
             return
 
-        old_calib = ws.image_count
-        old_prod = ws.prod_image_count
+        # 调用领域层单工位健康体检与自愈
+        res = audit_workspace(ws, auto_fix=True)
 
-        # 1. 强制重新扫描物理磁盘并更新元数据
-        ws.refresh_stats()
-        ws.save_meta()
-
-        # 2. 刷新相册与列表数据
+        # 刷新相册与列表数据
         self.state.gallery.load_current_workspace_images()
         self.state.gallery.load_prod_images()
         self.state.refresh_workspaces()
 
-        diff_calib = ws.image_count - old_calib
-        diff_prod = ws.prod_image_count - old_prod
-        if diff_calib == 0 and diff_prod == 0:
-            self.state.set_toast(f"一致性核验完成: 物理与元数据已是最新 (标定 {ws.image_count} 帧, 生产 {ws.prod_image_count} 帧)")
+        if res["actions_taken"]:
+            acts_str = "；".join(res["actions_taken"])
+            self.state.set_toast(f"元数据自愈成功: {acts_str}")
         else:
-            self.state.set_toast(f"已同步数据一致性: 标定 {old_calib}→{ws.image_count} 帧, 生产 {old_prod}→{ws.prod_image_count} 帧")
+            self.state.set_toast(f"一致性核验完成: 【{ws.name}】物理与元数据已是最新，无幽灵标靶")
+
+    def handle_audit_all_workspaces(self):
+        """全工位深度健康体检与自愈，输出详细报告并弹窗反馈"""
+        self.state.set_toast("正在执行全工位健康体检与自愈，请稍候...")
+        res = audit_all_workspaces(self.workspace_mgr, auto_fix=True)
+
+        # 刷新当前选中的工位与列表视图
+        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_prod_images()
+        self.state.refresh_workspaces()
+
+        # 弹出完成 Toast
+        self.state.set_toast(
+            f"全工位体检完成！自愈 {res['healed_workspaces']} 个工位，清理 {res['total_ghost_pruned']} 枚幽灵标靶"
+        )
+
+        # 弹出原生信息提示框展示报告摘要
+        show_info_dialog("全工位健康体检与自愈报告", res["summary_text"])
