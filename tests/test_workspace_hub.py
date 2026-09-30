@@ -374,8 +374,8 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertTrue(state.is_help_modal_open, "点击弹窗内部卡片不应关闭说明窗")
 
         # 7. 测试 renderer 的 hit_test 判定
-        hit_action = app.renderer.hit_test(bx1 + 50, by1 + 16, state)
-        self.assertEqual(hit_action, "help_close", "renderer.hit_test 应对齐返回 help_close")
+        hit_action = app.hit_tester.hit_test(bx1 + 50, by1 + 16, state)
+        self.assertEqual(hit_action, "help_close", "hit_tester.hit_test 应对齐返回 help_close")
 
         # 8. 进阶测试：当窗口缩放至 1440x900 时，物理屏幕坐标映射后应同样秒关 (上对齐 pad_y=0)
         app.win_mgr.canvas_w = 1440
@@ -460,11 +460,11 @@ class TestWorkspaceHub(unittest.TestCase):
         p = self.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
         self.assertTrue(os.path.exists(p), "应自动创建 tag_whitelist.yaml 文件")
 
-        # 验证文件结构符合规范 (白名单恒启用: 无 enabled 开关, 名单内容即行为)
+        # 验证文件结构符合规范 (tags 单一真理源)
         with open(wl_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
         self.assertNotIn("enabled", cfg)
-        self.assertIn("allowed_ids", cfg)
+        self.assertIn("tags", cfg)
         self.assertIn("workspace_id", cfg)
         self.assertEqual(cfg["workspace_id"], ws.workspace_id)
 
@@ -481,7 +481,11 @@ class TestWorkspaceHub(unittest.TestCase):
 
         def read_ids():
             with open(wl_path, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f).get("allowed_ids", [])
+                doc = yaml.safe_load(f) or {}
+                raw_tags = doc.get("tags")
+                if isinstance(raw_tags, dict):
+                    return [int(k) for k in raw_tags.keys()]
+                return doc.get("allowed_ids", [])
 
         # 切换 world 坐标系下的 Tag 2 放行
         is_allowed = state.geometry.toggle_frame_tag_allowed("world", 2)
@@ -526,7 +530,7 @@ class TestWorkspaceHub(unittest.TestCase):
         ok, msg = state.whitelist.save_anchor_modal()
         self.assertTrue(ok, msg)
         self.assertFalse(state.whitelist.anchor_modal_open)
-        self.assertTrue(os.path.exists(ws.anchor_path))
+        self.assertTrue(os.path.exists(ws.whitelist_path))
         own = load_workspace_anchor_tags(ws.workspace_dir)
         self.assertEqual(own[3]["known"], [True, False, False])
         self.assertAlmostEqual(own[3]["xyz_mm"][0], 12.5)
@@ -565,7 +569,7 @@ class TestWorkspaceHub(unittest.TestCase):
         state.whitelist.anchor_axis_select(0)
         for _ in "999":
             state.whitelist.anchor_pad_key("9")
-        state.whitelist.cancel_anchor_modal()
+        state.whitelist.close_anchor_modal()
         own = load_workspace_anchor_tags(ws.workspace_dir)
         self.assertNotIn(7, own)
 
@@ -573,26 +577,28 @@ class TestWorkspaceHub(unittest.TestCase):
         state.whitelist.open_anchor_editor(0)
         canvas = app.renderer.render(state)
         self.assertEqual(canvas.shape, (720, 960, 3))
-        state.whitelist.cancel_anchor_modal()
+        state.whitelist.close_anchor_modal()
         self.assertFalse(state.whitelist.anchor_modal_open)
 
     def test_legacy_whitelist_migration(self):
-        """【无向后兼容原则】旧格式 whitelist_tag_ids 不再被兼容迁移，必须使用标准 allowed_ids"""
+        """测试标准 tags 与历史 allowed_ids 格式读取"""
         import yaml
         from src.workspace.workspace_manager import load_workspace_tag_whitelist
         ws_dir = os.path.join(self.test_root, "ws_legacy_wl")
         os.makedirs(ws_dir, exist_ok=True)
         p = os.path.join(ws_dir, "tag_whitelist.yaml")
+        # 1. tags 结构标准读取
         with open(p, "w", encoding="utf-8") as f:
-            f.write("description: 标准白名单\nallowed_ids:\n- 0\n- 18\n- 29\nworkspace_id: legacy\n")
-
+            f.write("workspace_id: legacy\ntags:\n  0: {}\n  18: {}\n  29: {}\n")
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [0, 18, 29])
+
+        # 2. 空 tags 探索模式
         with open(p, "w", encoding="utf-8") as f:
-            f.write("workspace_id: legacy\nallowed_ids: []\n")
+            f.write("workspace_id: legacy\ntags: {}\n")
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [])
 
     def test_workspace_tag_whitelist_runtime_semantics(self):
-        """测试工位白名单恒启用语义: allowed_ids 非空 → 权威过滤; 空/缺失/旧 enabled 字段 → 探索模式"""
+        """测试工位标靶白名单恒启用语义: tags 非空 → 权威过滤; 空/缺失 → 探索模式"""
         from src.workspace.workspace_manager import load_workspace_tag_whitelist
         ws_dir = os.path.join(self.test_root, "ws_wl_semantics")
         os.makedirs(ws_dir, exist_ok=True)
@@ -600,19 +606,14 @@ class TestWorkspaceHub(unittest.TestCase):
         # 文件缺失 → [] (探索模式)
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [])
 
-        # 旧格式 (带 enabled: false) → enabled 被忽略, 只看 allowed_ids
+        # tags 标准结构 → 权威过滤
         with open(os.path.join(ws_dir, "tag_whitelist.yaml"), "w", encoding="utf-8") as f:
-            f.write("workspace_id: x\nenabled: false\nallowed_ids: [0, 1, 18]\n")
+            f.write("workspace_id: x\ntags:\n  0: {}\n  1: {}\n  18: {}\n")
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [0, 1, 18])
 
-        # allowed_ids 为空 → [] (探索模式)
+        # tags 为空 → [] (探索模式)
         with open(os.path.join(ws_dir, "tag_whitelist.yaml"), "w", encoding="utf-8") as f:
-            f.write("workspace_id: x\nallowed_ids: []\n")
-        self.assertEqual(load_workspace_tag_whitelist(ws_dir), [])
-
-        # 非法 ID → 忽略文件 (探索模式, 不半生效)
-        with open(os.path.join(ws_dir, "tag_whitelist.yaml"), "w", encoding="utf-8") as f:
-            f.write("workspace_id: x\nallowed_ids: [0, abc, 2]\n")
+            f.write("workspace_id: x\ntags: {}\n")
         self.assertEqual(load_workspace_tag_whitelist(ws_dir), [])
 
     def test_workspace_description_update(self):
@@ -638,12 +639,12 @@ class TestWorkspaceHub(unittest.TestCase):
 
         # 工位 3 个 Tab 胶囊
         # Tab 0: Dashboard (x: 348~454)
-        self.assertEqual(renderer.hit_test(400, 25, state), ("hdr_tab_key", HubState.TAB_REPORT))
+        self.assertEqual(renderer.hit_tester.hit_test(400, 25, state), ("hdr_tab_key", HubState.TAB_REPORT))
         # Tab 2: 生产相册 (x: 580~700)
-        self.assertEqual(renderer.hit_test(630, 25, state), ("hdr_tab_key", HubState.TAB_PROD_IMAGES))
+        self.assertEqual(renderer.hit_tester.hit_test(630, 25, state), ("hdr_tab_key", HubState.TAB_PROD_IMAGES))
 
         # [退出] 按钮
-        self.assertEqual(renderer.hit_test(880, 25, state), "btn_exit")
+        self.assertEqual(renderer.hit_tester.hit_test(880, 25, state), "btn_exit")
 
     def test_report_panel_vertical_rendering(self):
         """测试体检报告页签垂直排列面板的渲染 (960x720)"""
@@ -667,17 +668,17 @@ class TestWorkspaceHub(unittest.TestCase):
 
         # 验证 5 个内嵌按钮的命中 (x: 864~938 / 776~854)
         # 1. 重命名 (x: 864~938, y: 68~94)
-        self.assertEqual(renderer.hit_test(900, 80, state), "ws_rename")
+        self.assertEqual(renderer.hit_tester.hit_test(900, 80, state), "ws_rename")
         # 2. 打开 (x: 864~938, y: 96~122)
-        self.assertEqual(renderer.hit_test(900, 110, state), "ws_open_dir")
+        self.assertEqual(renderer.hit_tester.hit_test(900, 110, state), "ws_open_dir")
         # 3. 修改 (x: 864~938, y: 152~178)
-        self.assertEqual(renderer.hit_test(900, 165, state), "ws_edit_desc")
+        self.assertEqual(renderer.hit_tester.hit_test(900, 165, state), "ws_edit_desc")
         # 4. 更新元数据 (移至卡片1底栏左侧, x: 372~504, y: 190~220)
-        self.assertEqual(renderer.hit_test(430, 205, state), "ws_sync_data")
+        self.assertEqual(renderer.hit_tester.hit_test(430, 205, state), "ws_sync_data")
         # 5. 克隆 (x: 512~592, y: 190~220)
-        self.assertEqual(renderer.hit_test(550, 205, state), "ws_clone")
+        self.assertEqual(renderer.hit_tester.hit_test(550, 205, state), "ws_clone")
         # 6. 删除 (x: 600~678, y: 190~220)
-        self.assertEqual(renderer.hit_test(630, 205, state), "ws_delete")
+        self.assertEqual(renderer.hit_tester.hit_test(630, 205, state), "ws_delete")
 
     def test_data_consistency_sync(self):
         """测试工位元数据记录与物理磁盘不一致时的自愈与同步刷新"""

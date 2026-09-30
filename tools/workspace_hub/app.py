@@ -57,6 +57,7 @@ class WorkspaceHubApp(BaseCvApp):
         self.workspace_mgr = workspace_mgr or WorkspaceManager()
         self.state = HubState(self.workspace_mgr, force_mock=force_mock)
         self.renderer = HubRenderer()
+        self.hit_tester = self.renderer.hit_tester
         self.modal_handler = ModalHandler(self)
         self.workspace_handler = WorkspaceHandler(self)
 
@@ -117,7 +118,7 @@ class WorkspaceHubApp(BaseCvApp):
         "ws_open_dir": lambda app: app.workspace_handler.handle_open_directory(),
         "ws_edit_desc": lambda app: app.workspace_handler.handle_edit_description(),
         "ws_toggle_prod_mode": lambda app: app.state.cycle_workspace_production_mode(),
-        "dropdown_dismiss": lambda app: app._action_dropdown_dismiss(),
+        "dropdown_dismiss": lambda app: setattr(app.state, "active_dropdown", None),
         "ws_sync_data": lambda app: app.workspace_handler.handle_sync_data_consistency(),
         "ws_clone": lambda app: app.workspace_handler.handle_clone_workspace(),
         "ws_delete": lambda app: app.workspace_handler.handle_delete_workspace(),
@@ -150,10 +151,6 @@ class WorkspaceHubApp(BaseCvApp):
         if dd_type == "ws_prod_mode":
             self.state.active_dropdown = None
             self.state.set_workspace_production_mode(val)
-
-    def _action_dropdown_dismiss(self):
-        """点击空白区域收起下拉菜单"""
-        self.state.active_dropdown = None
 
     def _action_delete_frame(self):
         """响应删除当前选中子坐标系动作 (含详细级联影响清单与安全确认)"""
@@ -249,7 +246,7 @@ class WorkspaceHubApp(BaseCvApp):
             return
 
         # 2. 交互热区碰撞测试
-        hit = self.renderer.hit_test(x, y, self.state)
+        hit = self.hit_tester.hit_test(x, y, self.state)
         if hit is None:
             return
 
@@ -425,7 +422,7 @@ class WorkspaceHubApp(BaseCvApp):
         # 0.2 专用坐标编辑弹窗 (anchor_modal) 独占键盘输入 (无 Windows 输入框)
         if state.whitelist.anchor_modal_open:
             if key == 27:  # ESC 取消
-                state.whitelist.cancel_anchor_modal()
+                state.whitelist.close_anchor_modal()
                 state.set_toast("已取消坐标编辑 (未保存)。")
                 return True
             if key in (13, 10):  # Enter 保存

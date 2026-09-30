@@ -446,8 +446,8 @@ class GuiLauncherApp:
 
         self.mouse_x = -1
         self.mouse_y = -1
-        if self.scale_pct != 100 or self.canvas_w != self._base_w or self.canvas_h != self._base_h:
-            self.toast_msg = f"已自动恢复偏好设置：放大镜 {self.scale_pct}%，视窗 {self.canvas_w}×{self.canvas_h} (按 Ctrl+0 可随时复位)"
+        if self.win_mgr.scale_pct != 100 or self.win_mgr.canvas_w != self._base_w or self.win_mgr.canvas_h != self._base_h:
+            self.toast_msg = f"已自动恢复偏好设置：放大镜 {self.win_mgr.scale_pct}%，视窗 {self.win_mgr.canvas_w}×{self.win_mgr.canvas_h} (按 Ctrl+0 可随时复位)"
         else:
             self.toast_msg = "欢迎使用芦笋上料自动化系统！按数字键或点击卡片进入工况中枢。"
         self.toast_time = time.time() + 4.5
@@ -455,39 +455,6 @@ class GuiLauncherApp:
         # 系统状态缓存
         self.system_status = {}
         self.refresh_system_status()
-
-    # ---- 视口属性委托 GuiWindowManager 单源 (renderer 全部经此读写) ----
-    @property
-    def scale_pct(self) -> int:
-        return self.win_mgr.scale_pct
-
-    @scale_pct.setter
-    def scale_pct(self, value: int):
-        self.win_mgr.scale_pct = value
-
-    @property
-    def canvas_w(self) -> int:
-        return self.win_mgr.canvas_w
-
-    @canvas_w.setter
-    def canvas_w(self, value: int):
-        self.win_mgr.canvas_w = value
-
-    @property
-    def canvas_h(self) -> int:
-        return self.win_mgr.canvas_h
-
-    @canvas_h.setter
-    def canvas_h(self, value: int):
-        self.win_mgr.canvas_h = value
-
-    @property
-    def _force_ctrl_pressed(self) -> bool:
-        return self.win_mgr._force_ctrl_pressed
-
-    @_force_ctrl_pressed.setter
-    def _force_ctrl_pressed(self, value: bool):
-        self.win_mgr._force_ctrl_pressed = value
 
     def _save_settings(self):
         """持久化保存当前缩放比例与窗口尺寸 (委托 GuiWindowManager, 支持多应用隔离)"""
@@ -578,7 +545,7 @@ class GuiLauncherApp:
 
         # ── 1.5 嵌入式终端滚轮回看 (普通滚轮 + 终端视图 + 鼠标在右侧大屏内) ──────
         if event == cv2.EVENT_MOUSEWHEEL and not handled and self._is_terminal_view():
-            s = self.scale_pct / 100.0
+            s = self.win_mgr.scale_pct / 100.0
             CW = max(130, int(222 * s))
             SX = max(6, int(12 * s))
             X0 = max(8, int(15 * s))
@@ -594,13 +561,13 @@ class GuiLauncherApp:
         card_idx = self._hit_test_cards(x, y)
         self.hover_tool_idx = card_idx
 
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         # 鼠标左键点击
         if event == cv2.EVENT_LBUTTONDOWN:
             # 顶部右上角退出按钮 (自适应右对齐，纯“退出”)
             bw = max(60, int(80 * s))
             bh = max(24, int(34 * s))
-            bx = self.canvas_w - bw - max(8, int(15 * s))
+            bx = self.win_mgr.canvas_w - bw - max(8, int(15 * s))
             by = max(6, int(10 * s))
             if bx <= x <= bx + bw and by <= y <= by + bh:
                 self._running = False
@@ -697,7 +664,7 @@ class GuiLauncherApp:
 
         # ── 检测 Ctrl 键状态 (全面兼容 Windows 各种键盘布局与笔记本) ────────────
         ctrl_held = False
-        if getattr(self, "_force_ctrl_pressed", False):
+        if getattr(self.win_mgr, "_force_ctrl_pressed", False):
             ctrl_held = True
         elif sys.platform == "win32":
             try:
@@ -755,7 +722,7 @@ class GuiLauncherApp:
           rows 1-3  B 标定建图与生产验证流水线 (5张: 2+2+1, idx 1~5)
           rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 6~12)
         """
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         LH = max(14, int(20 * s))
         CH = max(40, int(70 * s))
         CW = max(130, int(222 * s))
@@ -890,7 +857,7 @@ class GuiLauncherApp:
 
     def _render_terminal_panel(self, canvas: np.ndarray, tool: ToolCardMeta, split_x: int):
         """右侧大屏终端视图: 标题栏 (状态灯 + 标题 + 停止/返回按钮) + 终端本体 + 状态行"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         top_h = max(36, int(54 * s))
         header_h = max(36, int(46 * s))
         panel = self.terminals.get(tool.key_id)
@@ -898,7 +865,7 @@ class GuiLauncherApp:
             return
 
         # 标题栏底色与状态灯 (绿=运行中/已成功, 红=失败/已停止)
-        cv2.rectangle(canvas, (split_x, top_h), (self.canvas_w, top_h + header_h), (17, 20, 26), -1)
+        cv2.rectangle(canvas, (split_x, top_h), (self.win_mgr.canvas_w, top_h + header_h), (17, 20, 26), -1)
         dot_col = (90, 210, 120) if panel.status_ok() else (80, 80, 240)
         dot_x = split_x + max(8, int(16 * s))
         dot_cy = top_h + header_h // 2
@@ -940,9 +907,9 @@ class GuiLauncherApp:
 
     def _render_canvas(self) -> np.ndarray:
         """渲染完整画布 (在当前窗口实际物理分辨率下进行真·矢量绘制，无任何位图拉伸与锯齿)"""
-        canvas = np.full((self.canvas_h, self.canvas_w, 3), self.COLOR_BG, dtype=np.uint8)
+        canvas = np.full((self.win_mgr.canvas_h, self.win_mgr.canvas_w, 3), self.COLOR_BG, dtype=np.uint8)
 
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         CW = max(130, int(222 * s))
         SX = max(6, int(12 * s))
         X0 = max(8, int(15 * s))
@@ -955,7 +922,7 @@ class GuiLauncherApp:
         # 2. 中间主分割线
         top_h = max(36, int(54 * s))
         footer_h = max(34, int(50 * s))
-        cv2.line(canvas, (split_x, top_h), (split_x, self.canvas_h - footer_h), self.COLOR_BORDER, 1)
+        cv2.line(canvas, (split_x, top_h), (split_x, self.win_mgr.canvas_h - footer_h), self.COLOR_BORDER, 1)
 
         # 3. 左侧工具网格区
         self._render_tools_grid(canvas)
@@ -981,10 +948,10 @@ class GuiLauncherApp:
 
     def _render_top_bar(self, canvas: np.ndarray):
         """渲染顶部全局标题 (纯净极简，无当前工况胶囊)"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         top_h = max(36, int(54 * s))
-        cv2.rectangle(canvas, (0, 0), (self.canvas_w, top_h), (17, 20, 26), -1)
-        cv2.line(canvas, (0, top_h), (self.canvas_w, top_h), self.COLOR_BORDER, 1)
+        cv2.rectangle(canvas, (0, 0), (self.win_mgr.canvas_w, top_h), (17, 20, 26), -1)
+        cv2.line(canvas, (0, top_h), (self.win_mgr.canvas_w, top_h), self.COLOR_BORDER, 1)
 
         # 标题与微光状态灯
         c_x, c_y = max(12, int(24 * s)), top_h // 2
@@ -998,7 +965,7 @@ class GuiLauncherApp:
         # 右上角退出按钮 (自适应靠右，纯“退出”两字)
         bw = max(60, int(80 * s))
         bh = max(24, int(34 * s))
-        bx = self.canvas_w - bw - max(8, int(15 * s))
+        bx = self.win_mgr.canvas_w - bw - max(8, int(15 * s))
         by = max(6, int(10 * s))
 
         is_hover_exit = (bx <= self.mouse_x <= bx + bw and by <= self.mouse_y <= by + bh)
@@ -1015,7 +982,7 @@ class GuiLauncherApp:
 
     def _render_tools_grid(self, canvas: np.ndarray):
         """渲染左侧工具卡片网格 (真矢量自适应缩放，无杂乱左侧竖线)"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         LH = max(14, int(20 * s))
         CW = max(130, int(222 * s))
         SX = max(6, int(12 * s))
@@ -1099,11 +1066,11 @@ class GuiLauncherApp:
 
     def _render_inspector_panel(self, canvas: np.ndarray, tool: ToolCardMeta, split_x: int):
         """渲染右侧动态即时说明大屏 (自适应全宽与全高，1:1 矢量清晰无模糊，全文本自适应折行)"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         px = split_x + max(8, int(15 * s))
         py = max(40, int(66 * s))
-        pw = max(int(360 * s), self.canvas_w - px - max(10, int(20 * s)))
-        ph = max(int(450 * s), self.canvas_h - max(30, int(50 * s)) - py - max(8, int(15 * s)))
+        pw = max(int(360 * s), self.win_mgr.canvas_w - px - max(10, int(20 * s)))
+        ph = max(int(450 * s), self.win_mgr.canvas_h - max(30, int(50 * s)) - py - max(8, int(15 * s)))
 
         # 大屏底板
         cv2.rectangle(canvas, (px, py), (px + pw, py + ph), (18, 22, 28), -1)
@@ -1205,11 +1172,11 @@ class GuiLauncherApp:
 
     def _render_default_overview_panel(self, canvas: np.ndarray, split_x: int):
         """当焦点未在任何工具卡片上时，在右侧渲染系统环境、库依赖与硬件健康状态大屏总览"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         px = split_x + max(8, int(15 * s))
         py = max(40, int(66 * s))
-        pw = max(int(360 * s), self.canvas_w - px - max(10, int(20 * s)))
-        ph = max(int(450 * s), self.canvas_h - max(30, int(50 * s)) - py - max(8, int(15 * s)))
+        pw = max(int(360 * s), self.win_mgr.canvas_w - px - max(10, int(20 * s)))
+        ph = max(int(450 * s), self.win_mgr.canvas_h - max(30, int(50 * s)) - py - max(8, int(15 * s)))
 
         # 大屏底板
         cv2.rectangle(canvas, (px, py), (px + pw, py + ph), (18, 22, 28), -1)
@@ -1337,31 +1304,31 @@ class GuiLauncherApp:
 
     def _render_footer(self, canvas: np.ndarray):
         """渲染底部状态反馈与快捷键指引栏 (自适应贴底)"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         footer_h = max(34, int(50 * s))
-        fy = self.canvas_h - footer_h
-        cv2.rectangle(canvas, (0, fy), (self.canvas_w, self.canvas_h), (13, 15, 19), -1)
-        cv2.line(canvas, (0, fy), (self.canvas_w, fy), self.COLOR_BORDER, 1)
+        fy = self.win_mgr.canvas_h - footer_h
+        cv2.rectangle(canvas, (0, fy), (self.win_mgr.canvas_w, self.win_mgr.canvas_h), (13, 15, 19), -1)
+        cv2.line(canvas, (0, fy), (self.win_mgr.canvas_w, fy), self.COLOR_BORDER, 1)
 
         # 右侧公司/版权标识 (右对齐)
         f_size = max(9, int(13 * s))
         corp_text = "山东卷积分公司 · 2026 年 9 月"
         text_w = max(200, int(360 * s))
-        text_x = max(int(500 * s), self.canvas_w - text_w)
+        text_x = max(int(500 * s), self.win_mgr.canvas_w - text_w)
         draw_text(canvas, corp_text, (text_x, fy + max(10, int(16 * s))),
                   font_size=f_size, color=self.COLOR_TEXT_MUTED)
 
     def _render_suspended_modal(self, canvas: np.ndarray, tool: ToolCardMeta):
         """当子工具/控制台在前台运行时，将主界面整体冷黑深度暗化并呈现挂起模态提示框"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
 
         # 1. 全局画面深度暗化 (降至 ~20% 亮度，呈现沉静只读休眠态)
         canvas[:] = (canvas.astype(np.float32) * 0.20).astype(np.uint8)
 
         # 2. 居中模态卡片几何尺寸
-        cx, cy = self.canvas_w // 2, self.canvas_h // 2
-        mw = max(int(460 * s), min(int(650 * s), self.canvas_w - 40))
-        mh = max(int(170 * s), min(int(230 * s), self.canvas_h - 40))
+        cx, cy = self.win_mgr.canvas_w // 2, self.win_mgr.canvas_h // 2
+        mw = max(int(460 * s), min(int(650 * s), self.win_mgr.canvas_w - 40))
+        mh = max(int(170 * s), min(int(230 * s), self.win_mgr.canvas_h - 40))
         x1 = cx - mw // 2
         y1 = cy - mh // 2
         x2 = x1 + mw

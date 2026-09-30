@@ -43,7 +43,7 @@ def _parse_anchor_entry(entry: Any) -> Optional[Dict[str, Any]]:
     """
     if not isinstance(entry, dict):
         return None
-    xyz = entry.get("xyz_mm") or entry.get("coords") or entry.get("position_mm")
+    xyz = entry.get("xyz_mm")
     if xyz is None or not isinstance(xyz, (list, tuple)) or len(xyz) != 3:
         return None
 

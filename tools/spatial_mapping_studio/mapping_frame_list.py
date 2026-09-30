@@ -49,19 +49,19 @@ class MappingFrameListMixin:
         dd2_x2 = dd2_x1 + dd2_w
 
         # 筛选范围下拉框
-        cur_filter_label = dict(FILTER_MODE_OPTIONS).get(app.filter_mode, "全部帧")
+        cur_filter_label = dict(FILTER_MODE_OPTIONS).get(app.data_mgr.filter_mode, "全部帧")
         is_f_open = (app.active_dropdown == "FILTER_DROPDOWN")
         draw_dropdown_button(canvas, (dd1_x1, dd_y1, dd1_x2, dd_y2), cur_filter_label,
                              is_open=is_f_open, mouse_pos=app.mouse_pos)
         app.dropdown_boxes["FILTER_DROPDOWN"] = {
             "rect": (dd1_x1, dd_y1, dd1_x2, dd_y2),
             "options": FILTER_MODE_OPTIONS,
-            "active_key": app.filter_mode
+            "active_key": app.data_mgr.filter_mode
         }
         app.gui_buttons.append(("TOGGLE_FILTER_DROPDOWN", (dd1_x1, dd_y1, dd1_x2, dd_y2), "FILTER_DROPDOWN"))
 
         # 排序方式下拉框
-        cur_sort_label = dict(SORT_MODE_OPTIONS).get(app.sort_mode, "文件名升序")
+        cur_sort_label = dict(SORT_MODE_OPTIONS).get(app.data_mgr.sort_mode, "文件名升序")
         short_sort = cur_sort_label.split(" ")[0] if "(" in cur_sort_label else cur_sort_label
         is_s_open = (app.active_dropdown == "SORT_DROPDOWN")
         draw_dropdown_button(canvas, (dd2_x1, dd_y1, dd2_x2, dd_y2), short_sort,
@@ -69,7 +69,7 @@ class MappingFrameListMixin:
         app.dropdown_boxes["SORT_DROPDOWN"] = {
             "rect": (dd2_x1, dd_y1, dd2_x2, dd_y2),
             "options": SORT_MODE_OPTIONS,
-            "active_key": app.sort_mode
+            "active_key": app.data_mgr.sort_mode
         }
         app.gui_buttons.append(("TOGGLE_SORT_DROPDOWN", (dd2_x1, dd_y1, dd2_x2, dd_y2), "SORT_DROPDOWN"))
 
@@ -80,16 +80,16 @@ class MappingFrameListMixin:
                            mouse_pos=app.mouse_pos, btn_type=btn_type)
         app.gui_buttons.append(("TOGGLE_MATRIX_VIEW", (btn_x1, dd_y1, btn_x2, dd_y2), "TOGGLE_MATRIX_VIEW"))
 
-        filtered_indices = app._get_filtered_indices()
+        filtered_indices = app.data_mgr.get_filtered_indices()
         if not filtered_indices:
             put_text(canvas, "当前筛选条件下无图像", (x + 60, y + header_h + 45),
                      cv2.FONT_HERSHEY_SIMPLEX, 0.44, (120, 120, 120), 1, cv2.LINE_AA)
             return
 
         # 2. 列表内容区布局与渲染 (统一接入 ScrollableListBox 工业级组件)
-        app.frame_list_box.scroll_offset = app.scroll_offset
+        app.frame_list_box.scroll_offset = app.data_mgr.scroll_offset
         try:
-            cur_sel_idx = filtered_indices.index(app.current_img_idx)
+            cur_sel_idx = filtered_indices.index(app.data_mgr.current_img_idx)
         except ValueError:
             cur_sel_idx = -1
         app.frame_list_box.selected_index = cur_sel_idx
@@ -129,9 +129,9 @@ class MappingFrameListMixin:
             def _draw_matrix_row(cvs, rect, orig_img_idx, idx, is_hover, is_selected):
                 rx1, ry1, rw, rh = rect
                 rx2, ry2 = rx1 + rw, ry1 + rh
-                p = app.image_files[orig_img_idx]
+                p = app.data_mgr.image_files[orig_img_idx]
                 bname = os.path.basename(p)
-                meta = app.frame_metrics_cache.get(bname, {})
+                meta = app.data_mgr.frame_metrics_cache.get(bname, {})
 
                 btn_id = f"SELECT_FRAME_{orig_img_idx}"
                 app.gui_buttons.append((btn_id, (rx1, ry1, rx2, ry2), orig_img_idx))
@@ -195,7 +195,7 @@ class MappingFrameListMixin:
                 mouse_pos=app.mouse_pos,
                 empty_text="暂无匹配帧",
             )
-            app.scroll_offset = app.frame_list_box.scroll_offset
+            app.data_mgr.scroll_offset = app.frame_list_box.scroll_offset
 
         else:
             # ==================== 【模式 B: 高信息密度垂直紧凑帧列表】 ====================
@@ -207,9 +207,9 @@ class MappingFrameListMixin:
             def _draw_compact_frame(cvs, rect, orig_img_idx, idx, is_hover, is_selected):
                 rx1, ry1, rw, rh = rect
                 rx2, ry2 = rx1 + rw, ry1 + rh
-                p = app.image_files[orig_img_idx]
+                p = app.data_mgr.image_files[orig_img_idx]
                 bname = os.path.basename(p)
-                meta = app.frame_metrics_cache.get(bname, {})
+                meta = app.data_mgr.frame_metrics_cache.get(bname, {})
 
                 btn_id = f"SELECT_FRAME_{orig_img_idx}"
                 app.gui_buttons.append((btn_id, (rx1, ry1, rx2, ry2), orig_img_idx))
@@ -229,9 +229,20 @@ class MappingFrameListMixin:
                 if is_excl:
                     put_text(cvs, "EXCL", (rx1 + 212, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 0, 240), 1, cv2.LINE_AA)
                 else:
-                    err_val = meta.get('mean_err', 0.0)
-                    err_str = f"{err_val:.2f}px"
-                    err_col = (0, 200, 255) if err_val > 0.5 else (0, 240, 100)
+                    if app.data_mgr.sort_mode == "tag_err_desc":
+                        tag_errors = meta.get("tag_errors", {})
+                        if tag_errors:
+                            max_tid = max(tag_errors.keys(), key=lambda t: tag_errors[t])
+                            err_val = float(tag_errors[max_tid])
+                            err_str = f"T{max_tid}:{err_val:.2f}px"
+                        else:
+                            err_val = 0.0
+                            err_str = "0.00px"
+                    else:
+                        err_val = meta.get('mean_err', 0.0)
+                        err_str = f"{err_val:.2f}px"
+
+                    err_col = (0, 100, 255) if err_val > 1.0 else ((0, 200, 255) if err_val > 0.5 else (0, 240, 100))
                     put_text(cvs, err_str, (rx1 + 212, dot_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.40, err_col, 1, cv2.LINE_AA)
 
             app.frame_list_box.item_height = 36
@@ -243,4 +254,4 @@ class MappingFrameListMixin:
                 mouse_pos=app.mouse_pos,
                 empty_text="暂无匹配帧",
             )
-            app.scroll_offset = app.frame_list_box.scroll_offset
+            app.data_mgr.scroll_offset = app.frame_list_box.scroll_offset

@@ -58,7 +58,7 @@ def format_conflict_pairs_report(conflict_pairs: List[Dict[str, Any]]) -> str:
         lines.append("")
         lines.append("🔍 【智能纠错线索分析】:")
         lines.append(f"  • 高疑故障源: {', '.join(suspects)}")
-        lines.append("  • 建议排查方向: 请优先核验上述高疑标靶在工位 anchor_tags.yaml 中的世界坐标录入，或检查现场标靶物理张贴间距是否与图纸存在严重偏差。")
+        lines.append("  • 建议排查方向: 请优先核验上述高疑标靶在工位 tag_whitelist.yaml 中的世界坐标录入，或检查现场标靶物理张贴间距是否与图纸存在严重偏差。")
 
     return "\n".join(lines)
 

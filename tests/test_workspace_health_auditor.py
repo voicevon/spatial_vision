@@ -45,41 +45,78 @@ class TestWorkspaceHealthAuditor(unittest.TestCase):
             yaml.dump(map_content, f)
 
         # 模拟 tag_whitelist.yaml 混入了幽灵标靶 20, 28, 29 和全空锚点
-        dirty_allowed = [0, 1, 3, 20, 28, 29]
-        dirty_anchors = {
+        dirty_tags = {
             0: {"xyz_mm": [0.0, 0.0, None]},
             1: {"xyz_mm": [0.0, 500.0, None]},
+            3: {"xyz_mm": [None, None, None]},  # 全空无效锚点
             20: {"xyz_mm": [0.0, 0.0, None]},   # 幽灵锚点
             28: {"xyz_mm": [None, None, 0.0]},  # 幽灵锚点
-            3: {"xyz_mm": [None, None, None]},  # 全空无效锚点
+            29: {},                              # 幽灵标靶
         }
-        save_workspace_tag_config(ws, allowed_ids=dirty_allowed, anchor_tags=dirty_anchors)
+        save_workspace_tag_config(ws, tags=dirty_tags)
 
         # 执行体检与自愈
         res = audit_workspace(ws, auto_fix=True)
 
-        self.assertIn(20, res["tags"]["ghost_allowed"])
-        self.assertIn(28, res["tags"]["ghost_allowed"])
-        self.assertIn(29, res["tags"]["ghost_allowed"])
+        self.assertIn(20, res["tags"]["ghost_tags"])
+        self.assertIn(28, res["tags"]["ghost_tags"])
+        self.assertIn(29, res["tags"]["ghost_tags"])
         self.assertTrue(len(res["actions_taken"]) > 0)
 
         # 核验证盘文件已完成自愈
         clean_cfg = load_workspace_tag_config(ws.workspace_dir)
-        self.assertEqual(clean_cfg["allowed_ids"], [0, 1, 3])
-        self.assertEqual(sorted(list(clean_cfg["anchor_tags"].keys())), [0, 1])
+        self.assertEqual(sorted(list(clean_cfg["tags"].keys())), [0, 1, 3])
+        # 0 与 1 是锚点，3 的无效全空坐标已被移除
+        self.assertIn("xyz_mm", clean_cfg["tags"][0])
+        self.assertIn("xyz_mm", clean_cfg["tags"][1])
+        self.assertNotIn("xyz_mm", clean_cfg["tags"][3])
+
+    def test_legacy_format_detection_and_healing(self):
+        """测试历史双轨格式 (allowed_ids / anchor_tags) 报错拦截与自愈升级"""
+        ws = self.wm.create_workspace(alias="测试历史格式工位")
+
+        # 手工写入旧格式 tag_whitelist.yaml
+        legacy_content = {
+            "workspace_id": ws.workspace_id,
+            "workspace_name": ws.name,
+            "allowed_ids": [0, 5, 12],
+            "anchor_tags": {
+                0: {"xyz_mm": [0, 0, None]}
+            }
+        }
+        with open(ws.whitelist_path, "w", encoding="utf-8") as f:
+            yaml.dump(legacy_content, f)
+
+        # 1. auto_fix=False 时必须坚决报告格式违规错误
+        res_check = audit_workspace(ws, auto_fix=False)
+        self.assertFalse(res_check["is_healthy"])
+        self.assertTrue(any("未合并的历史废弃字段" in w for w in res_check["warnings"]))
+
+        # 2. auto_fix=True 时自动自愈并物理写穿为 tags 单一真理源
+        res_heal = audit_workspace(ws, auto_fix=True)
+        self.assertTrue(any("原子化重构为 tags 单一真理源" in a for a in res_heal["actions_taken"]))
+
+        # 验证物理文件内容已完全升级
+        with open(ws.whitelist_path, "r", encoding="utf-8") as f:
+            upgraded_doc = yaml.safe_load(f)
+        self.assertIn("tags", upgraded_doc)
+        self.assertNotIn("allowed_ids", upgraded_doc)
+        self.assertNotIn("anchor_tags", upgraded_doc)
+        self.assertEqual(sorted(list(upgraded_doc["tags"].keys())), [0, 5, 12])
+        self.assertEqual(upgraded_doc["tags"][0]["xyz_mm"], [0.0, 0.0, None])
 
     def test_protect_uncalibrated_workspace_whitelist(self):
         """测试未建图工位（准备期）不会被误删预设白名单"""
         ws = self.wm.create_workspace(alias="未建图准备工位")
-        preset_allowed = [5, 6, 7, 8, 11]
-        save_workspace_tag_config(ws, allowed_ids=preset_allowed)
+        preset_tags = {5: {}, 6: {}, 7: {}, 8: {}, 11: {}}
+        save_workspace_tag_config(ws, tags=preset_tags)
 
         res = audit_workspace(ws, auto_fix=True)
 
         # 没有 tags_map.yaml，不触发幽灵剔除
-        self.assertEqual(res["tags"]["ghost_allowed"], [])
+        self.assertEqual(res["tags"]["ghost_tags"], [])
         clean_cfg = load_workspace_tag_config(ws.workspace_dir)
-        self.assertEqual(clean_cfg["allowed_ids"], preset_allowed)
+        self.assertEqual(sorted(list(clean_cfg["tags"].keys())), [5, 6, 7, 8, 11])
 
     def test_audit_all_workspaces_and_report_generation(self):
         """测试全工位体检并生成 temp/ 目录 Markdown 报告"""
@@ -89,7 +126,7 @@ class TestWorkspaceHealthAuditor(unittest.TestCase):
         # 模拟工位A有 tags_map，且有多余幽灵标靶
         with open(ws1.map_path, "w", encoding="utf-8") as f:
             yaml.dump({"tags": {"0": {}, "1": {}}}, f)
-        save_workspace_tag_config(ws1, allowed_ids=[0, 1, 99])
+        save_workspace_tag_config(ws1, tags={0: {}, 1: {}, 99: {}})
 
         res_all = audit_all_workspaces(self.wm, auto_fix=True)
 
@@ -110,7 +147,7 @@ class TestWorkspaceHealthAuditor(unittest.TestCase):
         ws = self.wm.create_workspace(alias="测试输出端非法标靶清除工位")
 
         # 白名单仅放行 5, 6, 7, 8
-        save_workspace_tag_config(ws, allowed_ids=[5, 6, 7, 8])
+        save_workspace_tag_config(ws, tags={5: {}, 6: {}, 7: {}, 8: {}})
 
         # tags_map.yaml 却混入了未放行的非法标靶 27 与 99
         map_content = {

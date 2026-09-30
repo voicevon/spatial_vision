@@ -64,10 +64,6 @@ class Workspace:
         """【工位核心资产】本工位合法 AprilTag 白名单文件"""
         return os.path.join(self.workspace_dir, "tag_whitelist.yaml")
 
-    @property
-    def anchor_path(self) -> str:
-        """【方案 B 统一真理源】工位标靶世界锚点与物理白名单统一收敛至 tag_whitelist.yaml"""
-        return self.whitelist_path
 
     @property
     def spatial_scene_path(self) -> str:
@@ -385,13 +381,13 @@ class WorkspaceManager:
                 except Exception:
                     pass
 
+            tags_dict = {int(tid): {} for tid in ws.valid_tag_ids} if (ws and ws.valid_tag_ids) else {}
             default_config = {
                 "workspace_id": workspace_id,
                 "workspace_name": ws.name if ws else workspace_id,
-                "tag_default_size_mm": default_marker_size,
-                "allowed_ids": ws.valid_tag_ids if (ws and ws.valid_tag_ids) else [],
-                "description": f"Workspace {ws.name if ws else workspace_id} 标靶白名单配置",
-                "notes": "工位物理白名单恒启用 (名单内容即行为): tag_default_size_mm 标靶物理边长为几何反投影唯一物理尺度基准；allowed_ids 非空时仅放行名单内标靶",
+                "tag_default_size_mm": default_marker_size or 40.0,
+                "tags": tags_dict,
+                "notes": "工位物理标靶单一真理源 (Tag 准入与世界锚点原子化统一定义): tags 字典留空 = 探索模式放行所有检测标靶；非空时仅放行字典内标靶",
             }
             try:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -415,19 +411,20 @@ class WorkspaceManager:
 
     def update_tag_anchor(self, workspace_id: str, tag_id: int, xyz: Optional[Any]) -> Tuple[bool, str]:
         """
-        更新或清除工位标靶配置中的物理坐标标注 (统一收敛至 anchor_tags)
-        - entry is None: 清除该 tag 的坐标标注
-        - entry: 字典 {"xyz_mm": [x, y, z], "known": [bool, bool, bool]} 或坐标列表 [x, y, z]
+        更新或清除工位标靶配置中的物理坐标标注 (统一收敛至 tags[tag_id]["xyz_mm"])
+        - xyz is None: 清除该 tag 的坐标标注 (保留 tag 本身放行，仅置空 xyz_mm)
+        - xyz: 字典 {"xyz_mm": [x, y, z], "known": [bool, bool, bool]} 或坐标列表 [x, y, z]
         """
         ws = self.get_workspace_by_id(workspace_id)
         if not ws:
             return False, f"未找到工位: {workspace_id}"
         cfg = load_workspace_tag_config(ws.workspace_dir)
-        anchors = cfg.get("anchor_tags", {})
+        tags = cfg.get("tags", {})
         tid_int = int(tag_id)
 
         if xyz is None:
-            anchors.pop(tid_int, None)
+            if tid_int in tags:
+                tags[tid_int].pop("xyz_mm", None)
             msg = f"已清除 Tag #{tid_int:02d} 的物理坐标标注。"
         else:
             raw_xyz = xyz.get("xyz_mm") if isinstance(xyz, dict) and "xyz_mm" in xyz else xyz
@@ -436,35 +433,39 @@ class WorkspaceManager:
             known_from_xyz = []
             for v in (raw_xyz or []):
                 if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
-                    xyz_f.append(0.0)
+                    xyz_f.append(None)
                     known_from_xyz.append(False)
                 else:
                     try:
                         xyz_f.append(float(v))
                         known_from_xyz.append(True)
                     except (TypeError, ValueError):
-                        xyz_f.append(0.0)
+                        xyz_f.append(None)
                         known_from_xyz.append(False)
 
             while len(xyz_f) < 3:
-                xyz_f.append(0.0)
+                xyz_f.append(None)
                 known_from_xyz.append(False)
             xyz_f = xyz_f[:3]
             known_from_xyz = known_from_xyz[:3]
 
             if isinstance(raw_k, (list, tuple)) and len(raw_k) == 3:
-                known_b = [bool(known_from_xyz[i] and raw_k[i]) for i in range(3)]
+                for i in range(3):
+                    if not raw_k[i]:
+                        xyz_f[i] = None
+
+            if tid_int not in tags:
+                tags[tid_int] = {}
+            if any(c is not None for c in xyz_f):
+                tags[tid_int]["xyz_mm"] = xyz_f
             else:
-                known_b = known_from_xyz
+                tags[tid_int].pop("xyz_mm", None)
 
-            anchors[tid_int] = {
-                "xyz_mm": xyz_f,
-                "known": known_b
-            }
-            n_k = sum(1 for b in known_b if b)
-            msg = f"已成功标注 Tag #{tid_int:02d} 坐标: ({xyz_f[0]:.1f}, {xyz_f[1]:.1f}, {xyz_f[2]:.1f}) mm ({n_k}/3 轴已知) 并自动放行"
+            n_k = sum(1 for c in xyz_f if c is not None)
+            coords_str = ", ".join(f"{c:.1f}" if c is not None else "null" for c in xyz_f)
+            msg = f"已成功标注 Tag #{tid_int:02d} 坐标: ({coords_str}) mm ({n_k}/3 轴已知) 并自动放行"
 
-        ok = save_workspace_tag_config(ws, anchor_tags=anchors)
+        ok = save_workspace_tag_config(ws, tags=tags)
         if ok:
             return True, msg
         return False, "保存工位标靶配置失败"
@@ -536,14 +537,14 @@ class WorkspaceManager:
         ws.ensure_directories()
         ws.save_meta()
 
-        # 生成初始白名单
+        # 生成初始白名单 (tags 字典单一真理源)
         with open(ws.whitelist_path, "w", encoding="utf-8") as f:
             yaml.dump({
                 "workspace_id": ws_id,
                 "workspace_name": display_name,
-                "allowed_ids": [],
-                "description": f"{display_name} Tag 白名单",
-                "notes": "工位物理白名单恒启用 (名单内容即行为): allowed_ids 非空时仅放行名单内标靶 (权威约束)；留空 = 探索模式放行所有检测标靶",
+                "tag_default_size_mm": 40.0,
+                "tags": {},
+                "notes": "工位物理标靶单一真理源 (Tag 准入与世界锚点原子化统一定义): tags 字典留空 = 探索模式放行所有检测标靶；非空时仅放行字典内标靶",
             }, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
         # 生成初始空间几何场景 (包含 world 绝对世界坐标系与空 rois 列表)
@@ -571,9 +572,6 @@ class WorkspaceManager:
             shutil.copy2(src_ws.map_path, new_ws.map_path)
         if os.path.exists(src_ws.whitelist_path):
             shutil.copy2(src_ws.whitelist_path, new_ws.whitelist_path)
-        # 1.1 拷贝工位世界坐标锚点 (沙盒资产随工位走)
-        if os.path.exists(src_ws.anchor_path):
-            shutil.copy2(src_ws.anchor_path, new_ws.anchor_path)
         # 1.2 拷贝工位空间几何场景资产 (spatial_scene.yaml)
         if os.path.exists(src_ws.spatial_scene_path):
             shutil.copy2(src_ws.spatial_scene_path, new_ws.spatial_scene_path)
@@ -642,27 +640,13 @@ class WorkspaceManager:
 
 def load_workspace_tag_whitelist(workspace_dir: str) -> List[int]:
     """
-    读取工位 tag_whitelist.yaml 的 allowed_ids (工位级物理白名单, 恒启用 — 名单内容即行为):
-    - allowed_ids 非空 → 返回名单 (该工位检测过滤的权威约束, 覆盖自动反推的 valid_tag_ids)
-    - allowed_ids 为空/文件缺失/解析失败 → 返回 [] (探索模式: 不加额外过滤, 由全局 valid_tag_ids 兜底)
-    兼容旧格式: 旧文件的 enabled 字段已废弃, 读取时忽略
+    读取工位 tag_whitelist.yaml 的放行标靶 (工位级物理白名单, 恒启用 — 名单内容即行为):
+    - tags 非空 → 返回 sorted(tags.keys()) (该工位检测过滤的权威约束)
+    - tags 为空/文件缺失/解析失败 → 返回 [] (探索模式: 不加额外过滤)
     """
-    path = os.path.join(workspace_dir, "tag_whitelist.yaml")
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-    except Exception as e:
-        log.warning(f"[WS] 解析工位白名单失败 ({path}): {e}")
-        return []
-
-    try:
-        ids = data.get("allowed_ids") or []
-        return sorted({int(x) for x in ids})
-    except (ValueError, TypeError) as e:
-        log.warning(f"[WS] 工位白名单含非法 ID, 已忽略该文件 ({path}): {e}")
-        return []
+    cfg = load_workspace_tag_config(workspace_dir)
+    tags = cfg.get("tags") or {}
+    return sorted(list(tags.keys()))
 
 
 def load_workspace_marker_size_mm(workspace_dir: str) -> Optional[float]:
@@ -718,18 +702,16 @@ def load_workspace_marker_size_mm(workspace_dir: str) -> Optional[float]:
 
 def load_workspace_tag_config(workspace_dir: str) -> Dict[str, Any]:
     """
-    【方案 B 统一真理源】加载工位标靶综合先验配置 (收敛于 tag_whitelist.yaml):
+    【单一真理源】加载工位标靶综合先验配置 (收敛于 tag_whitelist.yaml.tags):
     - 返回标准 Schema 字典:
       {
           "workspace_id": str,
           "workspace_name": str,
           "tag_default_size_mm": float,
-          "allowed_ids": List[int],
-          "anchor_tags": Dict[int, Dict[str, Any]],
+          "tags": Dict[int, Dict[str, Any]],
           "notes": str,
       }
     """
-    from src.utils.config_guard import parse_anchor_mapping
     ws_id = os.path.basename(os.path.normpath(workspace_dir))
     wl_path = os.path.join(workspace_dir, "tag_whitelist.yaml")
 
@@ -741,58 +723,37 @@ def load_workspace_tag_config(workspace_dir: str) -> Dict[str, Any]:
         except Exception as e:
             log.warning(f"[WS] 读取 tag_whitelist.yaml 异常 ({wl_path}): {e}")
 
-    # 1. 提取准入白名单 (去重、排序纯整型)
-    raw_allowed = wl_data.get("allowed_ids") or []
-    allowed_ids = []
-    if isinstance(raw_allowed, (list, tuple, set)):
-        for x in raw_allowed:
+    clean_tags: Dict[int, Dict[str, Any]] = {}
+
+    if "tags" in wl_data and isinstance(wl_data["tags"], dict):
+        # 1. 最新标准 Schema: 单一真理源 tags 字典
+        for k, v in wl_data["tags"].items():
             try:
-                allowed_ids.append(int(x))
+                tid = int(k)
+                if not isinstance(v, dict):
+                    v = {}
+                clean_item = {}
+                raw_xyz = v.get("xyz_mm") or v.get("coords") or v.get("position_mm")
+                if raw_xyz is not None and isinstance(raw_xyz, (list, tuple)):
+                    xyz_f = []
+                    for val in raw_xyz[:3]:
+                        if val is None or (isinstance(val, str) and val.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+                            xyz_f.append(None)
+                        else:
+                            try:
+                                xyz_f.append(round(float(val), 4))
+                            except (ValueError, TypeError):
+                                xyz_f.append(None)
+                    while len(xyz_f) < 3:
+                        xyz_f.append(None)
+                    if any(c is not None for c in xyz_f):
+                        clean_item["xyz_mm"] = xyz_f
+                clean_tags[tid] = clean_item
             except (ValueError, TypeError):
                 continue
-    allowed_ids = sorted(set(allowed_ids))
 
-    # 2. 提取物理锚点真值 (单一真理源 anchor_tags)
-    raw_anchors = wl_data.get("anchor_tags") or {}
-    anchor_tags_map = parse_anchor_mapping(raw_anchors) if raw_anchors else {}
 
-    # 3. 严格清洗标靶数据，剔除任何非法杂质 (如 frame_id 等)
-    clean_anchors: Dict[int, Dict[str, Any]] = {}
-    if anchor_tags_map:
-        for tid, a in anchor_tags_map.items():
-            try:
-                t_int = int(tid)
-                raw_xyz = a.get("xyz_mm", [0.0, 0.0, 0.0])[:3]
-                raw_k = a.get("known", [True, True, True])
-                xyz = []
-                known_b = []
-                for i in range(3):
-                    v = raw_xyz[i] if i < len(raw_xyz) else 0.0
-                    k = raw_k[i] if i < len(raw_k) else True
-                    if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
-                        xyz.append(0.0)
-                        known_b.append(False)
-                    else:
-                        xyz.append(round(float(v), 4))
-                        known_b.append(bool(k))
-                if not any(known_b):
-                    continue
-                clean_anchors[t_int] = {
-                    "xyz_mm": xyz,
-                    "known": known_b,
-                }
-            except Exception:
-                continue
-
-    # 4. 自动协同: 若锚点有物理约束，确保自动收录进 allowed_ids
-    if clean_anchors:
-        allowed_set = set(allowed_ids)
-        for tid, a in clean_anchors.items():
-            if any(a.get("known", [])):
-                allowed_set.add(tid)
-        allowed_ids = sorted(list(allowed_set))
-
-    # 5. 标靶边长解析
+    # 3. 标靶边长解析
     size_val = wl_data.get("tag_default_size_mm")
     if size_val is not None:
         try:
@@ -806,102 +767,70 @@ def load_workspace_tag_config(workspace_dir: str) -> Dict[str, Any]:
         "workspace_id": wl_data.get("workspace_id", ws_id),
         "workspace_name": wl_data.get("workspace_name", ws_id),
         "tag_default_size_mm": size_val,
-        "allowed_ids": allowed_ids,
-        "anchor_tags": clean_anchors,
-        "notes": "工位物理白名单与世界锚点配置 (方案 B 单一真理源, 恒启用)"
+        "tags": clean_tags,
+        "notes": "工位物理标靶单一真理源 (Tag 准入与世界锚点原子化统一定义)"
     }
 
 
 def save_workspace_tag_config(
     workspace: Workspace,
-    allowed_ids: Optional[List[int]] = None,
-    anchor_tags: Optional[Dict[int, Dict[str, Any]]] = None,
+    tags: Optional[Dict[int, Dict[str, Any]]] = None,
     tag_default_size_mm: Optional[float] = None
 ) -> bool:
     """
-    【方案 B 唯一序列化出口】写穿工位标靶配置 (tag_whitelist.yaml):
-    - 严格 Schema 白名单清洗，彻底杜绝任何垃圾字段 (如 frame_id, tag_anchors, tuple 等);
-    - 未知轴在 YAML 中原生支持并格式化为标准 null (跨语言/跨平台无歧义);
-    - 自动确保有物理约束的 anchor_tag 被纳入 allowed_ids;
-    - 物理自愈垃圾清除: 彻底删除孤立的旧 anchor_tags.yaml，保证工位内只有唯一的 tag_whitelist.yaml。
+    【统一真理源唯一序列化出口】写穿工位标靶配置 (tag_whitelist.yaml):
+    - 严格且仅输出 tags 单源字典，绝不接受 allowed_ids / anchor_tags 废弃胶水参数;
+    - 未知轴在 YAML 中原生格式化为标准 null (跨语言/跨平台无歧义);
+    - 物理自愈垃圾清除: 彻底删除孤立的旧 anchor_tags.yaml。
     """
     path = workspace.whitelist_path
     curr = load_workspace_tag_config(workspace.workspace_dir)
 
-    if allowed_ids is not None:
-        clean_allowed = set()
-        for x in allowed_ids:
-            try:
-                clean_allowed.add(int(x))
-            except (ValueError, TypeError):
-                continue
-        curr["allowed_ids"] = sorted(clean_allowed)
+    # 1. 确定最终生效的 tags
+    if tags is not None:
+        curr_tags = dict(tags)
+    else:
+        curr_tags = dict(curr.get("tags") or {})
 
-    if anchor_tags is not None:
-        clean_anchors = {}
-        for tid, a in anchor_tags.items():
-            try:
-                t_int = int(tid)
-                raw_xyz = (a.get("xyz_mm") or a.get("coords") or a.get("position_mm", [0, 0, 0]))[:3]
-                raw_k = a.get("known", [True, True, True])
-                xyz_f = []
-                known_b = []
-                for i in range(3):
-                    v = raw_xyz[i] if i < len(raw_xyz) else 0.0
-                    k = raw_k[i] if i < len(raw_k) else True
-                    if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
-                        xyz_f.append(0.0)
-                        known_b.append(False)
-                    else:
-                        xyz_f.append(round(float(v), 4))
-                        known_b.append(bool(k))
-                if not any(known_b):
-                    continue
-                clean_anchors[t_int] = {
-                    "xyz_mm": xyz_f,
-                    "known": known_b,
-                }
-            except Exception:
-                continue
-        curr["anchor_tags"] = clean_anchors
-
-    # 自动协同保证一致性
-    if curr.get("anchor_tags"):
-        allowed_set = set(curr.get("allowed_ids", []))
-        for tid, a in curr["anchor_tags"].items():
-            if any(a.get("known", [])):
-                allowed_set.add(tid)
-        curr["allowed_ids"] = sorted(list(allowed_set))
+    # 2. 清洗规范化 tags
+    clean_tags: Dict[int, Dict[str, Any]] = {}
+    for tid, tcfg in curr_tags.items():
+        try:
+            t_int = int(tid)
+            if not isinstance(tcfg, dict):
+                tcfg = {}
+            item = {}
+            xyz = tcfg.get("xyz_mm")
+            if xyz is not None and isinstance(xyz, (list, tuple)):
+                xyz_out = [
+                    round(float(c), 4) if (c is not None and str(c).strip().lower() not in ("null", "none", "~", "nan")) else None
+                    for c in xyz[:3]
+                ]
+                while len(xyz_out) < 3:
+                    xyz_out.append(None)
+                if any(c is not None for c in xyz_out):
+                    item["xyz_mm"] = xyz_out
+            clean_tags[t_int] = item
+        except (ValueError, TypeError):
+            continue
 
     if tag_default_size_mm is not None and tag_default_size_mm > 0:
         curr["tag_default_size_mm"] = float(round(tag_default_size_mm, 3))
 
-    # 序列化清洗: 将 unknown 轴映射为标准的 null (None), 彻底剔除冗余的 known 字段
-    yaml_anchors = {}
-    for tid, a in sorted(curr.get("anchor_tags", {}).items()):
-        k_b = a.get("known", [True, True, True])
-        raw_x = a.get("xyz_mm", [0.0, 0.0, 0.0])
-        yaml_anchors[tid] = {
-            "xyz_mm": [
-                round(float(raw_x[k]), 4) if (k_b[k] if k < len(k_b) else True) and raw_x[k] is not None else None
-                for k in range(3)
-            ]
-        }
-
+    # 3. 严格 Schema 序列化: 仅输出 tags 单一真理源
     clean_doc = {
         "workspace_id": workspace.workspace_id,
         "workspace_name": workspace.name or workspace.workspace_id,
         "tag_default_size_mm": curr["tag_default_size_mm"],
-        "allowed_ids": curr["allowed_ids"],
-        "anchor_tags": yaml_anchors,
-        "notes": "工位物理白名单与世界锚点配置 (方案 B 单一真理源, 恒启用)"
+        "tags": {k: clean_tags[k] for k in sorted(clean_tags.keys())},
+        "notes": "工位物理标靶单一真理源 (Tag 准入与世界锚点原子化统一定义)"
     }
 
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(clean_doc, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        log.info(f"[WS] 统一工位标靶配置已写穿: {path} (白名单 {len(curr['allowed_ids'])} 枚, 锚点 {len(curr['anchor_tags'])} 枚)")
+        log.info(f"[WS] 统一工位标靶配置已写穿: {path} (总标靶 {len(clean_tags)} 枚)")
     except Exception as e:
         log.error(f"[WS] 写穿工位标靶配置失败 ({path}): {e}")
         return False
@@ -911,7 +840,7 @@ def save_workspace_tag_config(
     if os.path.isfile(old_anchor_file):
         try:
             os.remove(old_anchor_file)
-            log.info(f"[WS] [方案 B 自愈] 已删除冗余独立锚点文件: {old_anchor_file}")
+            log.info(f"[WS] 已删除冗余独立锚点文件: {old_anchor_file}")
         except Exception as e:
             log.warning(f"[WS] 删除旧 anchor_tags.yaml 失败: {e}")
 
@@ -920,26 +849,35 @@ def save_workspace_tag_config(
 
 def load_workspace_anchor_tags(workspace_dir: str) -> Optional[Dict[int, Dict]]:
     """
-    【方案 B 统一真理源接口】读取工位世界坐标锚点 (收敛至 tag_whitelist.yaml):
-    - 文件存在 → {int tag_id: {"xyz_mm": [f3], "known": [b3]}} (空锚点返回空字典 {})
-    - 文件缺失 → None (调用方应回退全局锚点)
+    【统一真理源接口】读取工位世界坐标锚点 (收敛至 tag_whitelist.yaml 的 tags 字段):
+    - 文件存在 → 返回所有具备非空 xyz_mm 的锚点字典 {int tag_id: {"xyz_mm": [f3], "known": [b3]}}
+    - 若无任何锚点返回空字典 {}
+    - 若整个文件不存在返回 None
     """
     wl_path = os.path.join(workspace_dir, "tag_whitelist.yaml")
-    old_path = os.path.join(workspace_dir, "anchor_tags.yaml")
-    if not os.path.exists(wl_path) and not os.path.exists(old_path):
+    if not os.path.exists(wl_path):
         return None
+
     cfg = load_workspace_tag_config(workspace_dir)
-    return cfg.get("anchor_tags", {})
+    tags = cfg.get("tags") or {}
+    anchors = {}
+    for tid, tcfg in tags.items():
+        xyz = tcfg.get("xyz_mm")
+        if xyz is not None and isinstance(xyz, (list, tuple)):
+            xyz_f = [float(c) if c is not None else 0.0 for c in xyz[:3]]
+            known_b = [c is not None for c in xyz[:3]]
+            while len(xyz_f) < 3:
+                xyz_f.append(0.0)
+                known_b.append(False)
+            if any(known_b):
+                anchors[int(tid)] = {
+                    "xyz_mm": xyz_f[:3],
+                    "known": known_b[:3]
+                }
+    return anchors
 
 
-def save_workspace_anchor_tags(workspace: Workspace, anchors: Dict[int, Dict]) -> bool:
-    """【方案 B 统一真理源接口】写穿工位锚点 (委托至 save_workspace_tag_config)"""
-    return save_workspace_tag_config(workspace, anchor_tags=anchors)
 
-
-def save_workspace_tag_whitelist(workspace: Workspace, allowed_ids: List[int]) -> bool:
-    """【方案 B 统一真理源接口】写穿工位白名单 (委托至 save_workspace_tag_config)"""
-    return save_workspace_tag_config(workspace, allowed_ids=allowed_ids)
 
 
 def load_workspace_coordinate_manager(workspace: Workspace) -> "CoordinateTreeManager":

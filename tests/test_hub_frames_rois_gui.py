@@ -53,7 +53,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         # 1. 验证 Hit Test 列表元素探测 (大盘中的“新增坐标系”与微观页签中的“+ 新增 3D ROI”)
         # -----------------------------------------------------------------
         state.set_tab(HubState.TAB_REPORT)
-        hit_add_frame = renderer.hit_test(WS_BTN_NEW_FRAME[0] + 10, WS_BTN_NEW_FRAME[1] + 10, state)
+        hit_add_frame = renderer.hit_tester.hit_test(WS_BTN_NEW_FRAME[0] + 10, WS_BTN_NEW_FRAME[1] + 10, state)
         self.assertEqual(hit_add_frame, "btn_add_frame")
 
         # 切换到微观坐标系下的 3D ROI 页签
@@ -61,7 +61,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         state.set_tab(HubState.TAB_FRAME_ROIS)
         self.assertEqual(state.active_tab, HubState.TAB_FRAME_ROIS)
 
-        hit_add_roi = renderer.hit_test(FRAME_ADD_ROI_BTN[0] + 10, FRAME_ADD_ROI_BTN[1] + 10, state)
+        hit_add_roi = renderer.hit_tester.hit_test(FRAME_ADD_ROI_BTN[0] + 10, FRAME_ADD_ROI_BTN[1] + 10, state)
         self.assertEqual(hit_add_roi, "btn_add_frame_roi")
 
         # -----------------------------------------------------------------
@@ -81,10 +81,10 @@ class TestHubFramesRoisGui(unittest.TestCase):
         state.geometry.frame_modal_data["rotation_rpy_deg"] = [0.0, 45.0, 0.0]
 
         # Hit test 校验弹窗内部控件命中
-        hit_close = renderer.hit_test(GEOM_MODAL_CLOSE[0] + 5, GEOM_MODAL_CLOSE[1] + 5, state)
+        hit_close = renderer.hit_tester.hit_test(GEOM_MODAL_CLOSE[0] + 5, GEOM_MODAL_CLOSE[1] + 5, state)
         self.assertEqual(hit_close, "frame_modal_close")
 
-        hit_save = renderer.hit_test(GEOM_MODAL_SAVE[0] + 10, GEOM_MODAL_SAVE[1] + 10, state)
+        hit_save = renderer.hit_tester.hit_test(GEOM_MODAL_SAVE[0] + 10, GEOM_MODAL_SAVE[1] + 10, state)
         self.assertEqual(hit_save, "frame_modal_save")
 
         # 保存弹窗
@@ -204,17 +204,17 @@ class TestHubFramesRoisGui(unittest.TestCase):
         state.geometry.open_frame_modal("frame_flange")
         parent_trigger_x = GEOM_MODAL_X + 125
         parent_trigger_y = GEOM_MODAL_Y + 56 + 80 + 10
-        hit_dd_toggle = renderer.hit_test(parent_trigger_x, parent_trigger_y, state)
+        hit_dd_toggle = renderer.hit_tester.hit_test(parent_trigger_x, parent_trigger_y, state)
         self.assertEqual(hit_dd_toggle, ("dropdown_toggle", "frame_parent"))
 
         state.geometry.active_dropdown = "frame_parent"
         canvas_dropdown = renderer.render(state)
         self.assertEqual(canvas_dropdown.shape, (720, 960, 3))
 
-        hit_dismiss = renderer.hit_test(10, 10, state)
+        hit_dismiss = renderer.hit_tester.hit_test(10, 10, state)
         self.assertEqual(hit_dismiss, "dropdown_dismiss")
 
-        hit_sel = renderer.hit_test(parent_trigger_x, GEOM_MODAL_Y + 56 + 80 + 28 + 10, state)
+        hit_sel = renderer.hit_tester.hit_test(parent_trigger_x, GEOM_MODAL_Y + 56 + 80 + 28 + 10, state)
         self.assertEqual(hit_sel, ("dropdown_select", "frame_parent", "world"))
         state.geometry.active_dropdown = None
 
@@ -255,16 +255,18 @@ class TestHubFramesRoisGui(unittest.TestCase):
         ok_tag, _ = app.state.whitelist.update_tag_anchor(5, {"xyz_mm": [12.5, -45.0, 100.0], "known": [True, True, True]})
         self.assertTrue(ok_tag)
         wl_data = app.state.whitelist.get_tag_whitelist()
-        self.assertIn(5, wl_data.get("allowed_ids", []))
-        self.assertEqual(wl_data.get("anchor_tags", {}).get(5), {
+        tags_data = wl_data.get("tags", {})
+        self.assertIn(5, tags_data)
+        self.assertEqual(tags_data.get(5), {
             "xyz_mm": [12.5, -45.0, 100.0]
         })
 
-        # 清除 Tag #05 坐标标注
+        # 清除 Tag #05 坐标标注 (保留白名单放行，但清除 xyz_mm 坐标)
         ok_clr, _ = app.state.whitelist.update_tag_anchor(5, None)
         self.assertTrue(ok_clr)
         wl_data_clr = app.state.whitelist.get_tag_whitelist()
-        self.assertNotIn(5, wl_data_clr.get("anchor_tags", {}))
+        self.assertIn(5, wl_data_clr.get("tags", {}))
+        self.assertNotIn("xyz_mm", wl_data_clr.get("tags", {}).get(5, {}))
 
         # 8.2 专用坐标编辑弹窗
         app.state.whitelist.open_anchor_editor(5)
@@ -328,7 +330,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
         # 1. 验证在绝对世界坐标系 (world) 下：不显示删除按钮，Hit-test 不命中
         state.select_tree_frame(0, "world")
         state.set_tab(HubState.TAB_FRAME_POSE_TAGS)
-        hit_world_del = renderer.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
+        hit_world_del = renderer.hit_tester.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
         self.assertNotEqual(hit_world_del, "btn_delete_frame")
 
         # 2. 创建子坐标系 frame_sub_1 及其下级子坐标系 frame_sub_child
@@ -368,7 +370,7 @@ class TestHubFramesRoisGui(unittest.TestCase):
 
         # 5. 选中 frame_sub_1，验证非世界坐标系下 Hit-test 能够命中 btn_delete_frame
         state.select_tree_frame(0, "frame_sub_1")
-        hit_sub_del = renderer.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
+        hit_sub_del = renderer.hit_tester.hit_test(FRAME_DELETE_BTN[0] + 5, FRAME_DELETE_BTN[1] + 5, state)
         self.assertEqual(hit_sub_del, "btn_delete_frame")
 
         # 6. 执行级联删除
@@ -386,11 +388,11 @@ class TestHubFramesRoisGui(unittest.TestCase):
         self.assertIsNotNone(child_frame)
         self.assertEqual(child_frame.parent_frame_id, "world")
 
-        # (c) 专属放行的 Tag 18, 19 已自动从工位白名单 allowed_ids 中回收清理
+        # (c) 专属放行的 Tag 18, 19 已自动从工位白名单 tags 中回收清理
         wl_after = state.whitelist.get_tag_whitelist()
-        allowed_ids_after = wl_after.get("allowed_ids", [])
-        self.assertNotIn(18, allowed_ids_after)
-        self.assertNotIn(19, allowed_ids_after)
+        tags_after = wl_after.get("tags", {})
+        self.assertNotIn(18, tags_after)
+        self.assertNotIn(19, tags_after)
 
         # (d) 依附于 frame_sub_1 的 3D ROI 空间物件已被级联清理
         rois_after = state.geometry.get_roi_spaces()

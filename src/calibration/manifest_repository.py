@@ -96,7 +96,7 @@ class ManifestRepository:
                 continue
 
             if self.builder is not None:
-                detected = self.builder.detect_tags(img)
+                detected = self.builder.tag_detector.detect_tags(img, refine=True)
             else:
                 detected = {}
 

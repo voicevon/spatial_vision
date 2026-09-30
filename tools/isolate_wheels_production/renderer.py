@@ -140,8 +140,8 @@ class ProductionRenderer:
 
         # 标题与副标
         draw_text(canvas, "flux_vision_3d | 分离轮 8 通道视觉生产工作台", (18, 12), font_size=16, color=COLOR_TEXT, bold=True)
-        dev_st = app.controller.get_device_state(app.selected_devid)
-        dev_tag = f"设备 [{app.selected_devid}]: {dev_st or '未知'}"
+        dev_st = app.controller.get_device_state(app.controller.selected_devid)
+        dev_tag = f"设备 [{app.controller.selected_devid}]: {dev_st or '未知'}"
         draw_text(canvas, f"AUTO ISOLATE WHEELS VISION PIPELINE | {dev_tag}", (18, 36), font_size=11, color=COLOR_SUB)
 
         # 步骤 1：工位选择下拉按钮
@@ -354,7 +354,7 @@ class ProductionRenderer:
 
     # ---------------- 弹窗浮层：工位选择下拉 ----------------
     def _draw_ws_popup(self, app, canvas: np.ndarray, mpos: Tuple[int, int]):
-        ws_list = app.workspace_list
+        ws_list = app.workspace_mgr.list_workspaces()
         pop_w = 200
         pop_h = max(40, len(ws_list) * 28 + 8)
         pop_x = 430

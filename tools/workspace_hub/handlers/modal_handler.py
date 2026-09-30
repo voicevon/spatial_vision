@@ -20,14 +20,8 @@ class ModalHandler:
 
     def __init__(self, app: Any):
         self.app = app
-
-    @property
-    def state(self):
-        return self.app.state
-
-    @property
-    def renderer(self):
-        return self.app.renderer
+        self.state = app.state
+        self.renderer = app.renderer
 
     def prompt_vector_axis(
         self,
@@ -90,7 +84,7 @@ class ModalHandler:
             self.state.set_toast(msg)
             return
         if point_in_rect(x, y, WL_ANCHOR_CANCEL):
-            ws.cancel_anchor_modal()
+            ws.close_anchor_modal()
             self.state.set_toast("已取消锚点编辑 (未保存)。")
             return
         if point_in_rect(x, y, WL_ANCHOR_DELETE):
@@ -134,7 +128,7 @@ class ModalHandler:
 
     def handle_frame_modal_click(self, x: int, y: int):
         """处理机构相对坐标系表单弹窗交互"""
-        hit = self.renderer.hit_test(x, y, self.state)
+        hit = self.renderer.hit_tester.hit_test(x, y, self.state)
         if not hit:
             return
 
@@ -288,7 +282,7 @@ class ModalHandler:
 
     def handle_roi_modal_click(self, x: int, y: int):
         """处理 3D ROI 空间物件表单弹窗交互"""
-        hit = self.renderer.hit_test(x, y, self.state)
+        hit = self.renderer.hit_tester.hit_test(x, y, self.state)
         if not hit:
             return
 

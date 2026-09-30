@@ -32,7 +32,7 @@ class MappingWorkflowMixin:
         if self.is_extracting_all:
             self.set_toast("全量超精提取已在后台运行中，请稍候...")
             return False
-        if self.is_ba_running:
+        if self.ba_runner.is_ba_running:
             self.set_toast("全局平差计算中，请待平差完成后再执行提取")
             return False
         if not self.image_files:
@@ -72,17 +72,17 @@ class MappingWorkflowMixin:
 
     def start_auto_prune_ba(self) -> bool:
         """启动全自动基于边际收益与共视拓扑守门的残差剪枝平差"""
-        if self.is_ba_running or self.is_extracting_all:
+        if self.ba_runner.is_ba_running or self.is_extracting_all:
             self.set_toast("后台任务正在计算中，请稍候...")
             return False
         # 联动质检视角: 自动将左侧图像序列切换为【残差降序 (最差优先 ↓)】并展开多轮残差矩阵视图
-        self.sort_mode = "err_desc"
+        self.data_mgr.sort_mode = "err_desc"
         self.matrix_view_mode = True
         self.left_bar_w = self.dynamic_left_bar_w
         res = self.ba_runner.start_auto_prune(max_rounds=10, min_improvement_px=0.01)
         if res:
             # 自动将主视口聚焦至残差最大、最亟待排查的首张图像
-            f_indices = self._get_filtered_indices()
+            f_indices = self.data_mgr.get_filtered_indices()
             if f_indices:
                 self.current_img_idx = f_indices[0]
         return res
@@ -103,17 +103,13 @@ class MappingWorkflowMixin:
         else:
             self.set_toast("未找到有效快照，撤销未执行")
 
-    def start_async_bundle_adjustment(self):
-        """启动后台线程执行两阶段全局 BA 平差优化，前台持续平滑响应"""
-        return self.ba_runner.start()
-
     def save_current_workspace_map(self):
         """将当前优化好的高精度几何地图原子保存至当前工位沙盒 (tags_map.yaml)"""
-        if not self.tags_map_data:
+        if not self.data_mgr.tags_map_data:
             self.set_toast("当前尚无有效地图，请先按 [B] 进行 BA 平差！")
             return
 
-        ManifestRepository.save_map(self.tags_map_data, self.map_path)
+        ManifestRepository.save_map(self.data_mgr.tags_map_data, self.map_path)
         ws_name = self.current_workspace.name if self.current_workspace else "当前工位"
         self.set_toast(f"地图已成功保存至【{ws_name}】工位沙盒 (tags_map.yaml)！")
         log.info(f"[SPATIAL_MAPPING] 地图已持久化至工位: {self.map_path}")
@@ -136,17 +132,17 @@ class MappingWorkflowMixin:
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write(f"# AprilTag 空间建图工作站全景精度质检单 (Spatial Mapping Studio)\n\n")
                 f.write(f"- **质检时间**: `{time.strftime('%Y-%m-%d %H:%M:%S')}`\n")
-                f.write(f"- **总采图集**: `{len(self.image_files)} 帧`\n")
-                f.write(f"- **全景 RMSE**: `{self.global_rmse:.3f} px`\n")
-                f.write(f"- **已知标靶数**: `{len(self.tags_map_data.get('tags', {}))} 个`\n")
+                f.write(f"- **总采图集**: `{len(self.data_mgr.image_files)} 帧`\n")
+                f.write(f"- **全景 RMSE**: `{self.data_mgr.global_rmse:.3f} px`\n")
+                f.write(f"- **已知标靶数**: `{len((self.data_mgr.tags_map_data or {}).get('tags', {}))} 个`\n")
                 f.write(f"- **空间地图**: `{self.map_path}`\n\n")
                 f.write(f"## 图像帧逐项质检明细\n\n")
                 f.write(f"| 图像帧 | 观测标靶数 | 平均残差 | 最大残差 | 状态 |\n")
                 f.write(f"| :--- | :---: | :---: | :---: | :---: |\n")
 
-                for p in self.image_files:
+                for p in self.data_mgr.image_files:
                     bname = os.path.basename(p)
-                    meta = self.frame_metrics_cache.get(bname, {})
+                    meta = self.data_mgr.frame_metrics_cache.get(bname, {})
                     status_str = "❌ 已剔除" if meta.get("is_excluded", False) else "✅ 参与解算"
                     f.write(f"| `{bname}` | {meta.get('tag_count', 0)} | {meta.get('mean_err', 0.0):.2f} px | {meta.get('max_err', 0.0):.2f} px | {status_str} |\n")
 
@@ -160,9 +156,9 @@ class MappingWorkflowMixin:
                     f.write("| " + " | ".join(header_cols) + " |\n")
                     f.write("| " + " | ".join([":---"] + [":---:"] * (len(header_cols) - 1)) + " |\n")
 
-                    for p in self.image_files:
+                    for p in self.data_mgr.image_files:
                         bname = os.path.basename(p)
-                        meta = self.frame_metrics_cache.get(bname, {})
+                        meta = self.data_mgr.frame_metrics_cache.get(bname, {})
                         tag_cnt = meta.get("tag_count", 0)
                         row_vals = matrix.get(bname, [])
                         r_strs = []
@@ -235,7 +231,7 @@ class MappingWorkflowMixin:
                 dialog_title = "建图里程碑多坐标系质检诊断 (Milestone Diagnostic)"
             else:
                 configured_anchors = sorted(self.ba_runner.anchor_tags.keys()) if (hasattr(self, "ba_runner") and getattr(self.ba_runner, "anchor_tags", None)) else []
-                observed_tags = sorted(list(self.data_mgr.tags_map_data.get("tags", {}).keys())) if (hasattr(self, "data_mgr") and getattr(self.data_mgr, "tags_map_data", None) and "tags" in self.data_mgr.tags_map_data) else []
+                observed_tags = sorted(list(self.data_mgr.tags_map_data.get("tags", {}).keys())) if (self.data_mgr.tags_map_data and "tags" in self.data_mgr.tags_map_data) else []
                 intersection_anchors = sorted(list(set(configured_anchors) & set(observed_tags)))
 
                 detail_msg = (

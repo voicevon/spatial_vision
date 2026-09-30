@@ -53,8 +53,8 @@ class TestGuiLauncher(unittest.TestCase):
 
     def test_app_initialization_and_status(self):
         """测试 Launcher 应用初始化与系统状态探针"""
-        self.assertEqual(self.app.canvas_w, 1280)
-        self.assertEqual(self.app.canvas_h, 1000)
+        self.assertEqual(self.app.win_mgr.canvas_w, 1280)
+        self.assertEqual(self.app.win_mgr.canvas_h, 1000)
         self.assertTrue(self.app._running)
         self.assertIsNotNone(self.app.system_status)
 
@@ -124,70 +124,70 @@ class TestGuiLauncher(unittest.TestCase):
     def test_dynamic_resize_canvas_rendering(self):
         """测试用户拖拽缩放窗口大小时，物理分辨率自适应与矢量重绘无锯齿"""
         # 模拟窗口拉大到 1600x900
-        self.app.canvas_w = 1600
-        self.app.canvas_h = 900
+        self.app.win_mgr.canvas_w = 1600
+        self.app.win_mgr.canvas_h = 900
         canvas = self.app._render_canvas()
         self.assertEqual(canvas.shape, (900, 1600, 3))
 
         # 模拟全高清 1920x1080
-        self.app.canvas_w = 1920
-        self.app.canvas_h = 1080
+        self.app.win_mgr.canvas_w = 1920
+        self.app.win_mgr.canvas_h = 1080
         canvas_fhd = self.app._render_canvas()
         self.assertEqual(canvas_fhd.shape, (1080, 1920, 3))
 
     def test_zoom_shortcuts_laptop_compatibility(self):
         """全面测试笔记本电脑各种键位、Ctrl组合与逆向坐标映射"""
-        self.app._force_ctrl_pressed = True
+        self.app.win_mgr._force_ctrl_pressed = True
 
         # 1. 放大 (Zoom In): 兼容未按Shift '=' 与按Shift '+'
-        self.app.scale_pct = 100
+        self.app.win_mgr.scale_pct = 100
         self.app._handle_keyboard(ord('='))
-        self.assertEqual(self.app.scale_pct, 110)
+        self.assertEqual(self.app.win_mgr.scale_pct, 110)
 
         self.app._handle_keyboard(ord('+'))
-        self.assertEqual(self.app.scale_pct, 120)
+        self.assertEqual(self.app.win_mgr.scale_pct, 120)
 
         self.app._handle_keyboard(187)  # VK_OEM_PLUS
-        self.assertEqual(self.app.scale_pct, 130)
+        self.assertEqual(self.app.win_mgr.scale_pct, 130)
 
         # 2. 缩小 (Zoom Out): 兼容未按Shift '-' 与按Shift '_' (下划线)
         self.app._handle_keyboard(ord('-'))
-        self.assertEqual(self.app.scale_pct, 120)
+        self.assertEqual(self.app.win_mgr.scale_pct, 120)
 
         self.app._handle_keyboard(ord('_'))
-        self.assertEqual(self.app.scale_pct, 110)
+        self.assertEqual(self.app.win_mgr.scale_pct, 110)
 
         self.app._handle_keyboard(189)  # VK_OEM_MINUS
-        self.assertEqual(self.app.scale_pct, 100)
+        self.assertEqual(self.app.win_mgr.scale_pct, 100)
 
         self.app._handle_keyboard(31)   # Ctrl+- 控制字符
-        self.assertEqual(self.app.scale_pct, 90)
+        self.assertEqual(self.app.win_mgr.scale_pct, 90)
 
         # 3. 复位 (Reset): '0' 或 VK_0
         self.app._handle_keyboard(ord('0'))
-        self.assertEqual(self.app.scale_pct, 100)
+        self.assertEqual(self.app.win_mgr.scale_pct, 100)
 
         # 4. 边界保护: 50% ~ 200%
         for _ in range(15):
             self.app._handle_keyboard(ord('-'))
-        self.assertEqual(self.app.scale_pct, 50)
+        self.assertEqual(self.app.win_mgr.scale_pct, 50)
 
         for _ in range(25):
             self.app._handle_keyboard(ord('+'))
-        self.assertEqual(self.app.scale_pct, 200)
+        self.assertEqual(self.app.win_mgr.scale_pct, 200)
 
         # 5. 鼠标与当前物理视口坐标 1:1 原生对齐验证 (真矢量无畸变模式)
-        self.app.scale_pct = 150
-        self.app.canvas_w, self.app.canvas_h = 1920, 1080
+        self.app.win_mgr.scale_pct = 150
+        self.app.win_mgr.canvas_w, self.app.win_mgr.canvas_h = 1920, 1080
         self.app._on_mouse(0, 960, 540, 0, None)
         self.assertEqual((self.app.mouse_x, self.app.mouse_y), (960, 540))
 
         # 6. Ctrl + 鼠标滚轮向上/向下平滑缩放
-        self.app.scale_pct = 100
+        self.app.win_mgr.scale_pct = 100
         self.app._on_mouse(10, 500, 300, 1, None)   # 向上滚
-        self.assertEqual(self.app.scale_pct, 110)
+        self.assertEqual(self.app.win_mgr.scale_pct, 110)
         self.app._on_mouse(10, 500, 300, -1, None)  # 向下滚
-        self.assertEqual(self.app.scale_pct, 100)
+        self.assertEqual(self.app.win_mgr.scale_pct, 100)
 
     def test_settings_persistence(self):
         """测试用户缩放比例与窗口尺寸持久化保存与二次启动自动恢复 (隔离环境运行，杜绝污染真实用户偏好)"""
@@ -199,27 +199,27 @@ class TestGuiLauncher(unittest.TestCase):
             with patch("tools.gui_launcher.GUI_SETTINGS_FILE", test_cfg):
                 # 1. 模拟缩放到 120%
                 test_app = GuiLauncherApp()
-                test_app.scale_pct = 100
+                test_app.win_mgr.scale_pct = 100
                 test_app._apply_zoom(+20)
-                self.assertEqual(test_app.scale_pct, 120)
+                self.assertEqual(test_app.win_mgr.scale_pct, 120)
                 self.assertTrue(os.path.exists(test_cfg))
 
                 # 2. 模拟新启动一个实例，验证自动记忆恢复
                 new_app = GuiLauncherApp()
-                self.assertEqual(new_app.scale_pct, 120)
-                self.assertEqual(new_app.canvas_w, int(1280 * 1.2))
-                self.assertEqual(new_app.canvas_h, int(1000 * 1.2))
+                self.assertEqual(new_app.win_mgr.scale_pct, 120)
+                self.assertEqual(new_app.win_mgr.canvas_w, int(1280 * 1.2))
+                self.assertEqual(new_app.win_mgr.canvas_h, int(1000 * 1.2))
 
                 # 3. 模拟拖动拉伸窗口改变分辨率，验证自动落盘
-                new_app.canvas_w = 1600
-                new_app.canvas_h = 900
+                new_app.win_mgr.canvas_w = 1600
+                new_app.win_mgr.canvas_h = 900
                 new_app._save_settings()
 
                 # 4. 再次启动新实例验证窗口尺寸保持 1600x900
                 third_app = GuiLauncherApp()
-                self.assertEqual(third_app.scale_pct, 120)
-                self.assertEqual(third_app.canvas_w, 1600)
-                self.assertEqual(third_app.canvas_h, 900)
+                self.assertEqual(third_app.win_mgr.scale_pct, 120)
+                self.assertEqual(third_app.win_mgr.canvas_w, 1600)
+                self.assertEqual(third_app.win_mgr.canvas_h, 900)
 
     def test_text_wrapping_utility(self):
         """测试文本根据最大像素宽度自适应折行计算"""

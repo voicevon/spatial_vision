@@ -31,7 +31,8 @@ FILTER_MODE_OPTIONS = [
 # 空间建图工作站专属帧列表排序模式
 SORT_MODE_OPTIONS = [
     ("name_asc", "文件名升序"),
-    ("err_desc", "残差降序 (最差优先 ↓)"),
+    ("tag_err_desc", "Tag残差降序 (最差优先 ↓)"),
+    ("err_desc", "残差降序 (帧均最差 ↓)"),
     ("err_asc", "残差升序 (最优优先 ↑)"),
     ("tags_desc", "标靶数量降序")
 ]

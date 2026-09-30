@@ -35,7 +35,6 @@ class WhitelistState:
 
         # 锚点编辑状态
         self.anchor_mode = False
-        self.anchor_map: dict = {}
 
         # 锚点独立弹窗状态
         self.anchor_modal_open = False
@@ -84,51 +83,51 @@ class WhitelistState:
         self._whitelist_cache_mtime = -1.0
         self._whitelist_cache_ws = ""
 
-    def ensure_tag_whitelist_file(self) -> str:
-        """确保当前选中工位的白名单文件存在并有效"""
-        ws = self.hub.get_selected_workspace()
-        if not ws:
-            return ""
-        return self.hub.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
-
     def update_tag_anchor(self, tag_id: int, anchor_data: Any) -> tuple[bool, str]:
-        """更新或清除当前工位中的 tag_anchors 物理坐标标注 (统一标准结构)"""
+        """更新或清除当前工位中的标靶物理坐标标注 (统一收敛至 tags[tag_id]["xyz_mm"])"""
         ws = self.hub.get_selected_workspace()
         if not ws:
             return False, "未选择工位"
         ok, msg = self.hub.workspace_mgr.update_tag_anchor(ws.workspace_id, tag_id, anchor_data)
         if ok:
-            self._reload_anchor_map()
             self.refresh_whitelist_cache()
         return ok, msg
 
     def enter_whitelist_edit(self):
-        """进入编辑模式: 以当前 yaml 的 allowed_ids 为初始工作集合"""
+        """进入编辑模式: 以当前 yaml 的 tags 键为初始工作集合"""
         wl = self.get_tag_whitelist() or {}
         ids = set()
-        for x in (wl.get("allowed_ids") or []):
-            try:
-                ids.add(int(x))
-            except (TypeError, ValueError):
-                continue
+        raw_tags = wl.get("tags")
+        if isinstance(raw_tags, dict):
+            for x in raw_tags.keys():
+                try:
+                    ids.add(int(x))
+                except (TypeError, ValueError):
+                    continue
         self.whitelist_edit_ids = ids
         self.whitelist_edit_mode = True
         self.anchor_mode = False
-        self._close_anchor_modal()
+        self.close_anchor_modal()
 
     def exit_whitelist_edit(self):
         """退出编辑模式 (写穿式保存, 无未保存残留)"""
         self.whitelist_edit_mode = False
         self.anchor_mode = False
-        self._close_anchor_modal()
+        self.close_anchor_modal()
 
     def _save_whitelist_yaml(self):
         """写穿当前编辑集合到 tag_whitelist.yaml (更新 mtime 联动全链路缓存)"""
-        from src.workspace.workspace_manager import save_workspace_tag_config
+        from src.workspace.workspace_manager import save_workspace_tag_config, load_workspace_tag_config
         ws = self.hub.get_selected_workspace()
         if not ws:
             return
-        ok = save_workspace_tag_config(ws, allowed_ids=list(self.whitelist_edit_ids))
+        curr_cfg = load_workspace_tag_config(ws.workspace_dir)
+        old_tags = curr_cfg.get("tags", {})
+        # 重构 tags 字典：保留被放行 tag 已有的锚点坐标
+        new_tags = {}
+        for tid in sorted(self.whitelist_edit_ids):
+            new_tags[tid] = old_tags.get(tid, {})
+        ok = save_workspace_tag_config(ws, tags=new_tags)
         if not ok:
             self.hub.set_toast("写回白名单失败")
             return
@@ -154,77 +153,42 @@ class WhitelistState:
 
     def enter_anchor_mode(self):
         """进入锚点子模式: 芯片点击改为打开锚点弹窗"""
-        self._reload_anchor_map()
         self.anchor_mode = True
 
     def exit_anchor_mode(self):
         self.anchor_mode = False
-        self._close_anchor_modal()
+        self.close_anchor_modal()
 
-    def _reload_anchor_map(self):
-        """载入当前工位锚点 (单一真理源 tag_whitelist.yaml)"""
-        from src.workspace.workspace_manager import load_workspace_anchor_tags
-        ws = self.hub.get_selected_workspace()
-        if not ws:
-            self.anchor_map = {}
-            return
-        m = load_workspace_anchor_tags(ws.workspace_dir)
-        self.anchor_map = m or {}
-
-    def get_anchor_map(self) -> dict:
-        """获取当前工位完整的 AprilTag 物理锚点映射表 (单一真理源 tag_whitelist.yaml)"""
-        self._reload_anchor_map()
-        return self.anchor_map or {}
-
-    def _persist_anchor_map(self) -> bool:
-        """写穿当前工位标靶配置 (统一采用方案 B 单一真理源 tag_whitelist.yaml)"""
-        from src.workspace.workspace_manager import save_workspace_tag_config
-        ws = self.hub.get_selected_workspace()
-        if ws is None:
-            return False
-        ok = save_workspace_tag_config(ws, anchor_tags=self.anchor_map)
-        self.refresh_whitelist_cache()
-        return ok
-
-    def _close_anchor_modal(self):
+    def close_anchor_modal(self):
         self.anchor_modal_open = False
         self.anchor_modal_tag = -1
         self.anchor_axis_sel = -1
         self.anchor_axis_buf = ""
 
     def open_anchor_editor(self, tag_id: int):
-        """打开 Tag 专属坐标编辑弹窗: 以工位统一锚点结构为草稿"""
-        self._reload_anchor_map()
-        entry = self.anchor_map.get(tag_id) if self.anchor_map else None
-        if not entry:
-            wl = self.get_tag_whitelist()
-            anchors = wl.get("anchor_tags", {}) if isinstance(wl, dict) else {}
-            cand = anchors.get(tag_id) or anchors.get(str(tag_id))
-            if isinstance(cand, dict) and "xyz_mm" in cand:
-                entry = cand
-        if entry:
-            raw_xyz = entry.get("xyz_mm", [0.0, 0.0, 0.0])
-            raw_k = entry.get("known", [True, True, True])
-            xyz_vals = []
-            known_vals = []
-            for i in range(3):
-                v = raw_xyz[i] if i < len(raw_xyz) else 0.0
-                k = raw_k[i] if i < len(raw_k) else True
-                if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+        """打开 Tag 专属坐标编辑弹窗: 以工位单一真理源 tags 结构为草稿"""
+        wl = self.get_tag_whitelist()
+        tags_map = wl.get("tags", {}) if isinstance(wl, dict) else {}
+        entry = tags_map.get(tag_id) or tags_map.get(str(tag_id)) or {}
+        raw_xyz = entry.get("xyz_mm") if isinstance(entry, dict) else None
+
+        xyz_vals = []
+        known_vals = []
+        for i in range(3):
+            v = raw_xyz[i] if (raw_xyz and i < len(raw_xyz)) else None
+            if v is None or (isinstance(v, str) and v.strip().lower() in ("null", "none", "~", "nan", ".nan")):
+                xyz_vals.append(0.0)
+                known_vals.append(False)
+            else:
+                try:
+                    xyz_vals.append(float(v))
+                    known_vals.append(True)
+                except (TypeError, ValueError):
                     xyz_vals.append(0.0)
                     known_vals.append(False)
-                else:
-                    try:
-                        xyz_vals.append(float(v))
-                        known_vals.append(bool(k))
-                    except (TypeError, ValueError):
-                        xyz_vals.append(0.0)
-                        known_vals.append(False)
-            self.anchor_modal_xyz = xyz_vals
-            self.anchor_modal_known = known_vals
-        else:
-            self.anchor_modal_xyz = [0.0, 0.0, 0.0]
-            self.anchor_modal_known = [False, False, False]
+
+        self.anchor_modal_xyz = xyz_vals
+        self.anchor_modal_known = known_vals
         self.anchor_modal_tag = tag_id
         self.anchor_modal_open = True
         self.anchor_axis_sel = 0
@@ -277,35 +241,26 @@ class WhitelistState:
         return sum(1 for b in self.anchor_modal_known if b)
 
     def save_anchor_modal(self) -> tuple[bool, str]:
-        """保存弹窗: 已知轴 ≥1 写穿工位锚点文件；全未知 = 从工位锚点中删除该条目"""
+        """保存弹窗: 已知轴 ≥1 写穿工位标靶配置；全未知 = 清除该标靶坐标"""
         self._commit_axis_buffer()
         tid = self.anchor_modal_tag
         n = self.anchor_known_count()
-        self._reload_anchor_map()
         if n == 0:
-            self.anchor_map.pop(tid, None)
-            ok = self._persist_anchor_map()
-            self._close_anchor_modal()
-            return (ok, f"Tag #{tid} 锚点已清除") if ok else (False, "锚点写回失败")
-        self.anchor_map[tid] = {"xyz_mm": [float(v) for v in self.anchor_modal_xyz],
-                                "known": [bool(b) for b in self.anchor_modal_known]}
-        ok = self._persist_anchor_map()
-        self._close_anchor_modal()
-        if ok:
-            return True, f"Tag #{tid} 锚点已保存到本工位 ({n}/3 轴已知)"
-        return False, "锚点写回失败"
+            ok, msg = self.update_tag_anchor(tid, None)
+        else:
+            ok, msg = self.update_tag_anchor(tid, {
+                "xyz_mm": self.anchor_modal_xyz,
+                "known": self.anchor_modal_known
+            })
+        self.close_anchor_modal()
+        return ok, msg
 
     def clear_anchor_modal(self) -> tuple[bool, str]:
-        """删除当前 Tag 的锚点并写穿工位锚点文件"""
+        """删除当前 Tag 的物理坐标标注"""
         tid = self.anchor_modal_tag
-        self._reload_anchor_map()
-        self.anchor_map.pop(tid, None)
-        ok = self._persist_anchor_map()
-        self._close_anchor_modal()
-        return (True, f"Tag #{tid} 锚点已清除") if ok else (False, "锚点写回失败")
-
-    def cancel_anchor_modal(self):
-        self._close_anchor_modal()
+        ok, msg = self.update_tag_anchor(tid, None)
+        self.close_anchor_modal()
+        return ok, msg
 
     def get_workspace_marker_size(self) -> Optional[float]:
         """获取当前工位显式配置的标靶物理边长 (mm)"""

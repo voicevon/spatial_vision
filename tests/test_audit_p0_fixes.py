@@ -15,6 +15,7 @@ import yaml
 import tempfile
 
 from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
 from src.vision.tag_localizer import TagLocalizer
 
 
@@ -32,6 +33,7 @@ class TestAuditP0Fixes(unittest.TestCase):
             dist_coeffs=self.dist_coeffs,
             marker_size_mm=50.0
         )
+        self.aligner = WorldDatumAligner(marker_size_mm=50.0)
 
     def test_align_to_scara_world_with_real_tag(self):
         """测试使用真实存在的 Tag 28 对齐 X 轴，验证其成功旋转并消除 Y 偏移"""
@@ -46,7 +48,7 @@ class TestAuditP0Fixes(unittest.TestCase):
             ], dtype=np.float64)
         }
 
-        aligned_map = self.optimizer.align_to_scara_world(
+        aligned_map = self.aligner.align_to_scara_world(
             tag_poses,
             origin_tag_id=0,
             x_align_tag_id=28
@@ -87,7 +89,7 @@ class TestAuditP0Fixes(unittest.TestCase):
         }
 
         # 传入现场不存在的 Tag 1
-        aligned_map = self.optimizer.align_to_scara_world(
+        aligned_map = self.aligner.align_to_scara_world(
             tag_poses,
             origin_tag_id=0,
             x_align_tag_id=1

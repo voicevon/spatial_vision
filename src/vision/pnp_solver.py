@@ -53,10 +53,6 @@ def get_tag_world_transform(tags_map: Dict[str, Any], tag_id: int | str) -> Opti
         return None
     if "transform_matrix" in tag_data:
         return np.array(tag_data["transform_matrix"], dtype=np.float64)
-    elif "position_mm" in tag_data:
-        T = np.eye(4, dtype=np.float64)
-        T[:3, 3] = np.array(tag_data["position_mm"], dtype=np.float64)
-        return T
     return None
 
 

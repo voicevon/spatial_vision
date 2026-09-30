@@ -107,32 +107,6 @@ class IsolateWheelsProductionApp(BaseCvApp):
         self.controller.add_on_done_listener(self._on_done_event)
         self.controller.add_on_state_listener(self._on_state_event)
 
-    # ==================== 兼容性属性映射 ====================
-    @property
-    def recipe_counts(self) -> List[int]:
-        """兼容旧测试与外部调用: 配方数量直接映射至视觉检出数量"""
-        return self.detected_counts
-
-    @recipe_counts.setter
-    def recipe_counts(self, val: List[int]):
-        self.detected_counts = list(val)
-
-    @property
-    def auto_running(self) -> bool:
-        """兼容旧测试属性 auto_running"""
-        return self.auto_pipeline
-
-    @auto_running.setter
-    def auto_running(self, val: bool):
-        self.auto_pipeline = val
-
-    @property
-    def selected_devid(self) -> str:
-        return self.controller.selected_devid
-
-    @property
-    def workspace_list(self) -> List[Workspace]:
-        return self.workspace_mgr.list_workspaces()
 
     @property
     def current_workspace_name(self) -> str:
@@ -168,7 +142,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             self.current_workspace_id = cur_ws.workspace_id
             self._load_workspace_rois(cur_ws)
         else:
-            all_ws = self.workspace_list
+            all_ws = self.workspace_mgr.list_workspaces()
             if all_ws:
                 self.current_workspace_id = all_ws[0].workspace_id
                 self._load_workspace_rois(all_ws[0])
@@ -292,7 +266,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
         if ok:
             self.waiting_done = True
             self.cycle_start_time = time.time()
-            self.set_toast(f"节拍已下发至 {self.selected_devid} | 视觉数出: {counts_to_send}")
+            self.set_toast(f"节拍已下发至 {self.controller.selected_devid} | 视觉数出: {counts_to_send}")
             log.info(f"[Production] 节拍下发成功: {payload}")
         else:
             self.set_toast(f"节拍下发失败: {msg}")
@@ -343,7 +317,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
         下位机完成节拍事件回调：
         收到 MQTT done 时，累加累计出料，并在连续模式下自动以最新视觉检测数量下发下一拍
         """
-        if devid == self.selected_devid and cmd_type == "load":
+        if devid == self.controller.selected_devid and cmd_type == "load":
             now = time.time()
             if self.cycle_start_time > 0:
                 duration = max(0.05, now - self.cycle_start_time)
@@ -364,7 +338,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
 
     def _on_state_event(self, devid: str, state: str):
         """设备状态变动回调 (安全停机)"""
-        if devid == self.selected_devid and state in ("offline", "fault"):
+        if devid == self.controller.selected_devid and state in ("offline", "fault"):
             if self.auto_pipeline:
                 self.auto_pipeline = False
                 self.waiting_done = False
@@ -387,7 +361,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
                     self._last_fps_time = now
 
                 # 步骤三：从 8 个 ROI 自动检出 8 轮数量，数字实时更新至 detected_counts
-                self.detected_counts = self.detector.update_frame(frame)
+                self.detected_counts = self.detector.process_frame(frame)
 
         # 2. 流水线守护检查 (若未处于 waiting_done 且流水线激活，可自动步进)
         if self.auto_pipeline and not self.paused and not self.waiting_done:
@@ -411,7 +385,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
 
         # ---------------- 优先处理弹窗点击 ----------------
         if self.popup_ws:
-            ws_list = self.workspace_list
+            ws_list = self.workspace_mgr.list_workspaces()
             for idx, ws in enumerate(ws_list):
                 iy = 48 + 4 + idx * 28
                 if ProductionRenderer.pt_in(x, y, (434, iy, 192, 24)):

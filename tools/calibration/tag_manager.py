@@ -27,10 +27,10 @@ from src.workspace.workspace_manager import (
     WorkspaceManager,
     load_workspace_anchor_tags,
     load_workspace_tag_whitelist,
-    save_workspace_anchor_tags,
-    save_workspace_tag_whitelist,
+    load_workspace_tag_config,
+    save_workspace_tag_config,
 )
-from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
 
 # 复用旧代码的图纸生成函数 (不修改旧代码)
 from tools.calibration.generate_apriltags import generate_tags
@@ -165,7 +165,7 @@ class TagManager:
             log.warning(f"保存标靶生成器设置失败: {e}")
 
     def _load_valid_tag_ids(self):
-        """Tag ID 白名单已 100% 下沉至工位 tag_whitelist.yaml (allowed_ids 段)"""
+        """Tag ID 白名单已 100% 下沉至工位 tag_whitelist.yaml (tags 单一真理源)"""
         try:
             ws = WorkspaceManager().get_current_workspace()
             return load_workspace_tag_whitelist(ws.workspace_dir)
@@ -174,10 +174,15 @@ class TagManager:
             return []
 
     def _save_valid_tag_ids(self):
-        """写穿白名单到当前活动工位的 tag_whitelist.yaml (工位沙盒隔离)"""
+        """写穿白名单到当前活动工位的 tag_whitelist.yaml (tags 单一真理源)"""
         try:
             ws = WorkspaceManager().get_current_workspace()
-            ok = save_workspace_tag_whitelist(ws, sorted(self.valid_tag_ids))
+            curr = load_workspace_tag_config(ws.workspace_dir)
+            old_tags = curr.get("tags") or {}
+            new_tags = {}
+            for tid in sorted(self.valid_tag_ids):
+                new_tags[tid] = old_tags.get(tid, {})
+            ok = save_workspace_tag_config(ws, tags=new_tags)
             if ok:
                 self.gen_status = f"✅ 白名单已保存到工位 {ws.workspace_id}: {sorted(self.valid_tag_ids)}"
             else:
@@ -186,21 +191,31 @@ class TagManager:
             self.gen_status = f"❌ 保存失败: {e}"
 
     def _load_anchor_tags_ws(self):
-        """锚点已 100% 下沉至工位沙盒 (anchor_tags.yaml / tag_whitelist.yaml.tag_anchors); 全局 config.yaml 不再兜底"""
+        """锚点已 100% 下沉至工位沙盒 tag_whitelist.yaml (tags.xyz_mm); 全局 config.yaml 不再兜底"""
         try:
             ws = WorkspaceManager().get_current_workspace()
             own = load_workspace_anchor_tags(ws.workspace_dir)
             if own is not None:
                 return own
         except Exception as e:
-            log.warning(f"[TagMgr] 加载工位 anchor_tags.yaml 失败: {e}")
+            log.warning(f"[TagMgr] 加载工位锚点失败: {e}")
         return None  # 全局兜底已禁用 (FR-9.6 严禁以打印边长兜底)
 
     def _save_anchor_tags(self):
-        """写穿世界锚点表到当前活动工位的 anchor_tags.yaml (工位沙盒隔离)"""
+        """写穿世界锚点到当前活动工位的 tag_whitelist.yaml (tags 单一真理源)"""
         try:
             ws = WorkspaceManager().get_current_workspace()
-            ok = save_workspace_anchor_tags(ws, self.anchor_tags)
+            curr = load_workspace_tag_config(ws.workspace_dir)
+            tags = curr.get("tags") or {}
+            for tid, tcfg in tags.items():
+                if tid not in (self.anchor_tags or {}):
+                    tcfg.pop("xyz_mm", None)
+            for tid, a in (self.anchor_tags or {}).items():
+                if tid not in tags:
+                    tags[tid] = {}
+                if "xyz_mm" in a:
+                    tags[tid]["xyz_mm"] = a["xyz_mm"]
+            ok = save_workspace_tag_config(ws, tags=tags)
             ids = sorted(self.anchor_tags.keys()) if self.anchor_tags else []
             if ok:
                 self.gen_status = f"✅ 世界锚点已保存到工位 {ws.workspace_id}: {ids if ids else '(空)'}"
@@ -510,7 +525,7 @@ class TagManager:
         # 第二行: 世界锚点 DoF 记账状态 (约束积累式锚定的配置级充足性)
         dof_y = bar_y + 50
         if self.anchor_tags:
-            dof = BundleAdjustmentOptimizer.evaluate_anchor_dof(self.anchor_tags)
+            dof = WorldDatumAligner.evaluate_anchor_dof(self.anchor_tags)
             if dof["mode"] == "full":
                 dof_text, dof_col = f"世界锚定就绪: {dof['dof_solved']}/5 DoF (可完全锚定)", self.COLOR_OK
             elif dof["mode"] == "partial":
@@ -633,7 +648,7 @@ class TagManager:
         # DoF 即时提示
         preview = {tid: {"xyz_mm": self.anchor_edit["xyz"], "known": self.anchor_edit["known"]}}
         preview.update({k: v for k, v in self.anchor_tags.items() if k != tid})
-        dof = BundleAdjustmentOptimizer.evaluate_anchor_dof(preview) if any(preview[t]["known"][k] for t in preview for k in range(3)) else None
+        dof = WorldDatumAligner.evaluate_anchor_dof(preview) if any(preview[t]["known"][k] for t in preview for k in range(3)) else None
         if dof and dof["mode"] != "none":
             tip = f"保存后系统状态: {dof['dof_solved']}/5 DoF ({'可完全锚定' if dof['mode'] == 'full' else 'XY 锚定, Z 相对'})"
             tip_col = self.COLOR_OK if dof["mode"] == "full" else self.COLOR_WARN

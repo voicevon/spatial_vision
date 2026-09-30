@@ -18,7 +18,6 @@ from src.workspace.workspace_manager import (
     load_workspace_tag_config,
     save_workspace_tag_config,
     load_workspace_anchor_tags,
-    save_workspace_anchor_tags,
 )
 
 
@@ -37,27 +36,25 @@ class TestTagConfigIntegrity(unittest.TestCase):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_schema_pruning_and_anti_corruption(self):
-        """测试防腐机制: 注入脏数据 (frame_id, 杂质键, 重复 allowed_ids) 会被自动清洗剔除"""
-        dirty_anchors = {
+        """测试防腐机制: 注入脏数据 (frame_id, 杂质键, 非法键) 会被自动清洗剔除"""
+        dirty_tags = {
             0: {
-                "xyz_mm": [0.0, 0.0, 0.0],
-                "known": [True, True, False],
+                "xyz_mm": [0.0, 0.0, None],
                 "frame_id": "world",          # 非法补丁字段
                 "garbage_attr": "junk_data",   # 随机注入垃圾
             },
             14: {
-                "coords": [-33.0, 490.0, 0.0], # 兼容字段
-                "known": [True, True, True],
+                "xyz_mm": [-33.0, 490.0, 0.0],
                 "frame_id": "frame_sub_1",     # 非法补丁字段
-            }
+            },
+            5: {},
+            "bad_key": {"garbage": 123}       # 非法字符串键
         }
-        dirty_allowed = [0, 0, 14, 14, 5, "5", "abc"]  # 包含重复与脏字符
 
         # 执行保存
         ok = save_workspace_tag_config(
             self.ws,
-            allowed_ids=dirty_allowed,
-            anchor_tags=dirty_anchors,
+            tags=dirty_tags,
             tag_default_size_mm=45.0
         )
         self.assertTrue(ok)
@@ -72,20 +69,22 @@ class TestTagConfigIntegrity(unittest.TestCase):
         # 1. 验证没有任何垃圾字段写入文件
         self.assertNotIn("frame_id", raw_yaml_text, "YAML 绝对禁止出现 frame_id 字段！")
         self.assertNotIn("garbage_attr", raw_yaml_text, "未知杂质属性必须被物理剔除！")
-        self.assertNotIn("tag_anchors", doc, "旧 tag_anchors 字段已被规范的 anchor_tags 替代")
+        self.assertNotIn("allowed_ids", doc, "旧 allowed_ids 字段已被规范的 tags 替代")
+        self.assertNotIn("anchor_tags", doc, "旧 anchor_tags 字段已被规范的 tags 替代")
 
-        # 2. 验证白名单已彻底去重清洗
-        self.assertEqual(doc["allowed_ids"], [0, 5, 14])
+        # 2. 验证 tags 单一真理源已包含白名单与锚点定义
+        self.assertIn("tags", doc)
+        self.assertEqual(sorted(list(doc["tags"].keys())), [0, 5, 14])
 
         # 3. 验证锚点数据结构严格规范与 null 序列化 (彻底剔除 known 冗余键)
-        anchors = doc["anchor_tags"]
-        self.assertIn(0, anchors)
-        self.assertIn(14, anchors)
-        self.assertNotIn("known", anchors[0], "物理 YAML 中已彻底剔除冗余的 known 字段！")
-        self.assertNotIn("known", anchors[14], "物理 YAML 中已彻底剔除冗余的 known 字段！")
-        self.assertEqual(anchors[0]["xyz_mm"], [0.0, 0.0, None])
+        tags_map = doc["tags"]
+        self.assertIn("xyz_mm", tags_map[0])
+        self.assertIn("xyz_mm", tags_map[14])
+        self.assertNotIn("known", tags_map[0], "物理 YAML 中已彻底剔除冗余的 known 字段！")
+        self.assertNotIn("known", tags_map[14], "物理 YAML 中已彻底剔除冗余的 known 字段！")
+        self.assertEqual(tags_map[0]["xyz_mm"], [0.0, 0.0, None])
         self.assertIn("null", raw_yaml_text, "未知轴在物理 YAML 中应自动表现为 null 关键字")
-        self.assertEqual(anchors[14]["xyz_mm"], [-33.0, 490.0, 0.0])
+        self.assertEqual(tags_map[14]["xyz_mm"], [-33.0, 490.0, 0.0])
 
     def test_null_axis_syntax_and_automatic_inference(self):
         """测试 YAML 中直接以 null/None/~ 表示未知轴，无需 known 字段即可自动推导"""
@@ -93,8 +92,7 @@ class TestTagConfigIntegrity(unittest.TestCase):
 workspace_id: test_null_ws
 workspace_name: test_null_ws
 tag_default_size_mm: 40.0
-allowed_ids: [0, 1, 2]
-anchor_tags:
+tags:
   0:
     xyz_mm: [0.0, 0.0, null]
   1:
@@ -128,10 +126,10 @@ anchor_tags:
 
         # 验证不再向后兼容读取旧 anchor_tags.yaml，调用端只能从 tag_whitelist.yaml 获取
         loaded = load_workspace_anchor_tags(self.ws_dir)
-        self.assertEqual(loaded, {}, "旧 anchor_tags.yaml 不再作为有效源读取")
+        self.assertIn(loaded, (None, {}), "旧 anchor_tags.yaml 不再作为有效源读取")
 
         # 触发一次标准写穿，验证残留的孤立旧文件被物理彻底清除
-        save_workspace_tag_config(self.ws, anchor_tags={1: {"xyz_mm": [0, 520, None]}})
+        save_workspace_tag_config(self.ws, tags={1: {"xyz_mm": [0, 520, None]}})
         self.assertFalse(os.path.exists(old_anchor_file), "独立的 anchor_tags.yaml 必须被物理清理彻底删除！")
         self.assertTrue(os.path.exists(self.ws.whitelist_path))
 
@@ -160,8 +158,9 @@ anchor_tags:
                     doc = yaml.safe_load(txt) or {}
                 self.assertNotIn("frame_id", txt, f"工位 [{ws_name}] 的 tag_whitelist.yaml 包含 frame_id 补丁！")
                 self.assertNotIn("tag_anchors", doc, f"工位 [{ws_name}] 仍包含旧 tag_anchors 冗余字段")
-                self.assertIn("allowed_ids", doc)
-                self.assertIn("anchor_tags", doc)
+                self.assertNotIn("allowed_ids", doc, f"工位 [{ws_name}] 仍包含旧 allowed_ids 冗余字段")
+                self.assertNotIn("anchor_tags", doc, f"工位 [{ws_name}] 仍包含旧 anchor_tags 冗余字段")
+                self.assertIn("tags", doc, f"工位 [{ws_name}] 必须包含 tags 单一真理源")
 
 
 if __name__ == "__main__":

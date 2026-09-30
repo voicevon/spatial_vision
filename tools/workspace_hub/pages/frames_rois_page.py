@@ -344,7 +344,7 @@ class FramesRoisPageRenderer:
                   (card_x + 16, sep_y + 10), font_size=13, color=(0, 240, 220), bold=True)
 
         allowed_set = set(state.geometry.get_frame_tags_status(cur_frame.frame_id))
-        anchors = state.whitelist.get_anchor_map()
+        tags_map = state.whitelist.get_tag_whitelist().get("tags", {})
 
         for slot_idx in range(10):
             tag_id = tag_range[slot_idx]
@@ -372,16 +372,16 @@ class FramesRoisPageRenderer:
 
             cv2.line(canvas, (cx + 6, cy + 30), (cx + cw - 6, cy + 30), (35, 45, 58), 1)
 
-            anchor_entry = anchors.get(tag_id) or anchors.get(str(tag_id))
-            if isinstance(anchor_entry, dict) and "xyz_mm" in anchor_entry:
-                xyz = anchor_entry.get("xyz_mm", [0.0, 0.0, 0.0])
-                known = anchor_entry.get("known", [True, True, True])
-                sx = f"{xyz[0]:.0f}" if (len(known) > 0 and known[0]) else "?"
-                sy = f"{xyz[1]:.0f}" if (len(known) > 1 and known[1]) else "?"
-                sz = f"{xyz[2]:.0f}" if (len(known) > 2 and known[2]) else "?"
-                if any(known):
+            tag_entry = tags_map.get(tag_id) or tags_map.get(str(tag_id))
+            if isinstance(tag_entry, dict) and "xyz_mm" in tag_entry:
+                raw_xyz = tag_entry.get("xyz_mm") or []
+                sx = f"{raw_xyz[0]:.0f}" if (len(raw_xyz) > 0 and raw_xyz[0] is not None) else "?"
+                sy = f"{raw_xyz[1]:.0f}" if (len(raw_xyz) > 1 and raw_xyz[1] is not None) else "?"
+                sz = f"{raw_xyz[2]:.0f}" if (len(raw_xyz) > 2 and raw_xyz[2] is not None) else "?"
+                known_count = sum(1 for c in raw_xyz if c is not None)
+                if known_count > 0:
                     pos_str = f"P:({sx},{sy},{sz})"
-                    pos_col = (255, 210, 80) if all(known) else (0, 220, 255)
+                    pos_col = (255, 210, 80) if known_count == 3 else (0, 220, 255)
                 else:
                     pos_str = "P: 未标注"
                     pos_col = (110, 125, 140)

@@ -28,12 +28,12 @@ class MappingCenterViewMixin:
         """中栏：高清工作视口，等比居中自适应渲染"""
         cv2.rectangle(canvas, (x, y), (x + w, y + h), (14, 15, 18), -1)
 
-        if not app.image_files:
+        if not app.data_mgr.image_files:
             put_text(canvas, "未扫描到采图图像 (当前工位 raw_images/ 为空)", (x + 100, y + h // 2),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (140, 140, 140), 1, cv2.LINE_AA)
             return
 
-        cur_file = app.image_files[app.current_img_idx]
+        cur_file = app.data_mgr.image_files[app.data_mgr.current_img_idx]
         bgr = cv2.imread(cur_file)
         if bgr is None:
             put_text(canvas, f"读取图像文件失败: {cur_file}", (x + 100, y + h // 2),
@@ -42,7 +42,7 @@ class MappingCenterViewMixin:
 
         disp_frame = bgr.copy()
         base_name = os.path.basename(cur_file)
-        meta = app.frame_metrics_cache.get(base_name, {})
+        meta = app.data_mgr.frame_metrics_cache.get(base_name, {})
         obs_list = meta.get("observations", [])
 
         # 叠加标靶与 3D 双棱柱
@@ -58,7 +58,7 @@ class MappingCenterViewMixin:
             dst_w = dst_x2 - dst_x1
             dst_h = dst_y2 - dst_y1
             if dst_w > 0 and dst_h > 0 and src_roi.size > 0:
-                interp = cv2.INTER_LINEAR if app.zoom_level > 1.2 else cv2.INTER_AREA
+                interp = cv2.INTER_LINEAR if app.viewport.zoom_level > 1.2 else cv2.INTER_AREA
                 resized_roi = cv2.resize(src_roi, (dst_w, dst_h), interpolation=interp)
                 canvas[dst_y1:dst_y2, dst_x1:dst_x2] = resized_roi
 
@@ -110,7 +110,7 @@ class MappingCenterViewMixin:
         cursor_x = draw_roi_x2 + 8
 
         # 4. 绘制 XY 平面按钮
-        xy_on = getattr(app, "show_xy_plane_on", False)
+        xy_on = app.data_mgr.show_xy_plane_on
         xy_lbl = "√ XY平面" if xy_on else "绘制XY平面"
         xy_accent = (0, 255, 180) if xy_on else None
         xy_w = 88
@@ -187,7 +187,7 @@ class MappingCenterViewMixin:
                 put_text(disp_frame, f"Tag #{tid} [EXCL]", (cx - 42, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 0, 240), 2, cv2.LINE_AA)
             else:
                 # 收集参与三维相机位姿解算的已知有效标靶
-                w_c = app.get_tag_world_corners(tid)
+                w_c = app.data_mgr.get_tag_world_corners(tid)
                 if w_c is not None:
                     obj_pts.append(w_c)
                     img_pts.append(np.array(obs["corners"], dtype=np.float64))
@@ -227,20 +227,16 @@ class MappingCenterViewMixin:
                 # (b) 如果开启了 ba_mode == "3d"，还包含地图中已建图的其余已知标靶
                 candidate_tids = list(obs_map.keys())
                 if ba_mode == "3d":
-                    tags_dict = getattr(app, "tags_map_data", {}).get("tags", {})
-                    if not tags_dict and hasattr(app, "data_mgr"):
-                        tags_dict = app.data_mgr.tags_map_data.get("tags", {})
+                    tags_dict = (app.data_mgr.tags_map_data or {}).get("tags", {})
                     for m_tid in tags_dict.keys():
                         if m_tid not in obs_map:
                             candidate_tids.append(m_tid)
 
                 h_f, w_f = disp_frame.shape[:2]
                 # FR-9.6 世界系位姿元数据 (平差锚定后每枚标靶的 XYZ 与 RPY)
-                tags_meta = (getattr(app, "tags_map_data", {}) or {}).get("tags", {})
-                if not tags_meta and hasattr(app, "data_mgr"):
-                    tags_meta = (getattr(app.data_mgr, "tags_map_data", {}) or {}).get("tags", {})
+                tags_meta = (app.data_mgr.tags_map_data or {}).get("tags", {})
                 for tid in candidate_tids:
-                    T_w_t = app.get_tag_transform(tid)
+                    T_w_t = app.data_mgr.get_tag_transform(tid)
                     if T_w_t is None:
                         continue
 
@@ -347,14 +343,14 @@ class MappingCenterViewMixin:
                     pts = np.array(obs["corners"], dtype=np.int32).reshape((-1, 2))
                     cv2.polylines(disp_frame, [pts], isClosed=True, color=(0, 230, 80), thickness=2, lineType=cv2.LINE_AA)
                     cx, cy = int(np.mean(pts[:, 0])), int(np.mean(pts[:, 1]))
-                    in_map = (app.get_tag_world_corners(tid) is not None)
+                    in_map = (app.data_mgr.get_tag_world_corners(tid) is not None)
                     tag_lbl = f"Tag #{tid}" if in_map else f"Tag #{tid} [未入图]"
                     put_text(disp_frame, tag_lbl, (cx - 38, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 230, 80), 2, cv2.LINE_AA)
                     rendered_tids.add(tid)
 
         # 5. 若处于病因切片诊断模式，叠加视野内预测但实测漏检的标靶框 (橙黄色矩形与 Tag 标注)
         if getattr(app, "show_frame_diagnostics", False):
-            diag = getattr(app, "current_diagnostics", {})
+            diag = getattr(app.data_mgr, "current_diagnostics", {})
             missing = diag.get("missing_projected_tags", []) or diag.get("missing_theoretical_tags", [])
             for m in missing:
                 tid = m.get("tag_id")
@@ -367,7 +363,7 @@ class MappingCenterViewMixin:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 2, cv2.LINE_AA)
 
         # 6. 世界 XY 平面透视网格与 Z 轴特殊点辅助线叠加 (移植自在线跟踪)
-        if getattr(app, "show_xy_plane_on", False) and success and rvec is not None and tvec is not None:
+        if app.data_mgr.show_xy_plane_on and success and rvec is not None and tvec is not None:
             self.draw_xy_plane_overlay(app, disp_frame, rvec, tvec)
 
         # 7. 3D ROI 空间物件投影绘制 (黄色半透明长方体覆盖)
@@ -473,7 +469,7 @@ class MappingCenterViewMixin:
         """世界 XY 平面透视网格叠加 (移植自在线跟踪):
         支持两组垂直平行线网格 + 三轴加粗高亮 (X红 / Y绿 / Z蓝) + 向上箭头 + 原点标记 + 特殊标靶等高红线
         """
-        if not getattr(app, "show_xy_plane_on", False):
+        if not app.data_mgr.show_xy_plane_on:
             return
         if rvec is None or tvec is None:
             return
@@ -526,9 +522,7 @@ class MappingCenterViewMixin:
 
         # 3. Tag 等高辅助红线: 当平面高度与某已知标靶中心 Z 重合且该标靶不在原点时,
         #    平移一条红色 X 轴穿过该标靶 (如 Z=196 平面过 Tag 1); Tag 0 在原点, 主 X 轴已穿过
-        tags_dict = getattr(app, "tags_map_data", {}).get("tags", {})
-        if not tags_dict and hasattr(app, "data_mgr"):
-            tags_dict = app.data_mgr.tags_map_data.get("tags", {})
+        tags_dict = (app.data_mgr.tags_map_data or {}).get("tags", {})
 
         for tid, t_info in (tags_dict or {}).items():
             mat = t_info.get("transform_matrix")

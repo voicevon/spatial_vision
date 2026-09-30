@@ -118,15 +118,6 @@ class TagMapBuilder:
             builder=self
         )
 
-    def detect_tags(self, image: np.ndarray) -> Dict[int, np.ndarray]:
-        """
-        双路互补融合全景检测 (委托统一 TagDetector)：
-        高光路 (原图 + C=5.5) 与暗部动态拉伸路 (C=2.5) 取并集，
-        白名单机制硬锁保底，统一执行亚像素二次精修。
-        :return: {tag_id: corners_4x2}
-        """
-        return self.tag_detector.detect_tags(image, refine=True)
-
     # 亚像素精修由实例属性 self.refine_corners_subpix 委托统一 TagDetector
     # (manifest_repository 经 hasattr 探测调用, 外部行为不变)
 
@@ -347,45 +338,6 @@ class TagMapBuilder:
 
         return disp
 
-    def export_observations_manifest(self, 
-                                     image_paths: List[str], 
-                                     manifest_path: Optional[str] = None,
-                                     generate_visualized: bool = True) -> str:
-        """
-        两阶段建图流水线 - 阶段一：
-        扫描多视角图像，提取标靶观测数据并导出为结构化审核清单 (YAML)
-        委托至专职仓储类 ManifestRepository 处理
-        """
-        return self.repository.export_manifest(
-            image_paths=image_paths,
-            manifest_path=manifest_path,
-            generate_visualized=generate_visualized
-        )
-
-    def load_observations_manifest(self, manifest_path: Optional[str] = None) -> Tuple[List[Dict[int, np.ndarray]], List[str], Dict[str, Any]]:
-        """
-        两阶段建图流水线 - 阶段二：
-        从审核清单中加载已审核的标靶观测数据，并过滤掉 keep: false 的坏样本。
-        委托至专职仓储类 ManifestRepository 处理
-        """
-        return self.repository.load_manifest(manifest_path=manifest_path)
-
-    def validate_covisibility(self, 
-                              frame_detections: List[Dict[int, np.ndarray]], 
-                              frame_names: Optional[List[str]] = None,
-                              origin_tag_id: int = 0,
-                              x_align_tag_id: int = 1) -> Dict[str, Any]:
-        """
-        共视连通性安全守门员 (Co-visibility Graph Connectivity Guard)
-        委托至独立领域类 CovisibilityGraphAnalyzer 处理
-        """
-        return CovisibilityGraphAnalyzer.analyze(
-            frame_detections=frame_detections,
-            frame_names=frame_names,
-            origin_tag_id=origin_tag_id,
-            x_align_tag_id=x_align_tag_id
-        )
-
     def optimize_bundle_adjustment(self, 
                                    frame_detections: List[Dict[int, np.ndarray]], 
                                    active_frame_names: Optional[List[str]] = None,
@@ -411,29 +363,6 @@ class TagMapBuilder:
         self.marker_size_mm = self.ba_optimizer.marker_size_mm
         return result
 
-    def compute_3d_uncertainties(self, jacobian, static_tags, base_id, sigma_res_px) -> Dict[int, Dict[str, float]]:
-        """委托计算 3D 标靶空间坐标一阶协方差置信区间"""
-        return self.ba_optimizer.compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px)
-
-    def export_diagnostic_report(self,
-                                 final_tags_map: Dict[int, np.ndarray],
-                                 detailed_obs_res: List[Dict[str, Any]],
-                                 active_frame_names: List[str],
-                                 tag_uncertainties: Dict[int, Dict[str, float]],
-                                 outliers_detected: Set[Tuple[int, int]],
-                                 rmse_px: float,
-                                 report_dir: Optional[str] = None) -> str:
-        """委托生成 2D 像面 Quiver 残差矢量场并输出 Markdown 诊断报告"""
-        return self.ba_optimizer.export_diagnostic_report(
-            final_tags_map=final_tags_map,
-            detailed_obs_res=detailed_obs_res,
-            active_frame_names=active_frame_names,
-            tag_uncertainties=tag_uncertainties,
-            outliers_detected=outliers_detected,
-            rmse_px=rmse_px,
-            report_dir=report_dir
-        )
-
     def build_map_from_manifest(self, 
                                 manifest_path: Optional[str] = None,
                                 origin_tag_id: int = 0,
@@ -442,7 +371,7 @@ class TagMapBuilder:
         """
         从审核清单直接加载过滤后的观测数据并执行 BA 优化建图
         """
-        frame_detections, valid_frames, stats = self.load_observations_manifest(manifest_path)
+        frame_detections, valid_frames, stats = self.repository.load_manifest(manifest_path=manifest_path)
         log.info(f"[+] 从审核清单成功载入: {len(valid_frames)} 张有效图像，保留观测 {stats['total_kept']} 次，排除观测 {stats['total_excluded']} 次")
         if stats["total_excluded"] > 0:
             log.info(f"    【已人工剔除的坏样本】:")
@@ -487,7 +416,7 @@ class TagMapBuilder:
         if use_manifest:
             if not os.path.exists(manifest_path):
                 log.info(f"[*] 未检测到观测清单，正在生成初始观测数据清单: {manifest_path} ...")
-                self.export_observations_manifest(image_paths, manifest_path=manifest_path)
+                self.repository.export_manifest(image_paths=image_paths, manifest_path=manifest_path)
             return self.build_map_from_manifest(
                 manifest_path=manifest_path,
                 origin_tag_id=origin_tag_id,
@@ -502,7 +431,7 @@ class TagMapBuilder:
             img = cv2.imread(path)
             if img is None:
                 continue
-            tags = self.detect_tags(img)
+            tags = self.tag_detector.detect_tags(img, refine=True)
             if len(tags) >= 2:
                 frame_detections.append(tags)
                 valid_frames.append(os.path.basename(path))
@@ -531,16 +460,6 @@ class TagMapBuilder:
         self.marker_size_mm = real_marker_size
         return scaled_poses, scale_factor, real_marker_size
 
-    def _align_to_scara_world(self, 
-                              tag_poses: Dict[int, np.ndarray], 
-                              origin_tag_id: int, 
-                              x_align_tag_id: int) -> Dict[str, Any]:
-        """对齐 SCARA 世界坐标系（委托专职求解器）"""
-        return self.ba_optimizer.align_to_scara_world(
-            tag_poses=tag_poses,
-            origin_tag_id=origin_tag_id,
-            x_align_tag_id=x_align_tag_id
-        )
 
     def save_map(self, map_data: Dict, output_path: str):
         """保存标靶地图至 YAML 文件（委托专职仓储处理, 必须显式传入路径 — 默认值已废弃）"""

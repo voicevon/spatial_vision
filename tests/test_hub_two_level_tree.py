@@ -148,7 +148,7 @@ def test_two_level_tree_and_tag_partitioning():
         assert os.path.isfile(wl_path)
         with open(wl_path, "r", encoding="utf-8") as f:
             saved_wl = yaml.safe_load(f)
-        assert saved_wl["allowed_ids"] == [2, 12, 15]
+        assert sorted(list(saved_wl.get("tags", {}).keys())) == [2, 12, 15]
 
         # -------------------------------------------------------------
         # 5. 验证坐标系专属 3D ROI 隔离筛选

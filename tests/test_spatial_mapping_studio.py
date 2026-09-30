@@ -106,8 +106,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_initialization(self):
         """测试 Studio 初始化与资产发现"""
-        self.assertEqual(len(self.studio.image_files), 3, "应扫描到 3 张测试采图")
-        self.assertEqual(self.studio.current_img_idx, 0, "默认初始选中第 0 帧")
+        self.assertEqual(len(self.studio.data_mgr.image_files), 3, "应扫描到 3 张测试采图")
+        self.assertEqual(self.studio.data_mgr.current_img_idx, 0, "默认初始选中第 0 帧")
         self.assertIsNotNone(self.studio.pnp_solver)
         self.assertIsNotNone(self.studio.manifest_repo)
         self.assertIsNotNone(self.studio.optimizer)
@@ -115,65 +115,65 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_filter_modes(self):
         """测试左栏列表在 All / Warning / Excluded 模式下的索引筛选"""
-        indices_all = self.studio._get_filtered_indices()
+        indices_all = self.studio.data_mgr.get_filtered_indices()
         self.assertEqual(len(indices_all), 3)
 
         # 手动剔除第一帧
-        bname = os.path.basename(self.studio.image_files[0])
-        self.studio.frame_metrics_cache[bname]["is_excluded"] = True
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
+        self.studio.data_mgr.frame_metrics_cache[bname]["is_excluded"] = True
 
-        self.studio.filter_mode = "excluded"
-        indices_excl = self.studio._get_filtered_indices()
+        self.studio.data_mgr.filter_mode = "excluded"
+        indices_excl = self.studio.data_mgr.get_filtered_indices()
         self.assertEqual(len(indices_excl), 1)
         self.assertEqual(indices_excl[0], 0)
 
         # 恢复全部模式
-        self.studio.filter_mode = "all"
-        self.assertEqual(len(self.studio._get_filtered_indices()), 3)
+        self.studio.data_mgr.filter_mode = "all"
+        self.assertEqual(len(self.studio.data_mgr.get_filtered_indices()), 3)
 
     def test_toggle_frame_exclusion(self):
         """测试单帧状态翻转"""
-        bname = os.path.basename(self.studio.image_files[0])
-        self.assertFalse(self.studio.frame_metrics_cache[bname]["is_excluded"])
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
+        self.assertFalse(self.studio.data_mgr.frame_metrics_cache[bname]["is_excluded"])
 
-        self.studio.current_img_idx = 0
+        self.studio.select_frame(0)
         self.studio.toggle_current_frame_exclusion()
-        self.assertTrue(self.studio.frame_metrics_cache[bname]["is_excluded"])
+        self.assertTrue(self.studio.data_mgr.frame_metrics_cache[bname]["is_excluded"])
 
         # 再次翻转恢复
         self.studio.toggle_current_frame_exclusion()
-        self.assertFalse(self.studio.frame_metrics_cache[bname]["is_excluded"])
+        self.assertFalse(self.studio.data_mgr.frame_metrics_cache[bname]["is_excluded"])
 
     def test_toggle_tag_exclusion(self):
         """测试单帧内单标靶状态翻转"""
-        bname = os.path.basename(self.studio.image_files[0])
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
         # 伪造一个观测
-        self.studio.manifest_data.setdefault("images", {})[bname] = {
+        self.studio.data_mgr.manifest_data.setdefault("images", {})[bname] = {
             "observations": [{"tag_id": 18, "corners": [[0, 0], [10, 0], [10, 10], [0, 10]], "keep": True}]
         }
-        self.studio.current_img_idx = 0
+        self.studio.select_frame(0)
         self.studio.toggle_tag_exclusion_in_current_frame(18)
 
-        obs = self.studio.get_observations_for_image(bname)
+        obs = self.studio.data_mgr.get_observations_for_image(bname)
         self.assertEqual(len(obs), 1)
         self.assertFalse(obs[0]["keep"])
 
 
     def test_gui_render_pipeline(self):
         """测试完整三栏 GUI 渲染流水线无异常 (含 Tag 叠加与残差矢量)"""
-        bname = os.path.basename(self.studio.image_files[0])
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
         # 伪造带实际观测角点的帧数据
-        self.studio.manifest_data.setdefault("images", {})[bname] = {
+        self.studio.data_mgr.manifest_data.setdefault("images", {})[bname] = {
             "observations": [{
                 "tag_id": 0,
                 "corners": [[100.0, 100.0], [200.0, 100.0], [200.0, 200.0], [100.0, 200.0]],
                 "keep": True
             }]
         }
-        self.studio.refresh_all_frame_metrics()
+        self.studio.data_mgr.refresh_all_frame_metrics()
 
         canvas = np.zeros((self.studio.win_h, self.studio.win_w, 3), dtype=np.uint8)
-        self.studio.is_ba_running = True
+        self.studio.ba_runner.is_ba_running = True
         self.studio.set_toast("测试单元运行中")
 
         # 执行全景渲染
@@ -199,7 +199,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
         # 模拟点击选帧
         self.studio._handle_button_click("SELECT_FRAME_2", 2, 0, 0)
-        self.assertEqual(self.studio.current_img_idx, 2, "应成功切换选定帧索引至 2")
+        self.assertEqual(self.studio.data_mgr.current_img_idx, 2, "应成功切换选定帧索引至 2")
 
     def test_export_verification_report(self):
         """测试全景质检报告导出"""
@@ -214,38 +214,38 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
     def test_viewport_zoom_and_pan(self):
         """测试视口区分区域滚轮 (左栏列表滚动 vs 中间画布缩放) 与平移重置"""
         # 1. 鼠标在左栏 (x=100, y=200): 滚轮只影响 scroll_offset
-        self.assertEqual(self.studio.scroll_offset, 0)
-        self.assertEqual(self.studio.zoom_level, 1.0)
+        self.assertEqual(self.studio.data_mgr.scroll_offset, 0)
+        self.assertEqual(self.studio.viewport.zoom_level, 1.0)
         self.studio._on_mouse(cv2.EVENT_MOUSEWHEEL, mx=100, my=200, flags=-1, param=None)
-        self.assertGreater(self.studio.scroll_offset, 0, "左栏滚轮应增加列表偏移")
-        self.assertEqual(self.studio.zoom_level, 1.0, "左栏滚轮不应影响画布缩放")
+        self.assertGreater(self.studio.data_mgr.scroll_offset, 0, "左栏滚轮应增加列表偏移")
+        self.assertEqual(self.studio.viewport.zoom_level, 1.0, "左栏滚轮不应影响画布缩放")
 
         # 2. 鼠标在中间画布 (x=800, y=500): 滚轮只放大画布图像
-        old_scroll = self.studio.scroll_offset
+        old_scroll = self.studio.data_mgr.scroll_offset
         self.studio._on_mouse(cv2.EVENT_MOUSEWHEEL, mx=800, my=500, flags=1, param=None)
-        self.assertGreater(self.studio.zoom_level, 1.0, "中间画布滚轮向上应放大图像")
-        self.assertEqual(self.studio.scroll_offset, old_scroll, "中间画布滚轮不应影响左栏列表")
+        self.assertGreater(self.studio.viewport.zoom_level, 1.0, "中间画布滚轮向上应放大图像")
+        self.assertEqual(self.studio.data_mgr.scroll_offset, old_scroll, "中间画布滚轮不应影响左栏列表")
 
         # 3. 鼠标右键在中间画布按住并拖拽
-        old_pan_x = self.studio.pan_offset_x
-        old_pan_y = self.studio.pan_offset_y
+        old_pan_x = self.studio.viewport.pan_offset_x
+        old_pan_y = self.studio.viewport.pan_offset_y
         self.studio._on_mouse(cv2.EVENT_RBUTTONDOWN, mx=800, my=500, flags=0, param=None)
-        self.assertTrue(self.studio.is_panning)
+        self.assertTrue(self.studio.viewport.is_panning)
         self.studio._on_mouse(cv2.EVENT_MOUSEMOVE, mx=830, my=520, flags=0, param=None)
         self.studio._on_mouse(cv2.EVENT_RBUTTONUP, mx=830, my=520, flags=0, param=None)
-        self.assertFalse(self.studio.is_panning)
-        self.assertEqual(self.studio.pan_offset_x, old_pan_x + 30.0)
-        self.assertEqual(self.studio.pan_offset_y, old_pan_y + 20.0)
+        self.assertFalse(self.studio.viewport.is_panning)
+        self.assertEqual(self.studio.viewport.pan_offset_x, old_pan_x + 30.0)
+        self.assertEqual(self.studio.viewport.pan_offset_y, old_pan_y + 20.0)
 
 
         # 4. 双击中间画布重置缩放与平移
         self.studio._on_mouse(cv2.EVENT_LBUTTONDBLCLK, mx=800, my=500, flags=0, param=None)
-        self.assertEqual(self.studio.zoom_level, 1.0, "双击应重置缩放至 1.0x")
-        self.assertEqual(self.studio.pan_offset_x, 0.0, "双击应重置平移偏置")
-        self.assertEqual(self.studio.pan_offset_y, 0.0)
+        self.assertEqual(self.studio.viewport.zoom_level, 1.0, "双击应重置缩放至 1.0x")
+        self.assertEqual(self.studio.viewport.pan_offset_x, 0.0, "双击应重置平移偏置")
+        self.assertEqual(self.studio.viewport.pan_offset_y, 0.0)
 
         # 5. 放大到 3.0x 下渲染画布无异常
-        self.studio.zoom_level = 3.0
+        self.studio.viewport.zoom_level = 3.0
         canvas = np.zeros((self.studio.win_h, self.studio.win_w, 3), dtype=np.uint8)
         self.studio.render(canvas)
         self.assertGreater(canvas.shape[0], 0)
@@ -263,18 +263,18 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
         # 3. 选择排序方式: 按残差降序 (err_desc)
         # 为 3 个图像伪造不同的残差
-        f0 = os.path.basename(self.studio.image_files[0])
-        f1 = os.path.basename(self.studio.image_files[1])
-        f2 = os.path.basename(self.studio.image_files[2])
-        self.studio.frame_metrics_cache[f0]["mean_err"] = 0.12
-        self.studio.frame_metrics_cache[f1]["mean_err"] = 0.88  # 最高残差
-        self.studio.frame_metrics_cache[f2]["mean_err"] = 0.45
+        f0 = os.path.basename(self.studio.data_mgr.image_files[0])
+        f1 = os.path.basename(self.studio.data_mgr.image_files[1])
+        f2 = os.path.basename(self.studio.data_mgr.image_files[2])
+        self.studio.data_mgr.frame_metrics_cache[f0]["mean_err"] = 0.12
+        self.studio.data_mgr.frame_metrics_cache[f1]["mean_err"] = 0.88  # 最高残差
+        self.studio.data_mgr.frame_metrics_cache[f2]["mean_err"] = 0.45
 
         self.studio._handle_button_click("DD_SELECT_SORT_DROPDOWN_err_desc", ("SORT_DROPDOWN", "err_desc"), 0, 0)
-        self.assertEqual(self.studio.sort_mode, "err_desc")
+        self.assertEqual(self.studio.data_mgr.sort_mode, "err_desc")
         self.assertIsNone(self.studio.active_dropdown)
 
-        sorted_indices = self.studio._get_filtered_indices()
+        sorted_indices = self.studio.data_mgr.get_filtered_indices()
         self.assertEqual(sorted_indices[0], 1, "残差最高 (0.88px) 的 view_0002 应排在第 0 位")
         self.assertEqual(sorted_indices[1], 2, "残差次高 (0.45px) 的 view_0003 应排在第 1 位")
         self.assertEqual(sorted_indices[2], 0, "残差最低 (0.12px) 的 view_0001 应排在第 2 位")
@@ -300,48 +300,48 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.assertGreater(canvas.shape[0], 0)
 
         # 3. 测试带有大阶段+子阶段双进度条的渲染
-        self.studio.is_ba_running = True
-        self.studio.ba_progress = 0.65
-        self.studio.ba_stage_text = "阶段 3/4: 两阶段 Cauchy 平差求解中..."
-        self.studio.ba_sub_progress = 0.42
-        self.studio.ba_sub_text = "[微容差深度平差] 轮次 #14/35 | 实时 RMSE: 0.198 px"
+        self.studio.ba_runner.is_ba_running = True
+        self.studio.ba_runner.ba_progress = 0.65
+        self.studio.ba_runner.ba_stage_text = "阶段 3/4: 两阶段 Cauchy 平差求解中..."
+        self.studio.ba_runner.ba_sub_progress = 0.42
+        self.studio.ba_runner.ba_sub_text = "[微容差深度平差] 轮次 #14/35 | 实时 RMSE: 0.198 px"
         canvas = np.zeros((self.studio.win_h, self.studio.win_w, 3), dtype=np.uint8)
         self.studio.render(canvas)
         self.assertGreater(canvas.shape[0], 0)
 
     def test_canvas_click_tag_toggle(self):
         """测试在中间视口图片上直接点击 Tag 触发剔除(打叉)与恢复"""
-        bname = os.path.basename(self.studio.image_files[0])
-        self.studio.current_img_idx = 0
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
+        self.studio.select_frame(0)
 
         # 为测试帧注入确定性的观测标靶
-        self.studio.manifest_data.setdefault("images", {})[bname] = {
+        self.studio.data_mgr.manifest_data.setdefault("images", {})[bname] = {
             "observations": [{
                 "tag_id": 99,
                 "corners": [[100.0, 100.0], [300.0, 100.0], [300.0, 300.0], [100.0, 300.0]],
                 "keep": True
             }]
         }
-        self.studio.frame_metrics_cache[bname]["observations"] = self.studio.get_observations_for_image(bname)
+        self.studio.data_mgr.frame_metrics_cache[bname]["observations"] = self.studio.data_mgr.get_observations_for_image(bname)
 
-        obs_list = self.studio.get_observations_for_image(bname)
+        obs_list = self.studio.data_mgr.get_observations_for_image(bname)
         self.assertEqual(len(obs_list), 1)
         self.assertTrue(obs_list[0].get("keep", True), "默认初始应为保留状态")
 
         # 触发翻转
         self.studio.toggle_tag_exclusion_in_current_frame(99)
-        obs_after = self.studio.get_observations_for_image(bname)
+        obs_after = self.studio.data_mgr.get_observations_for_image(bname)
         self.assertFalse(obs_after[0]["keep"], "翻转后应变为剔除(打红叉)状态")
 
         # 再次翻转恢复
         self.studio.toggle_tag_exclusion_in_current_frame(99)
-        obs_restored = self.studio.get_observations_for_image(bname)
+        obs_restored = self.studio.data_mgr.get_observations_for_image(bname)
         self.assertTrue(obs_restored[0]["keep"], "再次点击应恢复保留状态")
 
     def test_super_extract_and_persistence(self):
         """测试单帧超精重提取的规范字段生成与磁盘文件持久化"""
-        bname = os.path.basename(self.studio.image_files[0])
-        self.studio.current_img_idx = 0
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
+        self.studio.select_frame(0)
 
         # Mock super_extractor 返回包含多字段的测试标靶
         fake_corners = np.array([[100, 100], [200, 100], [200, 200], [100, 200]], dtype=np.float32)
@@ -370,12 +370,12 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.studio.data_mgr.super_extractor.extract_from_image = lambda path: mock_result
 
         # 执行超精重提取
-        ret_bname, ret_count = self.studio.super_extract_current_frame()
+        ret_bname, ret_count = self.studio.data_mgr.super_extract_current_frame(self.studio.data_mgr.current_img_idx)
         self.assertEqual(ret_bname, bname)
         self.assertEqual(ret_count, 2)
 
         # 检查内存中的 manifest 条目规范完整性
-        img_entry = self.studio.manifest_data["images"][bname]
+        img_entry = self.studio.data_mgr.manifest_data["images"][bname]
         self.assertEqual(img_entry["detected_count"], 2)
         self.assertTrue(img_entry["enabled"])
         self.assertIn("observations", img_entry)
@@ -399,12 +399,12 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_reset_map(self):
         """测试地图一键复位：内存清空、地图文件备份与重写为空"""
-        self.assertGreater(len(self.studio.tags_map_data.get("tags", {})), 0, "初始应装载了地图")
+        self.assertGreater(len(self.studio.data_mgr.tags_map_data.get("tags", {})), 0, "初始应装载了地图")
 
         # 执行地图复位
-        success = self.studio.reset_map()
+        success = self.studio.data_mgr.reset_map()
         self.assertTrue(success)
-        self.assertEqual(len(self.studio.tags_map_data.get("tags", {})), 0, "复位后 tags 字典应为空")
+        self.assertEqual(len(self.studio.data_mgr.tags_map_data.get("tags", {})), 0, "复位后 tags 字典应为空")
         self.assertEqual(len(self.studio.pnp_solver.tags_map.get("tags", {})), 0, "求解器内绑定的地图也应同步清空")
 
         # 验证彻底杜绝 .bak 垃圾文件
@@ -413,14 +413,14 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_reset_all_keep_status(self):
         """测试一键复位所有观测保留状态"""
-        bname = os.path.basename(self.studio.image_files[0])
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
         # 先剔除该帧并剔除某个 tag
-        self.studio.toggle_image_exclusion(bname)
-        self.assertTrue(self.studio.is_image_excluded(bname))
+        self.studio.data_mgr.toggle_image_exclusion(bname)
+        self.assertTrue(self.studio.data_mgr.is_image_excluded(bname))
 
         # 执行一键复位
-        restored_cnt = self.studio.reset_all_keep_status()
-        self.assertFalse(self.studio.is_image_excluded(bname), "一键复位后帧应恢复为有效保留")
+        restored_cnt = self.studio.data_mgr.reset_all_keep_status()
+        self.assertFalse(self.studio.data_mgr.is_image_excluded(bname), "一键复位后帧应恢复为有效保留")
 
         # 从磁盘重新验证
         import yaml
@@ -451,14 +451,14 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         def on_prog(cur, total, bname, count):
             progress_records.append((cur, total, bname, count))
 
-        total_frames, total_tags = self.studio.super_extract_all_frames(progress_callback=on_prog)
+        total_frames, total_tags = self.studio.data_mgr.super_extract_all_frames(progress_callback=on_prog)
         self.assertEqual(total_frames, 3, "应处理全部 3 帧图片")
         self.assertEqual(total_tags, 6, "3 帧每帧 2 个标靶，总计 6 个标靶")
         self.assertEqual(len(progress_records), 3, "回调应触发 3 次")
 
         # 校验内存中的每帧标靶状态
-        for bname in self.studio.manifest_data["images"]:
-            obs = self.studio.manifest_data["images"][bname]["observations"]
+        for bname in self.studio.data_mgr.manifest_data["images"]:
+            obs = self.studio.data_mgr.manifest_data["images"][bname]["observations"]
             self.assertEqual(len(obs), 2, "旧标靶位置应被完全清空并重建为 2 个新标靶")
             self.assertTrue(obs[0]["keep"], "新提取的标靶应默认启用为有效保留")
             self.assertTrue(obs[1]["keep"])
@@ -481,9 +481,9 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.assertIn("missing_projected_tags", diag)
 
         # 检查 StudioDataManager 的门限与拓扑字段
-        self.assertIn(self.studio.gate_status, ["PASS", "ACCEPTABLE", "REVIEW"])
-        self.assertIn("is_valid", self.studio.topology_status)
-        self.assertIsInstance(self.studio.global_median_mm, float)
+        self.assertIn(self.studio.data_mgr.gate_status, ["PASS", "ACCEPTABLE", "REVIEW"])
+        self.assertIn("is_valid", self.studio.data_mgr.topology_status)
+        self.assertIsInstance(self.studio.data_mgr.global_median_mm, float)
 
     def test_diagnostics_ui_and_viewport_rendering(self):
         """测试切换至病因诊断切片视图下的 GUI 渲染与动作按钮注册"""
@@ -507,16 +507,16 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         # 1. 制作快照
         snap = self.studio.data_mgr.create_manifest_snapshot()
         self.assertIsNotNone(snap)
-        orig_keep = self.studio.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"]
+        orig_keep = self.studio.data_mgr.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"]
 
         # 2. 模拟修改: 剔除一个标靶
-        self.studio.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"] = not orig_keep
+        self.studio.data_mgr.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"] = not orig_keep
 
         # 3. 恢复快照
         succ = self.studio.data_mgr.restore_manifest_snapshot()
         self.assertTrue(succ)
         self.assertEqual(
-            self.studio.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"],
+            self.studio.data_mgr.manifest_data["images"]["view_0001.png"]["observations"][0]["keep"],
             orig_keep,
             "恢复快照后标靶保留状态应精确还原"
         )
@@ -562,7 +562,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         res = self.studio.ba_runner.poll_result()
         self.assertIsNotNone(res)
 
-        settle = self.studio.prune_settlement_data
+        settle = self.studio.ba_runner.prune_settlement_data
         self.assertIsNotNone(settle)
         self.assertIn("initial_rmse", settle)
         self.assertIn("final_rmse", settle)
@@ -575,7 +575,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.assertIn("R0", headers)
         self.assertIn("R1", headers)
         matrix = settle["frame_convergence_matrix"]
-        bname = os.path.basename(self.studio.image_files[0])
+        bname = os.path.basename(self.studio.data_mgr.image_files[0])
         self.assertIn(bname, matrix)
         self.assertGreaterEqual(len(matrix[bname]), 2, "应包含初始 R0 与第 1 轮 R1 的残差值")
 
@@ -601,7 +601,7 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.studio.export_verification_report()
 
         self.studio.undo_prune_results()
-        self.assertIsNone(self.studio.prune_settlement_data)
+        self.assertIsNone(self.studio.ba_runner.prune_settlement_data)
 
     def test_excluded_tag_ba_green_prism_still_renders(self):
         """测试即使标靶在当前帧被剔除，BA 理论绿色棱柱仍必须坚挺显示且蓝色实测棱柱隐藏"""
@@ -610,8 +610,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         # 确保测试地图中注册了 Tag 0 与 Tag 18 的世界系位姿矩阵
         T_mock = np.eye(4)
         T_mock[2, 3] = 1000.0
-        self.studio.tags_map_data.setdefault("tags", {})[0] = {"transform_matrix": T_mock.tolist()}
-        self.studio.tags_map_data["tags"][18] = {"transform_matrix": T_mock.tolist()}
+        self.studio.data_mgr.tags_map_data.setdefault("tags", {})[0] = {"transform_matrix": T_mock.tolist()}
+        self.studio.data_mgr.tags_map_data["tags"][18] = {"transform_matrix": T_mock.tolist()}
         
         # 构造包含 2 个标靶的观测: Tag 0(有效保留) 和 Tag 18(被剔除)
         observations = [
@@ -668,14 +668,14 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
     def test_plane_z_options_and_special_points(self):
         """测试 XY 平面 Z 高度特殊点提取 (含标靶中心高度) 与升降档逻辑"""
         # 手动注入一些带 Z 坐标的标靶到 tags_map_data
-        self.studio.tags_map_data = {
+        self.studio.data_mgr.tags_map_data = {
             "tags": {
                 "1": {"transform_matrix": [[1,0,0,100], [0,1,0,200], [0,0,1,196.4], [0,0,0,1]]},
                 "2": {"transform_matrix": [[1,0,0,-50], [0,1,0,120], [0,0,1,-150.0], [0,0,0,1]]},
             }
         }
 
-        options = self.studio.get_plane_z_options()
+        options = self.studio.data_mgr.get_plane_z_options()
         self.assertTrue(len(options) > 0)
         # 第一项必须是关闭选项
         self.assertEqual(options[0], (None, "不绘制 XY 平面"))
@@ -689,33 +689,33 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         self.assertTrue(found_tag2, "应动态提取并标注 Tag 2 的中心高度")
 
         # 测试获取当前 Z 轴标签
-        self.studio.plane_z = 196.4
-        lbl = self.studio.get_current_plane_z_label()
+        self.studio.data_mgr.plane_z = 196.4
+        lbl = self.studio.data_mgr.get_current_plane_z_label()
         self.assertIn("Tag 1", lbl)
 
-        self.studio.plane_z = 0.0
-        lbl0 = self.studio.get_current_plane_z_label()
+        self.studio.data_mgr.plane_z = 0.0
+        lbl0 = self.studio.data_mgr.get_current_plane_z_label()
         self.assertIn("0mm", lbl0)
 
         # 测试 step_plane_z 升降档
-        initial_z = self.studio.plane_z
-        self.studio.step_plane_z(direction=+1)
-        self.assertGreater(self.studio.plane_z, initial_z, "升档后 plane_z 应该变大")
+        initial_z = self.studio.data_mgr.plane_z
+        self.studio.data_mgr.step_plane_z(direction=+1)
+        self.assertGreater(self.studio.data_mgr.plane_z, initial_z, "升档后 plane_z 应该变大")
 
-        next_z = self.studio.plane_z
-        self.studio.step_plane_z(direction=-1)
-        self.assertEqual(self.studio.plane_z, initial_z, "降档后应回到初始 Z")
+        next_z = self.studio.data_mgr.plane_z
+        self.studio.data_mgr.step_plane_z(direction=-1)
+        self.assertEqual(self.studio.data_mgr.plane_z, initial_z, "降档后应回到初始 Z")
 
     def test_xy_plane_events_and_buttons(self):
         """测试 XY 平面工具栏按钮与下拉菜单事件分发"""
         # 1. 切换开关
-        self.studio.show_xy_plane_on = False
+        self.studio.data_mgr.show_xy_plane_on = False
         self.studio._handle_button_click("TOGGLE_DRAW_XY_PLANE", None, 0, 0)
-        self.assertTrue(self.studio.show_xy_plane_on)
+        self.assertTrue(self.studio.data_mgr.show_xy_plane_on)
         self.assertIn("XY 平面网格已开启", self.studio.toast_msg)
 
         self.studio._handle_button_click("TOGGLE_DRAW_XY_PLANE", None, 0, 0)
-        self.assertFalse(self.studio.show_xy_plane_on)
+        self.assertFalse(self.studio.data_mgr.show_xy_plane_on)
         self.assertIn("XY 平面网格已关闭", self.studio.toast_msg)
 
         # 2. 下拉菜单展开/收起
@@ -728,13 +728,13 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
         # 3. 从下拉菜单中选择数值
         self.studio._handle_button_click("DD_SELECT_PLANE_Z_DROPDOWN", ("PLANE_Z_DROPDOWN", "200.0"), 0, 0)
-        self.assertEqual(self.studio.plane_z, 200.0)
-        self.assertTrue(self.studio.show_xy_plane_on)
+        self.assertEqual(self.studio.data_mgr.plane_z, 200.0)
+        self.assertTrue(self.studio.data_mgr.show_xy_plane_on)
         self.assertIsNone(self.studio.active_dropdown)
 
         # 4. 从下拉菜单中选择 NONE 关闭
         self.studio._handle_button_click("DD_SELECT_PLANE_Z_DROPDOWN", ("PLANE_Z_DROPDOWN", "NONE"), 0, 0)
-        self.assertFalse(self.studio.show_xy_plane_on)
+        self.assertFalse(self.studio.data_mgr.show_xy_plane_on)
         self.assertIn("已关闭", self.studio.toast_msg)
 
     def test_draw_xy_plane_overlay_rendering(self):
@@ -743,21 +743,21 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
         disp_frame = np.zeros((h, w, 3), dtype=np.uint8)
 
         # 1. 当 show_xy_plane_on 为 False 时，画布不被修改
-        self.studio.show_xy_plane_on = False
+        self.studio.data_mgr.show_xy_plane_on = False
         self.studio.ui_renderer.draw_xy_plane_overlay(
             self.studio, disp_frame, rvec=np.array([0.1, 0.2, 0.3]), tvec=np.array([0.0, 0.0, 1000.0])
         )
         self.assertEqual(np.count_nonzero(disp_frame), 0)
 
         # 2. 当无外参 (rvec is None) 时安全跳过
-        self.studio.show_xy_plane_on = True
+        self.studio.data_mgr.show_xy_plane_on = True
         self.studio.ui_renderer.draw_xy_plane_overlay(
             self.studio, disp_frame, rvec=None, tvec=None
         )
         self.assertEqual(np.count_nonzero(disp_frame), 0)
 
         # 3. 正常外参下开启绘制，检查是否有非零像素生成
-        self.studio.plane_z = 0.0
+        self.studio.data_mgr.plane_z = 0.0
         # 构造相机处于略高处俯视世界原点 (Z轴向前向内)
         rvec = np.array([0.3, 0.0, 0.0], dtype=np.float64)
         tvec = np.array([0.0, -200.0, 800.0], dtype=np.float64)

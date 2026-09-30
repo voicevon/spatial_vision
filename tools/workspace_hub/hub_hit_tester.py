@@ -122,7 +122,7 @@ class HubHitTester:
 
             # 0.a 活跃下拉框浮层检测 (浮层拥有最高层级交互优先级)
             if state.geometry.active_dropdown in ("frame_type", "frame_parent"):
-                dd_data = self.r._get_dropdown_data(state.geometry.active_dropdown, state)
+                dd_data = self.r.modals.get_dropdown_data(state.geometry.active_dropdown, state)
                 if dd_data:
                     (tx, ty, tw, th), cur_val, options = dd_data
                     drop_x = tx
@@ -205,7 +205,7 @@ class HubHitTester:
 
             # 0.b 活跃下拉框浮层检测
             if state.geometry.active_dropdown in ("roi_category", "roi_frame"):
-                dd_data = self.r._get_dropdown_data(state.geometry.active_dropdown, state)
+                dd_data = self.r.modals.get_dropdown_data(state.geometry.active_dropdown, state)
                 if dd_data:
                     (tx, ty, tw, th), cur_val, options = dd_data
                     drop_x = tx

@@ -57,10 +57,45 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
             ws.save_meta()
             actions_taken.append(f"物理照片数量已自愈同步: 标定 {disk_calib} 帧, 生产 {disk_prod} 帧")
 
-    # ---------------- 2. 标靶白名单与锚点一致性核验 (幽灵标靶防腐) ----------------
+    # ---------------- 2. 标靶白名单与锚点单一真理源核验 (幽灵标靶防腐 + 废弃双轨拦截) ----------------
+    wl_path = ws.whitelist_path
+    legacy_format_detected = False
+    if os.path.exists(wl_path):
+        try:
+            with open(wl_path, "r", encoding="utf-8") as f:
+                raw_wl_doc = yaml.safe_load(f) or {}
+            if "allowed_ids" in raw_wl_doc or "anchor_tags" in raw_wl_doc:
+                legacy_format_detected = True
+                msg = "[ERROR] tag_whitelist.yaml 格式违规: 存在未合并的历史废弃字段 (allowed_ids / anchor_tags)，必须合并为 tags 单一真理源"
+                warnings.append(msg)
+                if auto_fix:
+                    raw_allowed = raw_wl_doc.get("allowed_ids") or []
+                    allowed_set = {int(x) for x in raw_allowed if str(x).isdigit() or isinstance(x, int)}
+                    raw_anchors = raw_wl_doc.get("anchor_tags") or {}
+                    clean_tags = {}
+                    if isinstance(raw_anchors, dict):
+                        for k, v in raw_anchors.items():
+                            try:
+                                tid = int(k)
+                                clean_tags[tid] = {}
+                                if isinstance(v, dict) and "xyz_mm" in v:
+                                    clean_tags[tid]["xyz_mm"] = v["xyz_mm"]
+                            except Exception:
+                                pass
+                    for tid in allowed_set:
+                        if tid not in clean_tags:
+                            clean_tags[tid] = {}
+                    size_val = raw_wl_doc.get("tag_default_size_mm", 40.0)
+                    save_workspace_tag_config(ws, tags=clean_tags, tag_default_size_mm=size_val)
+                    actions_taken.append("标靶配置自愈升级: 已将未合并的历史字段 (allowed_ids/anchor_tags) 原子化重构为 tags 单一真理源")
+                    legacy_format_detected = False
+        except Exception as e:
+            warnings.append(f"读取 tag_whitelist.yaml 失败: {e}")
+
     wl_cfg = load_workspace_tag_config(ws.workspace_dir)
-    allowed_ids = list(wl_cfg.get("allowed_ids") or [])
-    anchor_tags = dict(wl_cfg.get("anchor_tags") or {})
+    tags = dict(wl_cfg.get("tags") or {})
+    configured_tids = sorted(list(tags.keys()))
+    anchor_tids = sorted([tid for tid, cfg in tags.items() if any(c is not None for c in (cfg.get("xyz_mm") or []))])
     tag_size = wl_cfg.get("tag_default_size_mm", 40.0)
 
     # 检查 tags_map.yaml
@@ -80,14 +115,13 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
         except Exception as e:
             warnings.append(f"读取 tags_map.yaml 异常: {e}")
 
-    ghost_allowed: List[int] = []
-    ghost_anchors: List[int] = []
+    ghost_tags: List[int] = []
     empty_anchors: List[int] = []
     illegal_map_tags: List[int] = []
 
     if has_map and mapped_tags:
         mapped_set = set(mapped_tags)
-        allowed_set = set(allowed_ids)
+        allowed_set = set(configured_tids)
 
         # ---------------- (A) 输出端核验: 平差地图 tags_map.yaml 是否收录了未放行的非法标靶 ----------------
         if allowed_set:
@@ -114,41 +148,41 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
                     except Exception as e:
                         warnings.append(f"自愈更新 tags_map.yaml 失败: {e}")
 
-        # ---------------- (B) 输入端核验: 白名单与锚点是否残留未建图的幽灵标靶 ----------------
-        ghost_allowed = [t for t in allowed_ids if t not in mapped_set]
-        ghost_anchors = [t for t in anchor_tags.keys() if t not in mapped_set]
-        for tid, a in anchor_tags.items():
-            xyz = a.get("xyz_mm") or []
-            if not any(c is not None for c in xyz):
+        # ---------------- (B) 输入端核验: tags 是否残留未建图的幽灵标靶与无效空锚点 ----------------
+        ghost_tags = [t for t in configured_tids if t not in mapped_set]
+        for tid, a in tags.items():
+            xyz = a.get("xyz_mm")
+            if xyz is not None and not any(c is not None for c in xyz):
                 empty_anchors.append(tid)
 
-        if ghost_allowed or ghost_anchors or empty_anchors:
+        if ghost_tags or empty_anchors:
             issue_desc = []
-            if ghost_allowed:
-                issue_desc.append(f"幽灵白名单标靶 {ghost_allowed}")
-            if ghost_anchors:
-                issue_desc.append(f"悬空锚点 {ghost_anchors}")
+            if ghost_tags:
+                issue_desc.append(f"幽灵标靶 {ghost_tags}")
             if empty_anchors:
                 issue_desc.append(f"全空无效锚点 {empty_anchors}")
             warnings.append("；".join(issue_desc))
 
             if auto_fix:
-                clean_allowed = sorted([t for t in allowed_ids if t in mapped_set])
-                clean_anchors = {
-                    tid: a for tid, a in anchor_tags.items()
-                    if tid in mapped_set and any(c is not None for c in (a.get("xyz_mm") or []))
-                }
+                clean_tags = {}
+                for tid in configured_tids:
+                    if tid in mapped_set:
+                        item = dict(tags[tid])
+                        if tid in empty_anchors:
+                            item.pop("xyz_mm", None)
+                        clean_tags[tid] = item
+
                 save_workspace_tag_config(
                     ws,
-                    allowed_ids=clean_allowed,
-                    anchor_tags=clean_anchors,
+                    tags=clean_tags,
                     tag_default_size_mm=tag_size
                 )
                 actions_taken.append(
-                    f"标靶输入自愈: 剔除幽灵白名单 {ghost_allowed}, 剔除无效锚点 {sorted(set(ghost_anchors + empty_anchors))}"
+                    f"标靶输入自愈: 剔除幽灵标靶 {ghost_tags}, 清除无效锚点坐标 {empty_anchors}"
                 )
-                allowed_ids = clean_allowed
-                anchor_tags = clean_anchors
+                tags = clean_tags
+                configured_tids = sorted(list(tags.keys()))
+                anchor_tids = sorted([tid for tid, cfg in tags.items() if any(c is not None for c in (cfg.get("xyz_mm") or []))])
     else:
         # 工位尚未完成建图，保护性保留用户预设
         pass
@@ -205,12 +239,12 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
         "tags": {
             "has_map": has_map,
             "mapped_tags": mapped_tags,
-            "allowed_ids": allowed_ids,
-            "anchor_tag_ids": sorted(list(anchor_tags.keys())),
+            "configured_tags": configured_tids,
+            "anchor_tag_ids": anchor_tids,
             "illegal_map_tags": illegal_map_tags,
-            "ghost_allowed": ghost_allowed,
-            "ghost_anchors": ghost_anchors,
+            "ghost_tags": ghost_tags,
             "empty_anchors": empty_anchors,
+            "legacy_format_detected": legacy_format_detected,
         },
         "scene": {
             "exists": scene_ok,
@@ -248,7 +282,7 @@ def audit_all_workspaces(workspace_mgr: WorkspaceManager, auto_fix: bool = True)
         results.append(res)
         if res["actions_taken"]:
             healed_ws_count += 1
-        ghost_count = len(res["tags"]["ghost_allowed"]) + len(res["tags"]["ghost_anchors"])
+        ghost_count = len(res["tags"].get("ghost_tags") or [])
         total_ghost_pruned += ghost_count
         illegal_count = len(res["tags"].get("illegal_map_tags") or [])
         total_illegal_map_tags_pruned += illegal_count
@@ -360,21 +394,21 @@ def _render_health_report_markdown(
         lines.append(f"- **物理照片状态**：标定帧 `{r['images']['calib_disk']}` 帧, 生产帧 `{r['images']['prod_disk']}` 帧 "
                      f"({'● 100% 一致' if r['images']['synced'] else '⚠ 已自愈修正元数据'})")
         
-        # 标靶核验
+        # 标靶核验 (tags 单一真理源)
         t_info = r["tags"]
         lines.append(f"- **实测空间建图标靶**：共 `{len(t_info['mapped_tags'])}` 枚 `({t_info['mapped_tags']})`")
-        lines.append(f"- **物理准入白名单 (allowed_ids)**：共 `{len(t_info['allowed_ids'])}` 枚 `({t_info['allowed_ids']})`")
-        lines.append(f"- **世界参考锚点 (anchor_tags)**：共 `{len(t_info['anchor_tag_ids'])}` 枚 `({t_info['anchor_tag_ids']})`")
+        lines.append(f"- **放行标靶 (tags)**：共 `{len(t_info['configured_tags'])}` 枚 `({t_info['configured_tags']})`")
+        lines.append(f"- **世界参考锚点 (tags.xyz_mm)**：共 `{len(t_info['anchor_tag_ids'])}` 枚 `({t_info['anchor_tag_ids']})`")
 
-        has_tag_issue = bool(t_info.get("illegal_map_tags") or t_info["ghost_allowed"] or t_info["ghost_anchors"] or t_info["empty_anchors"])
+        has_tag_issue = bool(t_info.get("illegal_map_tags") or t_info["ghost_tags"] or t_info["empty_anchors"] or t_info.get("legacy_format_detected"))
         if has_tag_issue:
             lines.append(f"- **⚠ 标靶自洽性问题与非法数据**：")
+            if t_info.get("legacy_format_detected"):
+                lines.append(f"  - 🚫 废弃格式未合并: 检测到 allowed_ids / anchor_tags 双轨字段")
             if t_info.get("illegal_map_tags"):
                 lines.append(f"  - 🚫 平差输出非法标靶 (未放行却记入地图)：`{t_info['illegal_map_tags']}`")
-            if t_info["ghost_allowed"]:
-                lines.append(f"  - 👻 幽灵白名单标靶 (未建图却放行)：`{t_info['ghost_allowed']}`")
-            if t_info["ghost_anchors"]:
-                lines.append(f"  - ⚓ 悬空锚点 (未建图却设锚点)：`{t_info['ghost_anchors']}`")
+            if t_info["ghost_tags"]:
+                lines.append(f"  - 👻 幽灵标靶 (未建图却放行)：`{t_info['ghost_tags']}`")
             if t_info["empty_anchors"]:
                 lines.append(f"  - ❓ 无效全空锚点：`{t_info['empty_anchors']}`")
         else:

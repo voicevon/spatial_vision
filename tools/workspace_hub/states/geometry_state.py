@@ -128,27 +128,16 @@ class GeometryState:
         ws = self.hub.get_selected_workspace()
         if not ws:
             return False
-        import os
-        import yaml
-        wl_path = self.hub.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
-        curr_cfg = {}
-        if os.path.isfile(wl_path):
-            try:
-                with open(wl_path, "r", encoding="utf-8") as f:
-                    curr_cfg = yaml.safe_load(f) or {}
-            except Exception:
-                curr_cfg = {}
-        raw_allowed = curr_cfg.get("allowed_ids") or []
-        allowed = {int(x) for x in raw_allowed if str(x).isdigit()}
-        if tag_id in allowed:
-            allowed.remove(tag_id)
+        from src.workspace.workspace_manager import load_workspace_tag_config, save_workspace_tag_config
+        cfg = load_workspace_tag_config(ws.workspace_dir)
+        tags = cfg.get("tags") or {}
+        if tag_id in tags:
+            tags.pop(tag_id, None)
             now_allowed = False
         else:
-            allowed.add(tag_id)
+            tags[tag_id] = {}
             now_allowed = True
-        curr_cfg["allowed_ids"] = sorted(list(allowed))
-        with open(wl_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(curr_cfg, f, allow_unicode=True)
+        save_workspace_tag_config(ws, tags=tags)
         self.hub.whitelist.refresh_whitelist_cache()
         action_desc = "放行" if now_allowed else "禁行"
         self.hub.set_toast(f"坐标系 [{frame_id}] 标靶 Tag #{tag_id} 已{action_desc} (已同步工位白名单)")
@@ -158,7 +147,11 @@ class GeometryState:
         """获取当前坐标系在工位白名单中属于其分配区间的已放行 Tag ID 列表"""
         tag_range = set(self.get_frame_tag_range(frame_id))
         wl = self.hub.whitelist.get_tag_whitelist() or {}
-        allowed_set = set(wl.get("allowed_ids") or [])
+        raw_tags = wl.get("tags")
+        if isinstance(raw_tags, dict):
+            allowed_set = {int(k) for k in raw_tags.keys()}
+        else:
+            allowed_set = set()
         return sorted(list(tag_range.intersection(allowed_set)))
 
     def get_frame_rois(self, frame_id: str):
@@ -387,20 +380,16 @@ class GeometryState:
         # 3. 回收该坐标系专属分段内所有已放行的 Tag 标靶 (同步更新 tag_whitelist.yaml)
         cleaned_tags_count = 0
         try:
-            wl_path = self.hub.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
-            if os.path.exists(wl_path):
-                with open(wl_path, "r", encoding="utf-8") as f:
-                    curr_cfg = yaml.safe_load(f) or {}
-                raw_allowed = curr_cfg.get("allowed_ids") or []
-                allowed = {int(x) for x in raw_allowed if str(x).isdigit()}
-                to_remove_tags = allowed.intersection(tag_range)
-                if to_remove_tags:
-                    allowed.difference_update(to_remove_tags)
-                    curr_cfg["allowed_ids"] = sorted(list(allowed))
-                    with open(wl_path, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(curr_cfg, f, allow_unicode=True)
-                    cleaned_tags_count = len(to_remove_tags)
-                    log.info(f"[CascadeDelete] 已从工位白名单中回收专属 Tag: {sorted(list(to_remove_tags))}")
+            from src.workspace.workspace_manager import load_workspace_tag_config, save_workspace_tag_config
+            cfg = load_workspace_tag_config(ws.workspace_dir)
+            tags = cfg.get("tags") or {}
+            to_remove_tags = [tid for tid in tags.keys() if tid in tag_range]
+            if to_remove_tags:
+                for tid in to_remove_tags:
+                    tags.pop(tid, None)
+                save_workspace_tag_config(ws, tags=tags)
+                cleaned_tags_count = len(to_remove_tags)
+                log.info(f"[CascadeDelete] 已从工位白名单中回收专属 Tag: {sorted(to_remove_tags)}")
             self.hub.whitelist.refresh_whitelist_cache()
         except Exception as e:
             log.warning(f"[CascadeDelete] 回收专属 Tag 发生异常 ({e})")
@@ -422,10 +411,6 @@ class GeometryState:
         self.hub.set_toast(msg)
         log.info(f"[CascadeDelete] {msg}")
         return True, msg
-
-    def delete_frame(self, frame_id: str) -> tuple[bool, str]:
-        """兼容别名: 执行级联删除"""
-        return self.delete_frame_cascade(frame_id)
 
     # ---------------- 6DoF 外参位姿与约束独立模态弹窗方法 ----------------
     def open_pose6d_modal(self, axis_idx: int = 0):

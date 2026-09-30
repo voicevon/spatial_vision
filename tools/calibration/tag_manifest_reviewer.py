@@ -36,6 +36,8 @@ try:
 except ImportError:
     TagMapBuilder = None
 
+from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer
+
 try:
     from tools.window_helper import force_window_focus
 except ImportError:
@@ -292,7 +294,7 @@ class TagManifestReviewer:
                 raw_img = cv2.imread(full_path)
                 if raw_img is None:
                     continue
-                detected = self.builder.detect_tags(raw_img)
+                detected = self.builder.tag_detector.detect_tags(raw_img, refine=True)
                 obs_list = []
                 for tid in sorted(detected.keys()):
                     corners = detected[tid]
@@ -355,7 +357,7 @@ class TagManifestReviewer:
             if len(tags_in_frame) >= 2:
                 frame_detections.append(tags_in_frame)
 
-        self.last_covis_report = self.builder.validate_covisibility(frame_detections)
+        self.last_covis_report = CovisibilityGraphAnalyzer.analyze(frame_detections)
 
     def toggle_current_frame_enabled(self):
         """一键临时剔除或启用当前整张图片（整帧旁路/使能切换）"""
@@ -391,7 +393,7 @@ class TagManifestReviewer:
             return
 
         # 运行最新检测器
-        detected = self.builder.detect_tags(raw_img)
+        detected = self.builder.tag_detector.detect_tags(raw_img, refine=True)
         existing_obs = img_info.get("observations", [])
         existing_map = {int(obs["tag_id"]): obs for obs in existing_obs}
 
@@ -454,7 +456,7 @@ class TagManifestReviewer:
             if raw_img is None:
                 continue
 
-            detected = self.builder.detect_tags(raw_img)
+            detected = self.builder.tag_detector.detect_tags(raw_img, refine=True)
             existing_obs = img_info.get("observations", [])
             existing_map = {int(obs["tag_id"]): obs for obs in existing_obs}
 

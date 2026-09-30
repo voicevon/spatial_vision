@@ -112,7 +112,7 @@ class TestDecoupledBARunner(unittest.TestCase):
         # 2. 用户在白名单录入锚点真值
         # -------------------------------------------------------------
         anchors_cfg = {
-            "anchor_tags": {
+            "tags": {
                 5: {"xyz_mm": [0.0, 0.0, 0.0], "known": [True, True, True]},
                 6: {"xyz_mm": [348.0, 0.0, 0.0], "known": [True, True, True]},
                 7: {"xyz_mm": [0.0, 470.0, 0.0], "known": [True, True, True]}
@@ -152,7 +152,7 @@ class TestDecoupledBARunner(unittest.TestCase):
         #    验证系统不机械式报错中断，而是产生黄色警告质检单高亮指出 Tag 7 偏差过大
         # -------------------------------------------------------------
         bad_anchors_cfg = {
-            "anchor_tags": {
+            "tags": {
                 5: {"xyz_mm": [0.0, 0.0, 0.0], "known": [True, True, True]},
                 6: {"xyz_mm": [348.0, 0.0, 0.0], "known": [True, True, True]},
                 7: {"xyz_mm": [470.0, 0.0, 0.0], "known": [True, True, True]}  # 错录为 [470, 0, 0]

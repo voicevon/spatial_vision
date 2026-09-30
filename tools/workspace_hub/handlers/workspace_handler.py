@@ -25,14 +25,8 @@ class WorkspaceHandler:
 
     def __init__(self, app: Any):
         self.app = app
-
-    @property
-    def state(self):
-        return self.app.state
-
-    @property
-    def workspace_mgr(self):
-        return self.app.workspace_mgr
+        self.state = app.state
+        self.workspace_mgr = app.workspace_mgr
 
     def handle_open_directory(self):
         """在系统资源管理器中打开工位目录"""

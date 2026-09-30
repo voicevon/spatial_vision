@@ -562,6 +562,16 @@ class MappingDataManager(MappingDataActionsMixin):
         # 排序规则处理
         if self.sort_mode == "name_asc":
             matched.sort(key=lambda i: os.path.basename(self.image_files[i]))
+        elif self.sort_mode == "tag_err_desc":
+            def _get_frame_tag_err_sort_key(i: int):
+                bname = os.path.basename(self.image_files[i])
+                meta = self.frame_metrics_cache.get(bname, {})
+                is_active = 0 if meta.get("is_excluded", False) else 1
+                tag_errors = meta.get("tag_errors", {})
+                err_list = sorted([float(e) for e in tag_errors.values()], reverse=True) if tag_errors else []
+                return (is_active, err_list, meta.get("mean_err", 0.0), bname)
+
+            matched.sort(key=_get_frame_tag_err_sort_key, reverse=True)
         elif self.sort_mode == "err_desc":
             matched.sort(
                 key=lambda i: self.frame_metrics_cache.get(os.path.basename(self.image_files[i]), {}).get("mean_err", 0.0),

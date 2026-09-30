@@ -102,12 +102,12 @@ class TestMappingDropdownPersistence(unittest.TestCase):
         """测试修改所有下拉选项后，落盘持久化并在新启动时正确恢复"""
         app = self._create_app()
         # 修改各下拉选项
-        app.filter_mode = "warning"
-        app.sort_mode = "err_desc"
+        app.data_mgr.filter_mode = "warning"
+        app.data_mgr.sort_mode = "err_desc"
         app.ba_view_mode = "2d"
         app.obs_view_mode = "off"
-        app.show_xy_plane_on = True
-        app.plane_z = 250.0
+        app.data_mgr.show_xy_plane_on = True
+        app.data_mgr.plane_z = 250.0
         app.save_dropdown_state()
 
         self.assertTrue(os.path.exists(self.settings_file))
@@ -125,12 +125,12 @@ class TestMappingDropdownPersistence(unittest.TestCase):
 
         # 启动新实例，应自动加载上次保存的状态
         new_app = self._create_app()
-        self.assertEqual(new_app.filter_mode, "warning")
-        self.assertEqual(new_app.sort_mode, "err_desc")
+        self.assertEqual(new_app.data_mgr.filter_mode, "warning")
+        self.assertEqual(new_app.data_mgr.sort_mode, "err_desc")
         self.assertEqual(new_app.ba_view_mode, "2d")
         self.assertEqual(new_app.obs_view_mode, "off")
-        self.assertTrue(new_app.show_xy_plane_on)
-        self.assertEqual(new_app.plane_z, 250.0)
+        self.assertTrue(new_app.data_mgr.show_xy_plane_on)
+        self.assertEqual(new_app.data_mgr.plane_z, 250.0)
 
     def test_ui_events_trigger_persistence(self):
         """测试通过模拟 UI 点击各个下拉选项自动触发持久化"""
@@ -138,11 +138,11 @@ class TestMappingDropdownPersistence(unittest.TestCase):
 
         # 1. 模拟筛选下拉选择
         app._handle_button_click("DD_SELECT_FILTER", ("FILTER_DROPDOWN", "excluded"), 0, 0)
-        self.assertEqual(app.filter_mode, "excluded")
+        self.assertEqual(app.data_mgr.filter_mode, "excluded")
 
         # 2. 模拟排序下拉选择
         app._handle_button_click("DD_SELECT_SORT", ("SORT_DROPDOWN", "tags_desc"), 0, 0)
-        self.assertEqual(app.sort_mode, "tags_desc")
+        self.assertEqual(app.data_mgr.sort_mode, "tags_desc")
 
         # 3. 模拟 BA 理论显示下拉选择
         app._handle_button_click("DD_SELECT_BA", ("BA_VIEW_DROPDOWN", "off"), 0, 0)
@@ -154,8 +154,8 @@ class TestMappingDropdownPersistence(unittest.TestCase):
 
         # 5. 模拟 Z 轴高度下拉选择
         app._handle_button_click("DD_SELECT_Z", ("PLANE_Z_DROPDOWN", "350"), 0, 0)
-        self.assertEqual(app.plane_z, 350.0)
-        self.assertTrue(app.show_xy_plane_on)
+        self.assertEqual(app.data_mgr.plane_z, 350.0)
+        self.assertTrue(app.data_mgr.show_xy_plane_on)
 
         # 6. 验证持久化文件中已同步最新状态
         with open(self.settings_file, "r", encoding="utf-8") as f:
@@ -170,7 +170,7 @@ class TestMappingDropdownPersistence(unittest.TestCase):
 
         # 7. 模拟关闭 XY 平面
         app._handle_button_click("DD_SELECT_Z_OFF", ("PLANE_Z_DROPDOWN", "NONE"), 0, 0)
-        self.assertFalse(app.show_xy_plane_on)
+        self.assertFalse(app.data_mgr.show_xy_plane_on)
         with open(self.settings_file, "r", encoding="utf-8") as f:
             saved_off = json.load(f)[APP_ID]["dropdown_state"]
         self.assertFalse(saved_off["show_xy_plane"])
@@ -182,8 +182,8 @@ class TestMappingDropdownPersistence(unittest.TestCase):
 
         # 启动时不应抛出异常，使用系统默认值
         app = self._create_app()
-        self.assertEqual(app.filter_mode, "all")
-        self.assertEqual(app.sort_mode, "name_asc")
+        self.assertEqual(app.data_mgr.filter_mode, "all")
+        self.assertEqual(app.data_mgr.sort_mode, "name_asc")
         self.assertEqual(app.ba_view_mode, "3d")
         self.assertEqual(app.obs_view_mode, "3d")
 

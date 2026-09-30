@@ -26,12 +26,12 @@ class MappingInspectorMixin:
         cv2.rectangle(canvas, (x, y), (x + w, y + h), (22, 24, 30), -1)
         cv2.line(canvas, (x, y), (x, y + h), (50, 54, 66), 1)
 
-        if not app.image_files:
+        if not app.data_mgr.image_files:
             return
 
-        cur_file = app.image_files[app.current_img_idx]
+        cur_file = app.data_mgr.image_files[app.data_mgr.current_img_idx]
         bname = os.path.basename(cur_file)
-        meta = app.frame_metrics_cache.get(bname, {})
+        meta = app.data_mgr.frame_metrics_cache.get(bname, {})
 
         # 1. 顶部当前帧摘要卡片
         put_text(canvas, bname, (x + 8, y + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 220, 255), 1, cv2.LINE_AA)
@@ -99,9 +99,7 @@ class MappingInspectorMixin:
             obs_list = meta.get("observations", [])
             tag_errors = meta.get("tag_errors", {})
             # FR-9.6 世界系坐标 (平差锚定后每枚标靶的 XYZ)
-            tags_meta = (getattr(app, "tags_map_data", {}) or {}).get("tags", {})
-            if not tags_meta and hasattr(app, "data_mgr"):
-                tags_meta = (getattr(app.data_mgr, "tags_map_data", {}) or {}).get("tags", {})
+            tags_meta = (app.data_mgr.tags_map_data or {}).get("tags", {})
             put_text(canvas, f"标靶残差+世界XYZ ({len(obs_list)}) 降序↓", (x + 8, list_y + 16),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 220, 255), 1, cv2.LINE_AA)
 
@@ -211,7 +209,7 @@ class MappingInspectorMixin:
         app.gui_buttons.append(("STOP_PRUNE", (btn_x1, btn_y1, btn_x2, btn_y2), "STOP_PRUNE"))
 
         # 2. 进度条与百分比
-        pct = max(0.0, min(1.0, app.ba_progress))
+        pct = max(0.0, min(1.0, app.ba_runner.ba_progress))
         pct_int = int(round(pct * 100))
         pct_str = f"{pct_int}%"
         (pw, _), _ = measure_text(pct_str, cv2.FONT_HERSHEY_SIMPLEX, 0.46, 2)
@@ -256,8 +254,8 @@ class MappingInspectorMixin:
         put_text(canvas, txt_d, (bar_x1 + 500, cap_y1 + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 240, 120), 1, cv2.LINE_AA)
 
         # 4. 当前运行主阶段与动态细节
-        stg_txt = app.ba_stage_text or "智能迭代剪枝平差管线推进中..."
-        sub_txt = app.ba_sub_text or "正在执行全场景 BA 平差与共视安全守门..."
+        stg_txt = app.ba_runner.ba_stage_text or "智能迭代剪枝平差管线推进中..."
+        sub_txt = app.ba_runner.ba_sub_text or "正在执行全场景 BA 平差与共视安全守门..."
         put_text(canvas, stg_txt, (cx1 + 20, cy1 + 104), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 220, 255), 1, cv2.LINE_AA)
         put_text(canvas, sub_txt, (cx1 + 20, cy1 + 122), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (255, 190, 80), 1, cv2.LINE_AA)
 
@@ -347,7 +345,7 @@ class MappingInspectorMixin:
 
     def render_prune_settlement_card(self, app: Any, canvas: np.ndarray, w: int, h: int):
         """居中展示工序 5-Auto: 智能剪枝平差结算单对比卡片 (支持一键采纳或无损撤销)"""
-        s_data = getattr(app, "prune_settlement_data", None)
+        s_data = getattr(app.ba_runner, "prune_settlement_data", None)
         if not s_data:
             return
 

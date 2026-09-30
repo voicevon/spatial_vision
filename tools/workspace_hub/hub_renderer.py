@@ -333,22 +333,6 @@ class HubRenderer:
         self.gallery_page = GalleryPageRenderer(self)
         self.frames_rois_page = FramesRoisPageRenderer(self)
 
-    def _get_tabs_layout(self, state: HubState):
-        """计算顶部 Tab 胶囊的动态布局矩形 (委托给 HubHitTester)"""
-        return self.hit_tester.get_tabs_layout(state)
-
-    def _get_tree_layout(self, state: HubState):
-        """计算左侧两层树结构各项的几何矩形与数据标识 (委托给 HubHitTester)"""
-        return self.hit_tester.get_tree_layout(state)
-
-    def hit_test(self, mx: int, my: int, state: HubState) -> Any:
-        """根据逻辑坐标探测当前命中交互元素 (委托给 HubHitTester)"""
-        return self.hit_tester.hit_test(mx, my, state)
-
-    def _get_interactive_hover_key(self, state: HubState) -> Any:
-        """获取当前鼠标悬停的交互元素标识 (委托给 HubHitTester)"""
-        return self.hit_tester.get_interactive_hover_key(state)
-
     def render(self, state: HubState) -> np.ndarray:
         """根据当前状态机渲染 1280x720 最终画布 (双缓冲极速渲染)"""
         # 计算当前交互状态的哈希指纹，命中缓存则零拷贝直接返回！
@@ -396,17 +380,17 @@ class HubRenderer:
         # 4. 右侧动态区 (x: 340~960, y: 50~670): 动态页签内容 + 全宽大图沉浸
         ws = state.get_selected_workspace()
         if state.gallery.view_mode == HubState.VIEW_EXPANDED:
-            self._render_expanded_photo_preview(canvas, state, ws)
+            self.gallery_page.render_expanded_photo_preview(canvas, state, ws)
         elif state.active_tab == HubState.TAB_REPORT:
-            self._render_pure_dashboard_panel(canvas, state, ws)
+            self.dashboard_page.render(canvas, state, ws)
         elif state.active_tab == HubState.TAB_FRAME_POSE_TAGS:
-            self._render_page_frame_pose_tags(canvas, state, ws)
+            self.frames_rois_page.render_frame_pose_tags(canvas, state, ws)
         elif state.active_tab == HubState.TAB_FRAME_ROIS:
-            self._render_page_frame_rois(canvas, state, ws)
+            self.frames_rois_page.render_frame_rois(canvas, state, ws)
         elif state.active_tab == HubState.TAB_PROD_IMAGES:
-            self._render_page_prod_images(canvas, state, ws)
+            self.gallery_page.render_prod_images(canvas, state, ws)
         else:
-            self._render_page_calib_images(canvas, state, ws)
+            self.gallery_page.render_calib_images(canvas, state, ws)
 
         # 5. 底部系统反馈提示栏 (y: 670~720)
         self._render_footer(canvas, state)
@@ -499,25 +483,6 @@ class HubRenderer:
                   color=text_col, bold=is_hover)
         return is_hover
 
-    def _draw_text_input(self, canvas: np.ndarray, rect: tuple[int, int, int, int], text: str,
-                         mouse_pos: tuple[int, int]) -> bool:
-        """统一绘制高可编辑感知的输入框 (委托给 HubModalsRenderer)"""
-        return self.modals.draw_text_input(canvas, rect, text, mouse_pos)
-
-    def _draw_dropdown_trigger(self, canvas: np.ndarray, rect: tuple[int, int, int, int], text: str,
-                               mouse_pos: tuple[int, int], is_open: bool = False) -> bool:
-        """统一绘制现代下拉选择框触发条 (委托给 HubModalsRenderer)"""
-        return self.modals.draw_dropdown_trigger(canvas, rect, text, mouse_pos, is_open)
-
-    def _get_dropdown_data(self, dd_type: str, state: HubState):
-        """统一获取下拉框的布局矩形、当前选中值以及候选枚举列表 (委托给 HubModalsRenderer)"""
-        return self.modals.get_dropdown_data(dd_type, state)
-
-    def _render_active_dropdown(self, canvas: np.ndarray, state: HubState):
-        """在弹窗顶层高亮绘制当前展开的下拉菜单浮层 (委托给 HubModalsRenderer)"""
-        self.modals.render_active_dropdown(canvas, state)
-
-
     def _render_left_panel(self, canvas: np.ndarray, state: HubState):
         """渲染左侧两层树结构导航 (x: 0~340, y: 50~670)
         - 一级节点: Workspace (工位)，带 ▼ / ▶ 展开折叠指示器与统计
@@ -527,7 +492,7 @@ class HubRenderer:
         cv2.rectangle(canvas, (0, 50), (340, 670), self.COLOR_PANEL, -1)
         mpos = (state.mouse_x, state.mouse_y)
 
-        tree_items = self._get_tree_layout(state)
+        tree_items = self.hit_tester.get_tree_layout(state)
         for item in tree_items:
             if item["type"] == "workspace":
                 ws_idx = item["ws_idx"]
@@ -598,52 +563,11 @@ class HubRenderer:
         btn2_y = 628
         self._draw_button(canvas, (10, btn2_y, btn_w, btn_h), "全工位体检", mpos, theme_color=(0, 200, 160))
 
-    def _render_page_calib_images(self, canvas: np.ndarray, state: HubState, sc):
-        """页签2: 标定相册 (委托给 GalleryPageRenderer)"""
-        self.gallery_page.render_calib_images(canvas, state, sc)
-
-    def _render_page_prod_images(self, canvas: np.ndarray, state: HubState, sc):
-        """页签4: 生产相册 (委托给 GalleryPageRenderer)"""
-        self.gallery_page.render_prod_images(canvas, state, sc)
-
-    def _render_gallery_page(self, canvas: np.ndarray, state: HubState, title: str,
-                             images: list[str], sel_idx: int, grid_offset: int,
-                             empty_hint: str, is_calib: bool):
-        """通用相册卡片网格渲染 (委托给 GalleryPageRenderer)"""
-        self.gallery_page.render_gallery_page(canvas, state, title, images, sel_idx, grid_offset, empty_hint, is_calib)
-
-    def _render_page_frame_pose_tags(self, canvas: np.ndarray, state: HubState, ws):
-        """坐标系专属页签 1: 机构参数与 Tag 分段管理 (委托给 FramesRoisPageRenderer)"""
-        self.frames_rois_page.render_frame_pose_tags(canvas, state, ws)
-
-    def _render_page_frame_rois(self, canvas: np.ndarray, state: HubState, ws):
-        """坐标系专属页签 2: 3D ROI 空间物件 (委托给 FramesRoisPageRenderer)"""
-        self.frames_rois_page.render_frame_rois(canvas, state, ws)
-
-
-
-    def _render_anchor_modal(self, canvas: np.ndarray, state: HubState):
-        """锚点坐标编辑弹窗 (委托给 HubModalsRenderer)"""
-        self.modals.render_anchor_modal(canvas, state)
-
-    def _render_expanded_photo_preview(self, canvas: np.ndarray, state: HubState, sc):
-        """全宽自适应大图视口 (委托给 GalleryPageRenderer)"""
-        self.gallery_page.render_expanded_photo_preview(canvas, state, sc)
-
-
-    def _render_pure_dashboard_panel(self, canvas: np.ndarray, state: HubState, sc):
-        """页签3: 体检报告大屏看板 (委托给 DashboardPageRenderer)"""
-        self.dashboard_page.render(canvas, state, sc)
-
-
     def _render_footer(self, canvas: np.ndarray, state: HubState):
         """渲染底部暗色底栏 (670~720px) - 保持纯净留白，无冗余干扰文本"""
         cv2.rectangle(canvas, (0, 670), (self.canvas_w, 720), (12, 14, 18), -1)
         cv2.line(canvas, (0, 670), (self.canvas_w, 670), self.COLOR_BORDER, 1)
 
-    def _render_help_modal(self, canvas: np.ndarray, state: HubState):
-        """渲染置顶居中的【生效到生产系统业务机制说明窗】(委托给 HubModalsRenderer)"""
-        self.modals.render_help_modal(canvas, state)
 
     def _should_show_tag_bound_tooltip(self, state: HubState, mpos: tuple[int, int]) -> bool:
         """检测鼠标是否悬停在动标帮助提示胶囊或动标参数信息区域"""

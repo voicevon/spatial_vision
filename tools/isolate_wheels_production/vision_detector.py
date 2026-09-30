@@ -72,10 +72,6 @@ class WheelVisionDetector:
             log.warning(f"[VisionDetector] 解析 ROI 文件失败 ({e})，使用默认 8 通道布局")
         self._init_default_rois()
 
-    def update_frame(self, frame: np.ndarray) -> List[int]:
-        """别名映射: 处理图像帧并返回各轮物料计数"""
-        return self.process_frame(frame)
-
     def get_detected_counts(self) -> List[int]:
         """获取当前检出的数量列表"""
         return list(self.current_counts)

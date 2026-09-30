@@ -97,11 +97,11 @@ class TestMappingListScroll(unittest.TestCase):
         # 左栏宽度 self.studio.left_bar_w (如 300)
         # 向下滚轮 (flags < 0)
         self.studio._on_mouse(cv2.EVENT_MOUSEWHEEL, 50, 200, -1, None)
-        self.assertGreaterEqual(self.studio.scroll_offset, 0)
+        self.assertGreaterEqual(self.studio.data_mgr.scroll_offset, 0)
 
         # 向上滚轮 (flags > 0)
         self.studio._on_mouse(cv2.EVENT_MOUSEWHEEL, 50, 200, 1, None)
-        self.assertEqual(self.studio.scroll_offset, 0)
+        self.assertEqual(self.studio.data_mgr.scroll_offset, 0)
 
     def test_right_bar_scroll_wheel_and_reset_on_frame_switch(self):
         """测试右栏在超过视口的大量标靶情况下，滚轮向下滚动，且切帧后自动复位"""
@@ -120,7 +120,7 @@ class TestMappingListScroll(unittest.TestCase):
         scrolled_val = self.studio.tag_list_box.scroll_offset
 
         # 切换当前帧
-        self.studio.current_img_idx = 1
+        self.studio.select_frame(1)
         # 验证切帧后标靶列表偏移量已自动复位回 0
         self.assertEqual(self.studio.tag_list_box.scroll_offset, 0)
 

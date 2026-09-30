@@ -47,17 +47,17 @@ class MappingEventMixin:
 
             # A. 鼠标光标位于左栏：上下滚动帧资产列表
             if left_x1 <= mx < left_x2:
-                filtered_indices = self._get_filtered_indices()
+                filtered_indices = self.data_mgr.get_filtered_indices()
                 self.frame_list_box.handle_scroll(-1 if wheel_up else 1, len(filtered_indices))
-                self.scroll_offset = self.frame_list_box.scroll_offset
+                self.data_mgr.scroll_offset = self.frame_list_box.scroll_offset
                 return
 
             # B. 鼠标光标位于右栏：上下滚动标靶残差清单
             elif right_x1 <= mx <= right_x2:
-                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                cur_file = self.data_mgr.image_files[self.data_mgr.current_img_idx] if (self.data_mgr.image_files and 0 <= self.data_mgr.current_img_idx < len(self.data_mgr.image_files)) else None
                 if cur_file:
                     bname = os.path.basename(cur_file)
-                    meta = self.frame_metrics_cache.get(bname, {})
+                    meta = self.data_mgr.frame_metrics_cache.get(bname, {})
                     obs_cnt = len(meta.get("observations", []))
                     self.tag_list_box.handle_scroll(-1 if wheel_up else 1, obs_cnt)
                 return
@@ -75,14 +75,14 @@ class MappingEventMixin:
         elif event == cv2.EVENT_MOUSEMOVE:
             # 优先处理滚动条滑块拖拽跟随
             if self.frame_list_box.is_dragging_thumb:
-                filtered_indices = self._get_filtered_indices()
+                filtered_indices = self.data_mgr.get_filtered_indices()
                 self.frame_list_box.handle_mouse_move(mx, my, len(filtered_indices))
-                self.scroll_offset = self.frame_list_box.scroll_offset
+                self.data_mgr.scroll_offset = self.frame_list_box.scroll_offset
                 return
             if self.tag_list_box.is_dragging_thumb:
-                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                cur_file = self.data_mgr.image_files[self.data_mgr.current_img_idx] if (self.data_mgr.image_files and 0 <= self.data_mgr.current_img_idx < len(self.data_mgr.image_files)) else None
                 bname = os.path.basename(cur_file) if cur_file else ""
-                obs_cnt = len(self.frame_metrics_cache.get(bname, {}).get("observations", []))
+                obs_cnt = len(self.data_mgr.frame_metrics_cache.get(bname, {}).get("observations", []))
                 self.tag_list_box.handle_mouse_move(mx, my, obs_cnt)
                 return
 
@@ -105,18 +105,18 @@ class MappingEventMixin:
         if event == cv2.EVENT_LBUTTONDOWN:
             # A. 优先检测左栏滚动条滑块与轨道
             if left_x1 <= mx < left_x2:
-                filtered_indices = self._get_filtered_indices()
+                filtered_indices = self.data_mgr.get_filtered_indices()
                 handled, clicked_idx = self.frame_list_box.handle_mouse_down(mx, my, len(filtered_indices))
                 if handled and clicked_idx is None:
                     # 命中了滑块或轨道跳转
-                    self.scroll_offset = self.frame_list_box.scroll_offset
+                    self.data_mgr.scroll_offset = self.frame_list_box.scroll_offset
                     return
 
             # B. 优先检测右栏滚动条滑块与轨道
             elif right_x1 <= mx <= right_x2:
-                cur_file = self.image_files[self.current_img_idx] if (self.image_files and 0 <= self.current_img_idx < len(self.image_files)) else None
+                cur_file = self.data_mgr.image_files[self.data_mgr.current_img_idx] if (self.data_mgr.image_files and 0 <= self.data_mgr.current_img_idx < len(self.data_mgr.image_files)) else None
                 bname = os.path.basename(cur_file) if cur_file else ""
-                obs_cnt = len(self.frame_metrics_cache.get(bname, {}).get("observations", []))
+                obs_cnt = len(self.data_mgr.frame_metrics_cache.get(bname, {}).get("observations", []))
                 handled, clicked_idx = self.tag_list_box.handle_mouse_down(mx, my, obs_cnt)
                 if handled and clicked_idx is None:
                     # 命中了滑块或轨道跳转
@@ -159,7 +159,7 @@ class MappingEventMixin:
         if btn_id == "EXIT":
             self.is_running = False
         elif btn_id == "RUN_BA":
-            self.start_async_bundle_adjustment()
+            self.ba_runner.start()
         elif btn_id == "ALIGN_WORLD_DATUM":
             self.align_current_workspace_world_datum()
         elif btn_id == "EXPORT_REPORT":
@@ -177,8 +177,8 @@ class MappingEventMixin:
         elif btn_id == "TOGGLE_SORT_DROPDOWN":
             self.active_dropdown = None if self.active_dropdown == "SORT_DROPDOWN" else "SORT_DROPDOWN"
         elif btn_id == "TOGGLE_DRAW_XY_PLANE":
-            self.show_xy_plane_on = not self.show_xy_plane_on
-            self.set_toast(f"XY 平面网格{'已开启' if self.show_xy_plane_on else '已关闭'} ({self.get_current_plane_z_label()})")
+            self.data_mgr.show_xy_plane_on = not self.data_mgr.show_xy_plane_on
+            self.set_toast(f"XY 平面网格{'已开启' if self.data_mgr.show_xy_plane_on else '已关闭'} ({self.data_mgr.get_current_plane_z_label()})")
             if hasattr(self, "save_dropdown_state"):
                 self.save_dropdown_state()
         elif btn_id == "TOGGLE_PLANE_Z_DROPDOWN":
@@ -189,15 +189,15 @@ class MappingEventMixin:
                 self.switch_workspace(selected_val)
             elif dd_name == "PLANE_Z_DROPDOWN":
                 if selected_val == "NONE":
-                    self.show_xy_plane_on = False
+                    self.data_mgr.show_xy_plane_on = False
                     self.set_toast("XY 平面绘制已关闭")
                 else:
                     try:
-                        self.plane_z = float(selected_val)
+                        self.data_mgr.plane_z = float(selected_val)
                     except ValueError:
-                        self.plane_z = 0.0
-                    self.show_xy_plane_on = True
-                    self.set_toast(f"XY 平面已平移至 {self.get_current_plane_z_label()}")
+                        self.data_mgr.plane_z = 0.0
+                    self.data_mgr.show_xy_plane_on = True
+                    self.set_toast(f"XY 平面已平移至 {self.data_mgr.get_current_plane_z_label()}")
             elif dd_name == "BA_VIEW_DROPDOWN":
                 self.ba_view_mode = selected_val
                 lbl = dict(BA_VIEW_OPTIONS).get(selected_val, selected_val)
@@ -207,13 +207,13 @@ class MappingEventMixin:
                 lbl = dict(OBS_VIEW_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"实测识别显示已切换为: {lbl}")
             elif dd_name == "FILTER_DROPDOWN":
-                self.filter_mode = selected_val
-                self.scroll_offset = 0
+                self.data_mgr.filter_mode = selected_val
+                self.data_mgr.scroll_offset = 0
                 lbl = dict(FILTER_MODE_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"筛选模式已切换为: {lbl}")
             elif dd_name == "SORT_DROPDOWN":
-                self.sort_mode = selected_val
-                self.scroll_offset = 0
+                self.data_mgr.sort_mode = selected_val
+                self.data_mgr.scroll_offset = 0
                 lbl = dict(SORT_MODE_OPTIONS).get(selected_val, selected_val)
                 self.set_toast(f"排序方式已切换为: {lbl}")
             if hasattr(self, "save_dropdown_state"):
@@ -221,8 +221,8 @@ class MappingEventMixin:
             self.active_dropdown = None
         elif btn_id.startswith("SELECT_FRAME_"):
             orig_idx = int(extra)
-            self.current_img_idx = orig_idx
-            self.set_toast(f"已选中帧: {os.path.basename(self.image_files[orig_idx])}")
+            self.select_frame(orig_idx)
+            self.set_toast(f"已选中帧: {os.path.basename(self.data_mgr.image_files[orig_idx])}")
             self.active_dropdown = None
         elif btn_id == "TOGGLE_FRAME_STATUS":
             self.toggle_current_frame_exclusion()
@@ -232,7 +232,7 @@ class MappingEventMixin:
 
         elif btn_id == "SUPER_EXTRACT_FRAME":
             self.set_toast("正在执行工序 3 工业级超精重提取 (多尺度CLAHE+2x超分+0.01px亚像素精修)...")
-            bname, cnt = self.super_extract_current_frame()
+            bname, cnt = self.data_mgr.super_extract_current_frame(self.data_mgr.current_img_idx)
             if bname:
                 self.set_toast(f"帧 {bname} 超精重提取完成并已原子持久化: 检出 {cnt} 个标靶")
         elif btn_id == "SUPER_EXTRACT_ALL":

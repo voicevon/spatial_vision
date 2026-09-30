@@ -4,7 +4,6 @@
 建图 CLI 流程编排 (Builder Workflow)
 ====================================
 从 tag_map_builder.py 拆出的命令行流程编排层：
-  - print_topology_report: 共视拓扑诊断报告打印（委托转发）
   - interactive_workflow: 交互式两阶段建图与人工质量审核工作流
   - main: CLI 参数解析与运行模式分发（仅导出清单 / 深度诊断 / 静默求解 / 交互控制台）
 纯几何与 BA 求解逻辑保留在 TagMapBuilder 类内 (tag_map_builder.py)。
@@ -27,9 +26,6 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def print_topology_report(covis_report: Dict[str, Any], stats: Dict[str, Any], valid_frames: List[str]):
-    """打印详细共视拓扑分析诊断报告（委托转发）"""
-    CovisibilityGraphAnalyzer.print_topology_report(covis_report, stats, valid_frames)
 
 
 def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], baseline_pair: Optional[Tuple[int, int, float]]):
@@ -40,13 +36,13 @@ def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], b
     # 1. 若清单不存在，先自动导出
     if not os.path.exists(manifest_path):
         log.info(f"[*] 首次运行，正在自动提取并生成观测数据清单: {manifest_path} ...")
-        builder.export_observations_manifest(image_paths, manifest_path=manifest_path)
+        builder.repository.export_manifest(image_paths=image_paths, manifest_path=manifest_path)
 
     while True:
         # 加载清单与状态
         try:
-            frame_detections, valid_frames, stats = builder.load_observations_manifest(manifest_path)
-            covis_report = builder.validate_covisibility(frame_detections, valid_frames, args.origin_id, args.x_axis_id)
+            frame_detections, valid_frames, stats = builder.repository.load_manifest(manifest_path=manifest_path)
+            covis_report = CovisibilityGraphAnalyzer.analyze(frame_detections, valid_frames, args.origin_id, args.x_axis_id)
         except Exception as e:
             log.warning(f"读取或解析观测清单异常: {e}")
             covis_report = {"is_valid": False, "message": str(e), "all_tags": [], "critical_bridges": []}
@@ -119,7 +115,7 @@ def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], b
                     pass  # 用户中断/输入流关闭时直接继续，属预期路径
 
         elif choice == '2':
-            print_topology_report(covis_report, stats, valid_frames)
+            CovisibilityGraphAnalyzer.print_topology_report(covis_report, stats, valid_frames)
             try:
                 input("\n按回车键返回菜单...")
             except (EOFError, KeyboardInterrupt):
@@ -127,7 +123,7 @@ def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], b
 
         elif choice == '3':
             log.info(f"\n[*] 正在重新扫描所有标定图像并刷新清单 (历史人工标记将安全保留)...")
-            builder.export_observations_manifest(image_paths, manifest_path=manifest_path)
+            builder.repository.export_manifest(image_paths=image_paths, manifest_path=manifest_path)
             try:
                 input("\n清单刷新完成，按回车键继续...")
             except (EOFError, KeyboardInterrupt):
@@ -268,23 +264,23 @@ def main():
 
     # 单独模式 1: 仅导出清单
     if args.export_manifest:
-        builder.export_observations_manifest(image_paths, manifest_path=args.manifest)
+        builder.repository.export_manifest(image_paths=image_paths, manifest_path=args.manifest)
         log.info("[OK] 清单导出完毕，已退出。")
         return
 
     # 单独模式 2: 仅深度诊断
     if args.inspect:
         if not os.path.exists(args.manifest):
-            builder.export_observations_manifest(image_paths, manifest_path=args.manifest)
-        f_det, v_frames, stats = builder.load_observations_manifest(args.manifest)
-        report = builder.validate_covisibility(f_det, v_frames, args.origin_id, args.x_axis_id)
-        print_topology_report(report, stats, v_frames)
+            builder.repository.export_manifest(image_paths=image_paths, manifest_path=args.manifest)
+        f_det, v_frames, stats = builder.repository.load_manifest(manifest_path=args.manifest)
+        report = CovisibilityGraphAnalyzer.analyze(f_det, v_frames, args.origin_id, args.x_axis_id)
+        CovisibilityGraphAnalyzer.print_topology_report(report, stats, v_frames)
         return
 
     # 单独模式 3: 直接静默求解
     if args.solve_manifest or args.no_interactive or (not sys.stdin.isatty()):
         if not os.path.exists(args.manifest):
-            builder.export_observations_manifest(image_paths, manifest_path=args.manifest)
+            builder.repository.export_manifest(image_paths=image_paths, manifest_path=args.manifest)
         tags_map = builder.build_map_from_manifest(
             manifest_path=args.manifest,
             origin_tag_id=args.origin_id,

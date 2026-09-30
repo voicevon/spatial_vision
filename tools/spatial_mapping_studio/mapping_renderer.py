@@ -98,7 +98,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
             succ, msg = ba_res
             app.set_toast(msg)
             if succ:
-                app.refresh_all_frame_metrics()
+                app.data_mgr.refresh_all_frame_metrics()
 
         # 异步全量超精提取结果轮询
         if hasattr(app, "poll_super_extract_result"):
@@ -107,7 +107,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
                 succ, msg = ext_res
                 app.set_toast(msg)
                 if succ:
-                    app.refresh_all_frame_metrics()
+                    app.data_mgr.refresh_all_frame_metrics()
 
         # 1. 顶栏
         self.render_top_bar(app, canvas, w, top_h)
@@ -130,11 +130,11 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         self.render_center_viewport(app, canvas, mid_x1, content_y1, mid_w, content_h)
 
         # 4. 居中展示浮层卡片 (优先级: 结算对比卡片 > 智能剪枝进度卡片 > BA进度卡片 > 超精提取进度卡片)
-        if getattr(app, "prune_settlement_data", None) is not None:
+        if getattr(app.ba_runner, "prune_settlement_data", None) is not None:
             self.render_prune_settlement_card(app, canvas, w, h)
-        elif getattr(app, "is_auto_pruning", False):
+        elif getattr(app.ba_runner, "is_auto_pruning", False):
             self.render_prune_ba_card(app, canvas, w, h)
-        elif app.is_ba_running:
+        elif app.ba_runner.is_ba_running:
             self.render_ba_loading_card(app, canvas, w, h)
         elif getattr(app, "is_extracting_all", False):
             self.render_extract_loading_card(app, canvas, w, h)
@@ -198,8 +198,8 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         # 2. [B] 阶段一：纯视觉自由平差
         ba_w = 98
         draw_dashboard_button(canvas, (bx, btn_y_top, bx + ba_w, btn_y_bot),
-                              "平差中..." if app.is_ba_running else "自由平差 (B)",
-                              mouse_pos=(mx, my), is_running=app.is_ba_running)
+                              "平差中..." if app.ba_runner.is_ba_running else "自由平差 (B)",
+                              mouse_pos=(mx, my), is_running=app.ba_runner.is_ba_running)
         app.gui_buttons.append(("RUN_BA", (bx, btn_y_top, bx + ba_w, btn_y_bot), "RUN_BA"))
         bx += ba_w + 5
 
@@ -212,7 +212,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
 
         # 4. [A] 智能残差剪枝平差
         prune_w = 98
-        is_prune = getattr(app, "is_auto_pruning", False)
+        is_prune = getattr(app.ba_runner, "is_auto_pruning", False)
         draw_dashboard_button(canvas, (bx, btn_y_top, bx + prune_w, btn_y_bot),
                               "剪枝中..." if is_prune else "剪枝平差 (A)",
                               mouse_pos=(mx, my), is_running=is_prune)
@@ -257,7 +257,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         cv2.rectangle(canvas, (cx1, cy1), (cx1 + card_w, cy1 + card_h), (0, 220, 255), 2)
 
         # 1. 主阶段总流程进度条
-        pct = max(0.0, min(1.0, app.ba_progress))
+        pct = max(0.0, min(1.0, app.ba_runner.ba_progress))
         pct_int = int(round(pct * 100))
 
         put_text(canvas, "[BA] 全局平差整体收敛进度", (cx1 + 22, cy1 + 26),
@@ -281,14 +281,14 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
             cv2.rectangle(canvas, (bar_x1, bar_y1), (bar_x1 + fill_w, bar_y2), (0, 210, 255), -1)
             cv2.line(canvas, (bar_x1, bar_y1), (bar_x1 + fill_w, bar_y1), (180, 245, 255), 1)
 
-        stage_txt = app.ba_stage_text or "准备进入优化平差管线..."
+        stage_txt = app.ba_runner.ba_stage_text or "准备进入优化平差管线..."
         put_text(canvas, stage_txt, (cx1 + 22, cy1 + 62),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 215, 240), 1, cv2.LINE_AA)
 
         cv2.line(canvas, (cx1 + 22, cy1 + 74), (cx1 + card_w - 22, cy1 + 74), (45, 48, 60), 1)
 
         # 2. 求解器内部子阶段与迭代进度条
-        sub_pct = max(0.0, min(1.0, app.ba_sub_progress))
+        sub_pct = max(0.0, min(1.0, app.ba_runner.ba_sub_progress))
         sub_pct_int = int(round(sub_pct * 100))
 
         put_text(canvas, "优化器实时迭代收敛监控 (Sub-Iteration)", (cx1 + 22, cy1 + 94),
@@ -308,7 +308,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
             cv2.rectangle(canvas, (bar_x1, sbar_y1), (bar_x1 + sub_fill_w, sbar_y2), (0, 160, 255), -1)
             cv2.line(canvas, (bar_x1, sbar_y1), (bar_x1 + sub_fill_w, sbar_y1), (120, 220, 255), 1)
 
-        sub_txt = app.ba_sub_text or "等待当前阶段迭代步进推进..."
+        sub_txt = app.ba_runner.ba_sub_text or "等待当前阶段迭代步进推进..."
         put_text(canvas, sub_txt, (cx1 + 22, cy1 + 132),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 230, 255), 1, cv2.LINE_AA)
 

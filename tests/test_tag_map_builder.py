@@ -14,6 +14,8 @@ import cv2
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from tools.calibration.tag_map_builder import TagMapBuilder
+from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
+from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer
 
 
 def test_tag_builder_initialization():
@@ -52,22 +54,16 @@ def test_baseline_scaling():
 
 def test_align_to_scara_world():
     """测试 Tag 0 原点与 Tag 1 水平 X 轴刚体对齐闭环"""
-    builder = TagMapBuilder(marker_size_mm=40.0)
-
-    # 构造未对齐的任意旋转和平移地图
-    # 真实 Tag 0 位于 (100, 200, 50)
-    # 真实 Tag 1 位于沿 45 度方向 (100 + 300*cos45, 200 + 300*sin45, 50)
+    aligner = WorldDatumAligner(marker_size_mm=40.0)
     p0 = np.array([100.0, 200.0, 50.0])
     p1 = np.array([100.0 + 300.0 * math.sqrt(0.5), 200.0 + 300.0 * math.sqrt(0.5), 50.0])
-    
     tag_poses = {
         0: np.eye(4, dtype=np.float64),
         1: np.eye(4, dtype=np.float64)
     }
     tag_poses[0][:3, 3] = p0
     tag_poses[1][:3, 3] = p1
-
-    aligned_map = builder._align_to_scara_world(tag_poses, origin_tag_id=0, x_align_tag_id=1)
+    aligned_map = aligner.align_to_scara_world(tag_poses, origin_tag_id=0, x_align_tag_id=1)
 
     # 1. 验证 Tag 0 位置在原点
     tag0_pos = aligned_map["tags"][0]["position_mm"]
@@ -149,7 +145,7 @@ def test_covisibility_guard():
         {0: c_dummy, 1: c_dummy},
         {1: c_dummy, 2: c_dummy}
     ]
-    report = builder.validate_covisibility(healthy_detections, origin_tag_id=0, x_align_tag_id=1)
+    report = CovisibilityGraphAnalyzer.analyze(healthy_detections, origin_tag_id=0, x_align_tag_id=1)
     assert report["is_valid"] is True
     assert set(report["all_tags"]) == {0, 1, 2}
     assert len(report["critical_bridges"]) == 2  # 0-1 和 1-2 都只有单帧支撑
@@ -160,7 +156,7 @@ def test_covisibility_guard():
         {0: c_dummy, 1: c_dummy},
         {2: c_dummy, 3: c_dummy}
     ]
-    broken_report = builder.validate_covisibility(broken_detections, origin_tag_id=0, x_align_tag_id=1)
+    broken_report = CovisibilityGraphAnalyzer.analyze(broken_detections, origin_tag_id=0, x_align_tag_id=1)
     assert broken_report["is_valid"] is False
     assert len(broken_report["components"]) == 2
     assert 2 in broken_report["unconnected_tags"] or 3 in broken_report["unconnected_tags"]
@@ -214,7 +210,7 @@ def test_manifest_workflow_and_curation(tmp_path=None):
         yaml.dump(existing_manifest, f)
 
     # 读取并验证过滤效果
-    f_det, v_frames, stats = builder.load_observations_manifest(manifest_path)
+    f_det, v_frames, stats = builder.repository.load_manifest(manifest_path)
     # 因为 test_01.png 剔除 tag 5 后只剩下 1 个 tag 6，不足 2 个，应该自动被 dropped
     assert stats["total_excluded"] == 1
     assert stats["total_kept"] == 1
@@ -366,13 +362,13 @@ def test_frame_level_toggle_and_builder_bypass():
     with open(manifest_path, "w", encoding="utf-8") as f:
         yaml.dump(manifest_content, f)
 
-    f_det, v_frames, stats = builder.load_observations_manifest(manifest_path)
+    f_det, v_frames, stats = builder.repository.load_manifest(manifest_path)
     # 验证 frame_excluded.png 被完全旁路跳过
     assert len(v_frames) == 1
     assert v_frames[0] == "frame_active.png"
     assert "frame_excluded.png" not in v_frames
     assert stats["total_excluded_frames"] == 1
-    print("[PASS] TagMapBuilder 成功旁路整帧停用图像 (load_observations_manifest bypass)")
+    print("[PASS] TagMapBuilder 成功旁路整帧停用图像 (load_manifest bypass)")
 
 
 def test_target_focus_mode_and_handshake():

@@ -286,7 +286,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         )
 
         # 首次预热并计算全集残差指标
-        self.refresh_all_frame_metrics()
+        self.data_mgr.refresh_all_frame_metrics()
 
         # 13. 从持久化配置恢复各下拉选项状态
         self._load_dropdown_state()
@@ -324,12 +324,12 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             # 1. 筛选范围下拉 (filter_mode)
             valid_filters = [k for k, _ in FILTER_MODE_OPTIONS]
             if state.get("filter_mode") in valid_filters:
-                self.filter_mode = state["filter_mode"]
+                self.data_mgr.filter_mode = state["filter_mode"]
 
             # 2. 排序方式下拉 (sort_mode)
             valid_sorts = [k for k, _ in SORT_MODE_OPTIONS]
             if state.get("sort_mode") in valid_sorts:
-                self.sort_mode = state["sort_mode"]
+                self.data_mgr.sort_mode = state["sort_mode"]
 
             # 3. BA 理论视口显示下拉 (ba_view_mode)
             valid_ba = [k for k, _ in BA_VIEW_OPTIONS]
@@ -343,10 +343,10 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
 
             # 5. Z 轴特殊点 / XY 平面显示下拉 (plane_z, show_xy_plane)
             if "show_xy_plane" in state:
-                self.show_xy_plane_on = bool(state["show_xy_plane"])
+                self.data_mgr.show_xy_plane_on = bool(state["show_xy_plane"])
             if "plane_z" in state:
                 try:
-                    self.plane_z = float(state["plane_z"])
+                    self.data_mgr.plane_z = float(state["plane_z"])
                 except (ValueError, TypeError):
                     pass
         except Exception as e:
@@ -368,12 +368,12 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             node = root.setdefault(APP_ID, {})
             state_data = {
                 "workspace_id": str(self.current_workspace_id or ""),
-                "filter_mode": str(self.filter_mode),
-                "sort_mode": str(self.sort_mode),
+                "filter_mode": str(self.data_mgr.filter_mode),
+                "sort_mode": str(self.data_mgr.sort_mode),
                 "ba_view_mode": str(self.ba_view_mode),
                 "obs_view_mode": str(self.obs_view_mode),
-                "show_xy_plane": bool(self.show_xy_plane_on),
-                "plane_z": float(self.plane_z),
+                "show_xy_plane": bool(self.data_mgr.show_xy_plane_on),
+                "plane_z": float(self.data_mgr.plane_z),
             }
             node["dropdown_state"] = state_data
             node["viewer_state"] = state_data.copy()
@@ -560,282 +560,14 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             dist = np.zeros(5, dtype=np.float64)
             return K, dist
 
-    # ================= 状态与数据管理属性代理 (透明转发至 data_mgr) =================
-    @property
-    def image_files(self) -> List[str]:
-        return self.data_mgr.image_files
 
-    @image_files.setter
-    def image_files(self, val: List[str]):
-        self.data_mgr.image_files = val
 
-    @property
-    def current_img_idx(self) -> int:
-        return self.data_mgr.current_img_idx
 
-    @current_img_idx.setter
-    def current_img_idx(self, val: int):
-        self.data_mgr.current_img_idx = val
+    def select_frame(self, idx: int):
+        """选定指定索引的图像帧并复位标靶列表滚动偏移"""
+        self.data_mgr.current_img_idx = idx
         if hasattr(self, "tag_list_box"):
             self.tag_list_box.scroll_offset = 0
-
-    @property
-    def scroll_offset(self) -> int:
-        return self.data_mgr.scroll_offset
-
-    @scroll_offset.setter
-    def scroll_offset(self, val: int):
-        self.data_mgr.scroll_offset = val
-
-    @property
-    def filter_mode(self) -> str:
-        return self.data_mgr.filter_mode
-
-    @filter_mode.setter
-    def filter_mode(self, val: str):
-        self.data_mgr.filter_mode = val
-
-    @property
-    def sort_mode(self) -> str:
-        return self.data_mgr.sort_mode
-
-    @sort_mode.setter
-    def sort_mode(self, val: str):
-        self.data_mgr.sort_mode = val
-
-    @property
-    def manifest_data(self) -> Dict[str, Any]:
-        return self.data_mgr.manifest_data
-
-    @manifest_data.setter
-    def manifest_data(self, val: Dict[str, Any]):
-        self.data_mgr.manifest_data = val
-
-    @property
-    def tags_map_data(self) -> Dict[str, Any]:
-        return self.data_mgr.tags_map_data
-
-    @tags_map_data.setter
-    def tags_map_data(self, val: Dict[str, Any]):
-        self.data_mgr.tags_map_data = val
-
-    @property
-    def frame_metrics_cache(self) -> Dict[str, Dict[str, Any]]:
-        return self.data_mgr.frame_metrics_cache
-
-    @frame_metrics_cache.setter
-    def frame_metrics_cache(self, val: Dict[str, Dict[str, Any]]):
-        self.data_mgr.frame_metrics_cache = val
-
-    # XY 平面网格与 Z 高度状态代理
-    @property
-    def show_xy_plane_on(self) -> bool:
-        return self.data_mgr.show_xy_plane_on
-
-    @show_xy_plane_on.setter
-    def show_xy_plane_on(self, val: bool):
-        self.data_mgr.show_xy_plane_on = val
-
-    @property
-    def plane_z(self) -> float:
-        return self.data_mgr.plane_z
-
-    @plane_z.setter
-    def plane_z(self, val: float):
-        self.data_mgr.plane_z = val
-
-    @property
-    def plane_z_step(self) -> float:
-        return self.data_mgr.plane_z_step
-
-    @plane_z_step.setter
-    def plane_z_step(self, val: float):
-        self.data_mgr.plane_z_step = val
-
-    def get_plane_z_options(self) -> List[Tuple[str, str]]:
-        return self.data_mgr.get_plane_z_options()
-
-    def get_current_plane_z_label(self) -> str:
-        return self.data_mgr.get_current_plane_z_label()
-
-    def step_plane_z(self, direction: int = 1):
-        return self.data_mgr.step_plane_z(direction)
-
-    @property
-    def center_viewport(self):
-        return self.ui_renderer.center_viewport
-
-    # ================= 视口几何交互属性代理 (透明转发至 viewport) =================
-    @property
-    def zoom_level(self) -> float:
-        return self.viewport.zoom_level
-
-    @zoom_level.setter
-    def zoom_level(self, val: float):
-        self.viewport.zoom_level = val
-
-    @property
-    def pan_offset_x(self) -> float:
-        return self.viewport.pan_offset_x
-
-    @pan_offset_x.setter
-    def pan_offset_x(self, val: float):
-        self.viewport.pan_offset_x = val
-
-    @property
-    def pan_offset_y(self) -> float:
-        return self.viewport.pan_offset_y
-
-    @pan_offset_y.setter
-    def pan_offset_y(self, val: float):
-        self.viewport.pan_offset_y = val
-
-    @property
-    def is_panning(self) -> bool:
-        return self.viewport.is_panning
-
-    @is_panning.setter
-    def is_panning(self, val: bool):
-        self.viewport.is_panning = val
-
-    @property
-    def pan_start_pos(self) -> Tuple[int, int]:
-        return self.viewport.pan_start_pos
-
-    @pan_start_pos.setter
-    def pan_start_pos(self, val: Tuple[int, int]):
-        self.viewport.pan_start_pos = val
-
-    @property
-    def global_rmse(self) -> float:
-        return self.data_mgr.global_rmse
-
-    @global_rmse.setter
-    def global_rmse(self, val: float):
-        self.data_mgr.global_rmse = val
-
-    @property
-    def global_median_mm(self) -> float:
-        return self.data_mgr.global_median_mm
-
-    @property
-    def global_mean_mm(self) -> float:
-        return self.data_mgr.global_mean_mm
-
-    @property
-    def gate_status(self) -> str:
-        return self.data_mgr.gate_status
-
-    @property
-    def topology_status(self) -> Dict[str, Any]:
-        return self.data_mgr.topology_status
-
-    @property
-    def current_diagnostics(self) -> Dict[str, Any]:
-        return self.data_mgr.current_diagnostics
-
-    # ================= 异步 BA 平差属性代理 (透明转发至 ba_runner) =================
-    @property
-    def is_ba_running(self) -> bool:
-        return self.ba_runner.is_ba_running
-
-    @is_ba_running.setter
-    def is_ba_running(self, val: bool):
-        self.ba_runner.is_ba_running = val
-
-    @property
-    def ba_thread(self) -> Optional[threading.Thread]:
-        return self.ba_runner.ba_thread
-
-    @ba_thread.setter
-    def ba_thread(self, val: Optional[threading.Thread]):
-        self.ba_runner.ba_thread = val
-
-    @property
-    def ba_result_queue(self) -> Optional[Tuple[bool, str]]:
-        return self.ba_runner.ba_result_queue
-
-    @ba_result_queue.setter
-    def ba_result_queue(self, val: Optional[Tuple[bool, str]]):
-        self.ba_runner.ba_result_queue = val
-
-    @property
-    def ba_progress(self) -> float:
-        return self.ba_runner.ba_progress
-
-    @ba_progress.setter
-    def ba_progress(self, val: float):
-        self.ba_runner.ba_progress = val
-
-    @property
-    def ba_stage_text(self) -> str:
-        return self.ba_runner.ba_stage_text
-
-    @ba_stage_text.setter
-    def ba_stage_text(self, val: str):
-        self.ba_runner.ba_stage_text = val
-
-    @property
-    def is_auto_pruning(self) -> bool:
-        return self.ba_runner.is_auto_pruning
-
-    @property
-    def prune_settlement_data(self) -> Optional[Dict[str, Any]]:
-        return self.ba_runner.prune_settlement_data
-
-    @prune_settlement_data.setter
-    def prune_settlement_data(self, val: Optional[Dict[str, Any]]):
-        self.ba_runner.prune_settlement_data = val
-
-    @property
-    def ba_sub_progress(self) -> float:
-        return self.ba_runner.ba_sub_progress
-
-    @ba_sub_progress.setter
-    def ba_sub_progress(self, val: float):
-        self.ba_runner.ba_sub_progress = val
-
-    @property
-    def ba_sub_text(self) -> str:
-        return self.ba_runner.ba_sub_text
-
-    @ba_sub_text.setter
-    def ba_sub_text(self, val: str):
-        self.ba_runner.ba_sub_text = val
-
-    # ================= 领域数据方法委托 =================
-    def _save_manifest(self):
-        self.data_mgr._save_manifest()
-
-    def _load_tags_map(self):
-        self.data_mgr._load_tags_map()
-
-    def is_image_excluded(self, base_name: str) -> bool:
-        return self.data_mgr.is_image_excluded(base_name)
-
-    def toggle_image_exclusion(self, base_name: str) -> bool:
-        return self.data_mgr.toggle_image_exclusion(base_name)
-
-    def toggle_observation_keep(self, base_name: str, target_tag_id: int) -> bool:
-        return self.data_mgr.toggle_observation_keep(base_name, target_tag_id)
-
-    def get_observations_for_image(self, base_name: str) -> List[Dict[str, Any]]:
-        return self.data_mgr.get_observations_for_image(base_name)
-
-    def get_tag_world_corners(self, tag_id: int) -> Optional[np.ndarray]:
-        return self.data_mgr.get_tag_world_corners(tag_id)
-
-    def get_tag_transform(self, tag_id: int) -> Optional[np.ndarray]:
-        return self.data_mgr.get_tag_transform(tag_id)
-
-    def refresh_all_frame_metrics(self):
-        self.data_mgr.refresh_all_frame_metrics()
-
-    def _evaluate_frame_reprojection(self, observations: List[Dict[str, Any]]):
-        return self.data_mgr._evaluate_frame_reprojection(observations)
-
-    def _get_filtered_indices(self) -> List[int]:
-        return self.data_mgr.get_filtered_indices()
 
     def toggle_current_frame_exclusion(self):
         bname, is_excl = self.data_mgr.toggle_current_frame_exclusion()
@@ -850,13 +582,6 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             t_str = "已保留" if is_kept else "已剔除 (打叉)"
             self.set_toast(f"标靶 Tag #{target_tag_id} 在本帧中 {t_str}")
 
-    def super_extract_current_frame(self) -> Tuple[str, int]:
-        """对当前选中帧执行工序 3 工业级超精重提取并持久化"""
-        return self.data_mgr.super_extract_current_frame(self.current_img_idx)
-
-    def super_extract_all_frames(self, progress_callback: Optional[Any] = None) -> Tuple[int, int]:
-        """对所有采图帧清空原有角点与观测，从头重提取超精标靶并持久化"""
-        return self.data_mgr.super_extract_all_frames(progress_callback=progress_callback)
 
     @property
     def dynamic_left_bar_w(self) -> int:
@@ -886,13 +611,6 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         else:
             self.set_toast("ROI 物件绘制模式：已关闭")
 
-    def reset_map(self) -> bool:
-        """一键复位清空空间立体地图"""
-        return self.data_mgr.reset_map()
-
-    def reset_all_keep_status(self) -> int:
-        """一键复位全量观测保留状态"""
-        return self.data_mgr.reset_all_keep_status()
 
     # ===================== 渲染管线 (三栏自适应排版) =====================
 
@@ -900,42 +618,6 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         """完整渲染 Spatial Mapping Studio 的顶栏、左栏列表、中间视口、右栏诊断与底栏"""
         self.ui_renderer.render(self, canvas)
 
-    def _render_active_dropdown(self, canvas: np.ndarray):
-        if self.active_dropdown and self.active_dropdown in self.dropdown_boxes:
-            box = self.dropdown_boxes[self.active_dropdown]
-            self.ui_renderer.render_dropdown_popup(self, canvas, self.active_dropdown, box["rect"], box["options"], box["active_key"])
-
-    def _render_top_bar(self, canvas: np.ndarray, w: int, top_h: int):
-        self.ui_renderer.render_top_bar(self, canvas, w, top_h)
-
-    def _render_bottom_toolbar(self, canvas: np.ndarray, w: int, h: int, bot_h: int):
-        self.ui_renderer.render_bottom_toolbar(self, canvas, w, h, bot_h)
-
-    def _render_left_frame_list(self, canvas: np.ndarray, x: int, y: int, w: int, h: int):
-        self.ui_renderer.render_left_frame_list(self, canvas, x, y, w, h)
-
-    def _render_center_viewport(self, canvas: np.ndarray, x: int, y: int, w: int, h: int):
-        self.ui_renderer.render_center_viewport(self, canvas, x, y, w, h)
-
-    def _overlay_visual_elements(
-        self,
-        disp_frame: np.ndarray,
-        observations: List[Dict[str, Any]],
-        is_frame_excluded: bool,
-        meta: Optional[Dict[str, Any]] = None
-    ):
-        self.ui_renderer.overlay_visual_elements(self, disp_frame, observations, is_frame_excluded, meta=meta)
-
-
-
-    def _render_right_inspector(self, canvas: np.ndarray, x: int, y: int, w: int, h: int):
-        self.ui_renderer.render_right_inspector(self, canvas, x, y, w, h)
-
-    def _render_ba_loading_card(self, canvas: np.ndarray, w: int, h: int):
-        self.ui_renderer.render_ba_loading_card(self, canvas, w, h)
-
-    def _render_toast(self, canvas: np.ndarray, w: int, h: int, bot_h: int):
-        self.ui_renderer.render_toast(self, canvas, w, h, bot_h)
 
     # ===================== 事件分发与主循环 =====================
 
@@ -943,8 +625,8 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         """唤起/关闭当前选定帧的漏检病因深度切片诊断视图"""
         self.show_frame_diagnostics = not self.show_frame_diagnostics
         if self.show_frame_diagnostics:
-            diag = self.data_mgr.diagnose_frame(self.current_img_idx)
-            bname = os.path.basename(self.image_files[self.current_img_idx])
+            diag = self.data_mgr.diagnose_frame(self.data_mgr.current_img_idx)
+            bname = os.path.basename(self.data_mgr.image_files[self.data_mgr.current_img_idx])
             c_g = diag.get("contrast_grade", "")
             s_g = diag.get("sharpness_grade", "")
             rej_n = diag.get("rejected_quads_count", 0)
@@ -979,7 +661,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         if force_window_focus:
             force_window_focus(window_name)
 
-        log.info(f"空间建图工作站已启动: {len(self.image_files)} 帧图像, 地图: {self.map_path}")
+        log.info(f"空间建图工作站已启动: {len(self.data_mgr.image_files)} 帧图像, 地图: {self.map_path}")
 
         canvas = np.zeros((self.win_h, self.win_w, 3), dtype=np.uint8)
 
@@ -1031,20 +713,22 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 elif key in (ord('x'), ord('X')):      # X 键 -> 切换多轮残差矩阵视图
                     self.toggle_matrix_view_mode()
                 elif key in (ord('w'), ord('W'), 82):  # 上一帧 (W / Up)
-                    if self.image_files:
-                        self.current_img_idx = (self.current_img_idx - 1) % len(self.image_files)
-                        self.set_toast(f"选定帧: {os.path.basename(self.image_files[self.current_img_idx])}")
+                    if self.data_mgr.image_files:
+                        next_idx = (self.data_mgr.current_img_idx - 1) % len(self.data_mgr.image_files)
+                        self.select_frame(next_idx)
+                        self.set_toast(f"选定帧: {os.path.basename(self.data_mgr.image_files[next_idx])}")
                         if self.show_frame_diagnostics:
-                            self.data_mgr.diagnose_frame(self.current_img_idx)
+                            self.data_mgr.diagnose_frame(next_idx)
                 elif key in (ord('s'), ord('S'), 84):  # 下一帧 (S / Down)
-                    if self.image_files:
-                        self.current_img_idx = (self.current_img_idx + 1) % len(self.image_files)
-                        self.set_toast(f"选定帧: {os.path.basename(self.image_files[self.current_img_idx])}")
+                    if self.data_mgr.image_files:
+                        next_idx = (self.data_mgr.current_img_idx + 1) % len(self.data_mgr.image_files)
+                        self.select_frame(next_idx)
+                        self.set_toast(f"选定帧: {os.path.basename(self.data_mgr.image_files[next_idx])}")
                         if self.show_frame_diagnostics:
-                            self.data_mgr.diagnose_frame(self.current_img_idx)
+                            self.data_mgr.diagnose_frame(next_idx)
                 elif key in (ord('e'), ord('E')):      # E 键 -> 单帧超精重提取
                     self.set_toast("正在执行单帧工业级超精重提取...")
-                    bname, cnt = self.super_extract_current_frame()
+                    bname, cnt = self.data_mgr.super_extract_current_frame(self.data_mgr.current_img_idx)
                     if bname:
                         self.set_toast(f"帧 {bname} 超精提取完成并永久持久化: 检出 {cnt} 个标靶")
                 elif key in (ord('d'), ord('D')):      # D 键 -> 漏检病因切片诊断
@@ -1071,34 +755,34 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 elif key in (ord('t'), ord('T'), 32):  # T 键或空格键 -> 翻转状态
                     self.toggle_current_frame_exclusion()
                 elif key in (ord('b'), ord('B')):      # B 键 -> 阶段一: 自由平差
-                    self.start_async_bundle_adjustment()
+                    self.ba_runner.start()
                 elif key in (ord('c'), ord('C')):      # C 键 -> 阶段二: 独立校准世界系
                     self.align_current_workspace_world_datum()
                 elif key in (ord('p'), ord('P')):      # P 键 -> 重算体检
-                    self.refresh_all_frame_metrics()
+                    self.data_mgr.refresh_all_frame_metrics()
                     self.set_toast("已全量重算体检指标")
                 elif key in (ord('r'), ord('R')):      # R 键 -> 导出报告
                     self.export_verification_report()
                 elif key in (ord('m'), ord('M'), ord('u'), ord('U')):  # M/U 键 -> 保存工位地图
-                    ManifestRepository.save_map(self.tags_map_data, self.map_path)
+                    ManifestRepository.save_map(self.data_mgr.tags_map_data, self.map_path)
                     if self.current_workspace:
                         self.current_workspace.refresh_stats()
                         self.current_workspace.save_meta()
                     self.set_toast("空间立体地图已保存至当前工位沙盒 (tags_map.yaml)！")
                 elif key in (ord('y'), ord('Y')):      # Y 键 -> 开关 XY 平面网格
-                    self.show_xy_plane_on = not self.show_xy_plane_on
-                    self.set_toast(f"XY 平面网格{'已开启' if self.show_xy_plane_on else '已关闭'} ({self.get_current_plane_z_label()})")
+                    self.data_mgr.show_xy_plane_on = not self.data_mgr.show_xy_plane_on
+                    self.set_toast(f"XY 平面网格{'已开启' if self.data_mgr.show_xy_plane_on else '已关闭'} ({self.data_mgr.get_current_plane_z_label()})")
                     self.save_dropdown_state()
                 elif key in (ord('['), 219):           # [ 键 -> XY 平面高度升档
-                    self.step_plane_z(direction=+1)
-                    self.set_toast(f"XY 平面高度升档: {self.get_current_plane_z_label()}")
+                    self.data_mgr.step_plane_z(direction=+1)
+                    self.set_toast(f"XY 平面高度升档: {self.data_mgr.get_current_plane_z_label()}")
                     self.save_dropdown_state()
                 elif key in (ord(']'), 221):           # ] 键 -> XY 平面高度降档
-                    self.step_plane_z(direction=-1)
-                    self.set_toast(f"XY 平面高度降档: {self.get_current_plane_z_label()}")
+                    self.data_mgr.step_plane_z(direction=-1)
+                    self.set_toast(f"XY 平面高度降档: {self.data_mgr.get_current_plane_z_label()}")
                     self.save_dropdown_state()
                 elif key in (8, 127):                  # Backspace 或 Delete (DEL) -> 一键复位地图
-                    self.reset_map()
+                    self.data_mgr.reset_map()
                     self.set_toast("立体地图已复位清空 (备份为 .bak)，恢复为纯观测模式")
 
 

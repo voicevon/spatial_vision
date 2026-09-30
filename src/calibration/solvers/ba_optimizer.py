@@ -485,11 +485,13 @@ class BundleAdjustmentOptimizer:
         #    - 若未指定 anchor_tags: 纯自由平差 (阶段一), 输出纯视觉相对几何地图 (以 base_static_id 为相对原点)
         #    - 若指定了 anchor_tags: 世界绝对锚定 (阶段二), 求解 3D 相似变换变换至世界系
         if anchor_tags:
-            final_tags_map = self.anchor_to_absolute_world(
+            aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
+            final_tags_map = aligner.anchor_to_absolute_world(
                 optimized_tags_pose, anchor_tags,
                 origin_tag_id=origin_tag_id, x_align_tag_id=x_align_tag_id,
                 strict=True
             )
+            self.marker_size_mm = aligner.marker_size_mm
         else:
             # 阶段一: 纯自由平差相对地图
             tags_dict = {}
@@ -629,71 +631,5 @@ class BundleAdjustmentOptimizer:
             yaw = 0.0
         return roll, pitch, yaw
 
-    # ------------------------------------------------------------------
-    # 世界系绝对锚定与基准对齐 (统一委托给独立的 WorldDatumAligner 模块实现)
-    # ------------------------------------------------------------------
 
-    @staticmethod
-    def normalize_anchor_tags(anchor_input: Any) -> Optional[Dict[int, Dict[str, Any]]]:
-        """锚点配置格式归一化 (委托 WorldDatumAligner 实现)"""
-        return WorldDatumAligner.normalize_anchor_tags(anchor_input)
-
-    @staticmethod
-    def evaluate_anchor_dof(anchor_tags: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
-        """锚点自由度记账 (委托 WorldDatumAligner 实现)"""
-        return WorldDatumAligner.evaluate_anchor_dof(anchor_tags)
-
-    @staticmethod
-    def _umeyama_alignment(src_pts: np.ndarray, dst_pts: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
-        """Umeyama 3D 相似变换 (委托 WorldDatumAligner 实现)"""
-        return WorldDatumAligner.umeyama_alignment(src_pts, dst_pts)
-
-    @classmethod
-    def solve_similarity_from_anchors(cls,
-                                      tag_poses: Dict[int, np.ndarray],
-                                      anchor_tags: Dict[int, Dict[str, Any]]) -> Tuple[str, Dict[str, Any]]:
-        """自适应求解相似变换 (委托 WorldDatumAligner 实现)"""
-        return WorldDatumAligner.solve_similarity_from_anchors(tag_poses, anchor_tags)
-
-    def anchor_to_absolute_world(self,
-                                 tag_poses: Dict[int, np.ndarray],
-                                 anchor_input: Any,
-                                 origin_tag_id: int = 0,
-                                 x_align_tag_id: int = 1,
-                                 strict: bool = False) -> Dict[str, Any]:
-        """FR-9.6 世界坐标系绝对锚定 (委托 WorldDatumAligner 实现)"""
-        aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
-        res = aligner.anchor_to_absolute_world(
-            tag_poses, anchor_input,
-            origin_tag_id=origin_tag_id,
-            x_align_tag_id=x_align_tag_id,
-            strict=strict
-        )
-        self.marker_size_mm = aligner.marker_size_mm
-        return res
-
-    def align_relative_map_to_world(self,
-                                    relative_map: Dict[str, Any],
-                                    anchor_tags: Dict[int, Dict[str, Any]],
-                                    origin_tag_id: int = 0,
-                                    x_align_tag_id: int = 1,
-                                    strict: bool = True) -> Dict[str, Any]:
-        """【阶段二独立解算核心】将自由平差相对底图对齐至世界系 (委托 WorldDatumAligner 实现)"""
-        aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
-        res = aligner.align_relative_map_to_world(
-            relative_map, anchor_tags,
-            origin_tag_id=origin_tag_id,
-            x_align_tag_id=x_align_tag_id,
-            strict=strict
-        )
-        self.marker_size_mm = aligner.marker_size_mm
-        return res
-
-    def align_to_scara_world(self,
-                             tag_poses: Dict[int, np.ndarray], 
-                             origin_tag_id: int, 
-                             x_align_tag_id: int) -> Dict[str, Any]:
-        """相对单靶原点退化对齐 (委托 WorldDatumAligner 实现)"""
-        aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
-        return aligner.align_to_scara_world(tag_poses, origin_tag_id, x_align_tag_id)
 

@@ -87,9 +87,7 @@ class TagLocalizer:
             if missing_dynamic_flag:
                 log.warning(f"[TagLocalizer] [WARN] 地图缺少 is_dynamic_yaw 标志，已自动强制将原点标靶 Tag {origin_id} 标记为动态 (禁止参与 PnP 外参求解)！")
             # 锚定模式溯源: partial 模式地图的 Z 轴为相对坐标, 运行时必须守门
-            self.anchor_mode = (self.tags_map.get("anchor_mode")
-                                or (self.tags_map.get("world_anchor") or {}).get("anchor_mode")
-                                or "")
+            self.anchor_mode = str(self.tags_map.get("anchor_mode", "") or "")
             if self.anchor_mode:
                 log.info(f"[TagLocalizer] 地图锚定模式: {self.anchor_mode}")
                 if self.anchor_mode == "partial":

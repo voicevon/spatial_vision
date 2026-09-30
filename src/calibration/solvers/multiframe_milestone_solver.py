@@ -422,7 +422,7 @@ class MultiFrameMilestoneSolver:
         if not anchor_tags:
             world_align_ok = False
             report.m2_world_datum_passed = False
-            report.m2_msg = "工位未配置已知世界锚点 (请在 anchor_tags.yaml 录入 >=3 枚标靶物理坐标以完成世界基准校准)"
+            report.m2_msg = "工位未配置已知世界锚点 (请在 tag_whitelist.yaml 录入 >=3 枚标靶物理坐标以完成世界基准校准)"
         else:
             try:
                 world_map = aligner.align_relative_map_to_world(

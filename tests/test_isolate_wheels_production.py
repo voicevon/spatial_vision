@@ -60,7 +60,7 @@ class TestIsolateWheelsProduction(unittest.TestCase):
 
     def test_workspace_switch(self):
         """测试步骤一: 工位切换与 ROI 标靶同步"""
-        ws_list = self.app.workspace_list
+        ws_list = self.app.workspace_mgr.list_workspaces()
         if ws_list:
             target_ws = ws_list[0].workspace_id
             self.app.switch_workspace(target_ws)
@@ -104,7 +104,7 @@ class TestIsolateWheelsProduction(unittest.TestCase):
             cy8 = int((ny8 + nh8 / 2) * 480)
             cv2.circle(img, (cx8, cy8), 22, (255, 255, 255), -1)
 
-        counts = self.app.detector.update_frame(img)
+        counts = self.app.detector.process_frame(img)
         self.assertEqual(len(counts), 8)
         for c in counts:
             self.assertTrue(0 <= c <= 9)

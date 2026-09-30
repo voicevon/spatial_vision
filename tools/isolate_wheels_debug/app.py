@@ -92,99 +92,6 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         self.load_speed: float = 1.0
         self.popup_speed: bool = False
 
-    # ==================== 兼容性属性映射 ====================
-    @property
-    def _client(self):
-        return self.controller._client
-
-    @_client.setter
-    def _client(self, val):
-        self.controller._client = val
-
-    @property
-    def _connected(self) -> bool:
-        return self.controller._connected
-
-    @_connected.setter
-    def _connected(self, val: bool):
-        self.controller._connected = val
-
-    @property
-    def devices(self) -> dict:
-        return self.controller.devices
-
-    @devices.setter
-    def devices(self, val: dict):
-        self.controller.devices = val
-
-    @property
-    def selected_devid(self) -> str:
-        return self.controller.selected_devid
-
-    @selected_devid.setter
-    def selected_devid(self, val: str):
-        self.controller.selected_devid = val
-
-    @property
-    def done_count(self) -> int:
-        return self.controller.done_count
-
-    @done_count.setter
-    def done_count(self, val: int):
-        self.controller.done_count = val
-
-    @property
-    def last_done_time(self) -> str:
-        return self.controller.last_done_time
-
-    @last_done_time.setter
-    def last_done_time(self, val: str):
-        self.controller.last_done_time = val
-
-    @property
-    def last_done_cmd(self) -> str:
-        return self.controller.last_done_cmd
-
-    @last_done_cmd.setter
-    def last_done_cmd(self, val: str):
-        self.controller.last_done_cmd = val
-
-    @property
-    def last_cmd_json(self) -> str:
-        return self.controller.last_cmd_json
-
-    @last_cmd_json.setter
-    def last_cmd_json(self, val: str):
-        self.controller.last_cmd_json = val
-
-    @property
-    def last_publish_msg(self) -> str:
-        return self.controller.last_publish_msg
-
-    @last_publish_msg.setter
-    def last_publish_msg(self, val: str):
-        self.controller.last_publish_msg = val
-
-    @property
-    def log_lines(self):
-        return self.controller.log_lines
-
-    @property
-    def _lock(self):
-        return self.controller._lock
-
-    def _device_state(self, devid: str) -> str:
-        return self.controller.get_device_state(devid)
-
-    def _on_message(self, client, userdata, msg):
-        self.controller._on_message(client, userdata, msg)
-
-    def _on_connect(self, client, userdata, flags, rc):
-        self.controller._on_connect(client, userdata, flags, rc)
-
-    def _on_disconnect(self, client, userdata, rc):
-        self.controller._on_disconnect(client, userdata, rc)
-
     # ==================== 生命周期钩子 ====================
     def setup(self):
         self.connect_broker()
@@ -206,7 +113,7 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         if ok:
             spd_tag = f" ({self.load_speed:.1f}x)"
             log.info(f"[WHEELS] {time.strftime('%H:%M:%S')} 已下发 -> load{spd_tag}: {payload}")
-            self.set_toast(f"节拍已下发至 {self.selected_devid}: {payload}")
+            self.set_toast(f"节拍已下发至 {self.controller.selected_devid}: {payload}")
         else:
             self.set_toast(msg)
         return ok
@@ -215,7 +122,7 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         ok, msg, payload = self.controller.send_motor(self.motor_sel, self.motor_dir, self.motor_angle)
         if ok:
             log.info(f"[WHEELS] {time.strftime('%H:%M:%S')} 已下发 -> motor #{self.motor_sel}: {payload}")
-            self.set_toast(f"单电机调试命令已下发至 {self.selected_devid}: {payload}")
+            self.set_toast(f"单电机调试命令已下发至 {self.controller.selected_devid}: {payload}")
         else:
             self.set_toast(msg)
         return ok
@@ -224,7 +131,7 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         ok, msg, payload = self.controller.send_multi(self.multi_angles)
         if ok:
             log.info(f"[WHEELS] {time.strftime('%H:%M:%S')} 已下发 -> multi 8轴: {payload}")
-            self.set_toast(f"多电机调试命令已下发至 {self.selected_devid}: {payload}")
+            self.set_toast(f"多电机调试命令已下发至 {self.controller.selected_devid}: {payload}")
         else:
             self.set_toast(msg)
         return ok
@@ -235,68 +142,12 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         else:
             self.send_multi()
 
-    # ==================== 几何与交互辅助 (保持兼容) ====================
-    @staticmethod
-    def pt_in(x: int, y: int, rect: Tuple[int, int, int, int]) -> bool:
-        return WheelDebugRenderer.pt_in(x, y, rect)
-
-    def draw_btn(self, canvas: np.ndarray, rect: Tuple[int, int, int, int], text: str,
-                 mpos: Tuple[int, int], theme_color=None, enabled=True, bold=False):
-        self.renderer.draw_btn(canvas, rect, text, mpos, theme_color=theme_color, enabled=enabled, bold=bold)
-
-    @classmethod
-    def _device_chip_rect(cls, idx: int) -> Tuple[int, int, int, int]:
-        return device_chip_rect(idx)
-
-    @classmethod
-    def _col_rect(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_rect(col)
-
-    @classmethod
-    def _col_header_rect(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_header_rect(col)
-
-    @classmethod
-    def _col_count_minus(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_count_minus(col)
-
-    @classmethod
-    def _col_count_plus(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_count_plus(col)
-
-    @classmethod
-    def _col_angle_box(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_angle_box(col)
-
-    @classmethod
-    def _col_angle_minus(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_angle_minus(col)
-
-    @classmethod
-    def _col_angle_plus(cls, col: int) -> Tuple[int, int, int, int]:
-        return col_angle_plus(col)
-
-    def _popup_rect(self) -> Tuple[int, int, int, int]:
-        return angle_popup_rect(self.popup_col)
-
-    @classmethod
-    def _speed_popup_rect(cls) -> Tuple[int, int, int, int]:
-        return speed_popup_rect()
-
-    @staticmethod
-    def _fmt_angle(v: float) -> str:
-        r = round(float(v), 1)
-        return str(int(r)) if r == int(r) else str(r)
-
-    def _device_state(self, devid: str) -> str:
-        return self.controller.get_device_state(devid)
-
     # ==================== 事件调度分发 ====================
     def on_click(self, x: int, y: int):
         # 0. 弹层拦截
         if self.popup_speed:
-            spx, spy, spw, sph = self._speed_popup_rect()
-            if self.pt_in(x, y, (spx, spy, spw, sph)):
+            spx, spy, spw, sph = speed_popup_rect()
+            if WheelDebugRenderer.pt_in(x, y, (spx, spy, spw, sph)):
                 row = (y - spy - 4) // SPEED_POPUP_ROW_H
                 if 0 <= row < len(LOAD_SPEED_OPTS):
                     self.load_speed = float(LOAD_SPEED_OPTS[row])
@@ -305,8 +156,8 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
             return
 
         if self.popup_col >= 0:
-            px, py, pw, ph = self._popup_rect()
-            if self.pt_in(x, y, (px, py, pw, ph)):
+            px, py, pw, ph = angle_popup_rect(self.popup_col)
+            if WheelDebugRenderer.pt_in(x, y, (px, py, pw, ph)):
                 row = (y - py - 4) // POPUP_ROW_H
                 if 0 <= row < len(MULTI_ANGLE_OPTS):
                     chosen = float(MULTI_ANGLE_OPTS[row])
@@ -321,58 +172,58 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
             return
 
         # 1. 顶栏按钮
-        if self.pt_in(x, y, BTN_CONNECT):
+        if WheelDebugRenderer.pt_in(x, y, BTN_CONNECT):
             self.connect_broker()
             return
-        if self.pt_in(x, y, BTN_DISCONNECT):
+        if WheelDebugRenderer.pt_in(x, y, BTN_DISCONNECT):
             self.disconnect_broker()
             return
-        if self.pt_in(x, y, BTN_QUIT):
+        if WheelDebugRenderer.pt_in(x, y, BTN_QUIT):
             self._running = False
             return
 
         # 2. 在线设备切换
         if DEV_CHIP_Y <= y <= DEV_CHIP_Y + DEV_CHIP_H:
-            dev_ids = list(self.devices.keys()) or [self.selected_devid]
+            dev_ids = list(self.controller.devices.keys()) or [self.controller.selected_devid]
             for i in range(min(len(dev_ids), DEV_CHIP_MAX)):
-                if self.pt_in(x, y, self._device_chip_rect(i)):
-                    self.selected_devid = dev_ids[i]
+                if WheelDebugRenderer.pt_in(x, y, device_chip_rect(i)):
+                    self.controller.selected_devid = dev_ids[i]
                     return
 
         # 3. 模式切换 Tab
-        if self.pt_in(x, y, TAB_MULTI):
+        if WheelDebugRenderer.pt_in(x, y, TAB_MULTI):
             self.motor_mode = "multi"
             return
-        if self.pt_in(x, y, TAB_SINGLE):
+        if WheelDebugRenderer.pt_in(x, y, TAB_SINGLE):
             self.motor_mode = "single"
             return
 
         # 4. 8 通道交互
         for col in range(8):
             idx = col
-            if self.pt_in(x, y, self._col_header_rect(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_header_rect(col)):
                 self.motor_sel = idx + 1
                 return
-            if self.pt_in(x, y, self._col_count_minus(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_count_minus(col)):
                 self.counts[idx] = max(0, self.counts[idx] - 1)
                 return
-            if self.pt_in(x, y, self._col_count_plus(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_count_plus(col)):
                 self.counts[idx] = min(9, self.counts[idx] + 1)
                 return
-            if self.pt_in(x, y, self._col_angle_box(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_angle_box(col)):
                 self.popup_col = col
                 self.popup_speed = False
                 if self.motor_mode == "single":
                     self.motor_sel = idx + 1
                 return
-            if self.pt_in(x, y, self._col_angle_minus(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_angle_minus(col)):
                 if self.motor_mode == "multi":
                     self.multi_angles[idx] = max(-360.0, round(self.multi_angles[idx] - 22.5, 1))
                 else:
                     self.motor_sel = idx + 1
                     self.motor_angle = max(22.5, round(self.motor_angle - 22.5, 1))
                 return
-            if self.pt_in(x, y, self._col_angle_plus(col)):
+            if WheelDebugRenderer.pt_in(x, y, col_angle_plus(col)):
                 if self.motor_mode == "multi":
                     self.multi_angles[idx] = min(360.0, round(self.multi_angles[idx] + 22.5, 1))
                 else:
@@ -381,37 +232,37 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
                 return
 
         # 5. 机架底部操作条
-        if self.pt_in(x, y, BTN_CLEAR_COUNTS):
+        if WheelDebugRenderer.pt_in(x, y, BTN_CLEAR_COUNTS):
             self.counts = [0] * 8
             self.set_toast("8 托架数量已清零。")
             return
-        if self.pt_in(x, y, BTN_RESET_ANGLES):
+        if WheelDebugRenderer.pt_in(x, y, BTN_RESET_ANGLES):
             self.multi_angles = [0.0] * 8
             self.motor_angle = 90.0
             self.set_toast("所有电机角度已归零/重置。")
             return
-        if self.pt_in(x, y, BTN_SEND_LOAD):
+        if WheelDebugRenderer.pt_in(x, y, BTN_SEND_LOAD):
             self.send_load()
             return
-        if self.pt_in(x, y, BOX_LOAD_SPEED):
+        if WheelDebugRenderer.pt_in(x, y, BOX_LOAD_SPEED):
             self.popup_speed = not self.popup_speed
             self.popup_col = -1
             return
         if self.motor_mode == "single":
-            if self.pt_in(x, y, BTN_DIR_FWD):
+            if WheelDebugRenderer.pt_in(x, y, BTN_DIR_FWD):
                 self.motor_dir = 1
                 return
-            if self.pt_in(x, y, BTN_DIR_REV):
+            if WheelDebugRenderer.pt_in(x, y, BTN_DIR_REV):
                 self.motor_dir = 0
                 return
-        if self.pt_in(x, y, BTN_SEND_MOTOR):
+        if WheelDebugRenderer.pt_in(x, y, BTN_SEND_MOTOR):
             self.send_motor_cmd()
             return
 
         # 6. 日志清空按钮
-        if self.pt_in(x, y, BTN_CLEAR_LOG):
-            with self._lock:
-                self.log_lines.clear()
+        if WheelDebugRenderer.pt_in(x, y, BTN_CLEAR_LOG):
+            with self.controller._lock:
+                self.controller.log_lines.clear()
             self.log_scroll = None
             self.set_toast("设备实时日志已清空。")
             return
@@ -421,8 +272,8 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         x, y, w, h = LOG_CARD
         if not (x <= lx <= x + w and y <= ly <= y + h):
             return
-        with self._lock:
-            total = len(self.log_lines)
+        with self.controller._lock:
+            total = len(self.controller.log_lines)
         max_lines = (h - 58 - 12) // LOG_LINE_H
         if total <= max_lines:
             self.log_scroll = None
@@ -439,14 +290,14 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
 
         # 顶栏
         broker_desc = f"MQTT {BROKER_HOST}:{BROKER_PORT} (协议 v1.3)"
-        with self._lock:
-            dev_ids = sorted(self.devices.keys())
-        self.renderer.draw_topbar(canvas, mpos, broker_desc, self._connected,
-                                  self.selected_devid, dev_ids, self.devices)
+        with self.controller._lock:
+            dev_ids = sorted(self.controller.devices.keys())
+        self.renderer.draw_topbar(canvas, mpos, broker_desc, self.controller._connected,
+                                  self.controller.selected_devid, dev_ids, self.controller.devices)
 
         # 8 通道机架
-        st = self._device_state(self.selected_devid)
-        can_send = self._connected and st == "idle"
+        st = self.controller.get_device_state(self.controller.selected_devid)
+        can_send = self.controller._connected and st == "idle"
         self.renderer.draw_rack_panel(
             canvas, mpos, self.motor_mode, self.motor_sel, self.counts,
             self.multi_angles, self.motor_angle, self.load_speed, self.popup_speed,
@@ -455,13 +306,14 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
 
         # 状态面板
         self.renderer.draw_status_panel(
-            canvas, self.selected_devid, st, self.done_count,
-            self.last_done_cmd, self.last_done_time, self.last_publish_msg, self.last_cmd_json
+            canvas, self.controller.selected_devid, st, self.controller.done_count,
+            self.controller.last_done_cmd, self.controller.last_done_time,
+            self.controller.last_publish_msg, self.controller.last_cmd_json
         )
 
         # 日志面板
-        with self._lock:
-            lines = list(self.log_lines)
+        with self.controller._lock:
+            lines = list(self.controller.log_lines)
         self.renderer.draw_log_panel(canvas, mpos, TOPIC_PREFIX, self.log_scroll, lines)
 
         # 弹层
