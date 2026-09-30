@@ -120,7 +120,8 @@ class WorldDatumAligner:
         else:
             for k, v in anchor_input.items():
                 if isinstance(v, dict):
-                    _add(k, v.get("xyz_mm"), v.get("known"), v.get("frame_id"))
+                    xyz = v.get("xyz_mm", v.get("coords", v.get("position_mm")))
+                    _add(k, xyz, v.get("known"), v.get("frame_id"))
         return out or None
 
     @staticmethod
@@ -270,7 +271,7 @@ class WorldDatumAligner:
             rel_diff = abs_diff / max(1e-3, expected_dw)
             if abs_diff > 15.0 and rel_diff > 0.15:
                 conflict_pairs.append({
-                    "pair": (ia, ib),
+                    "pair": (int(ia), int(ib)),
                     "world_dist_mm": round(d_w, 2),
                     "measured_dist_mm": round(expected_dw, 2),
                     "diff_mm": round(abs_diff, 2),
@@ -439,13 +440,20 @@ class WorldDatumAligner:
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, "锚点配置为空或字段不合法")
 
         # 坐标系隔离过滤: 世界基准系 (world) 对齐仅能使用属于 world 的锚点，严禁将未解算的子坐标系局部标靶混入世界系
+        # 核心规约: 0~9 恒定归属 world；>=10 归属各子坐标系
         world_anchors = {}
         for tid, a in anchor_tags.items():
             fid = a.get("frame_id")
-            if fid is None or fid == "world":
+            if fid == "world":
                 world_anchors[tid] = a
+            elif fid is not None:
+                log.info(f"[WORLD_ALIGN] 标靶 Tag #{tid} 显式指定归属于子坐标系 [{fid}]，已隔离不参与阶段二世界基准系对齐")
             else:
-                log.info(f"[WORLD_ALIGN] 标靶 Tag #{tid} 归属于子坐标系 [{fid}]，已隔离不参与阶段二世界基准系对齐")
+                # 纯净格式: 0 <= tid <= 9 为 world 锚点
+                if 0 <= int(tid) <= 9:
+                    world_anchors[tid] = a
+                else:
+                    log.info(f"[WORLD_ALIGN] 标靶 Tag #{tid} 按 ID 区间规约归属于子坐标系 (Tag >= 10)，已隔离不参与阶段二世界基准系对齐")
         active_anchors = world_anchors if world_anchors else anchor_tags
 
         # 预先检查尺度与几何形变冲突 (提前为用户挖掘测距异常线索，绝不让终端 warning 沉没)
@@ -479,6 +487,15 @@ class WorldDatumAligner:
                     "\n\n— 请检查锚点 tag 之间的已知轴距离与 XY 共线方向 (FR-9.6 禁止兜底)"
                 )
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, solve["reason"])
+
+        if solve.get("conflict_pairs"):
+            fatal_conflicts = [
+                c for c in solve["conflict_pairs"]
+                if c.get("diff_mm", 0.0) > 20.0 and c.get("rel_error", 0.0) > 0.20
+            ]
+            if fatal_conflicts:
+                conflict_diag = format_conflict_pairs_report(fatal_conflicts)
+                log.error(f"[ANCHOR CONFLICT FATAL]\n{conflict_diag}")
 
         scale = solve["scale_factor"]
         R = solve["R"]
@@ -557,9 +574,22 @@ class WorldDatumAligner:
             for tid, mat in relative_map["raw_relative_poses"].items():
                 tag_poses[int(tid)] = np.array(mat, dtype=np.float64)
         elif "tags" in relative_map:
-            for tid, t_info in relative_map["tags"].items():
-                if "transform_matrix" in t_info:
-                    tag_poses[int(tid)] = np.array(t_info["transform_matrix"], dtype=np.float64)
+            for tid_raw, t_info in relative_map["tags"].items():
+                try:
+                    tid = int(tid_raw)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(t_info, dict):
+                    if "transform_matrix" in t_info:
+                        tag_poses[tid] = np.array(t_info["transform_matrix"], dtype=np.float64)
+                    elif "position_mm" in t_info or "center" in t_info:
+                        pos = t_info.get("position_mm", t_info.get("center"))
+                        if pos is not None and len(pos) >= 3:
+                            T = np.eye(4, dtype=np.float64)
+                            T[:3, 3] = np.array(pos[:3], dtype=np.float64)
+                            tag_poses[tid] = T
+                elif isinstance(t_info, np.ndarray) and t_info.shape == (4, 4):
+                    tag_poses[tid] = t_info.astype(np.float64)
 
         if not tag_poses:
             raise ValueError("align_relative_map_to_world: 相对底图中未找到任何有效的标靶位姿矩阵")

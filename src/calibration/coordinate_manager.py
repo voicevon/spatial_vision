@@ -370,6 +370,54 @@ class CoordinateTreeManager:
                 res.append(f)
         return res
 
+    def get_frame_tag_range(self, frame_id: str) -> List[int]:
+        """
+        依据全局原则，获取指定坐标系所管辖的 AprilTag 编号区间:
+        - 'world' (世界基准系): 恒定分配 0 ~ 9
+        - 第 k 个子坐标系 (1-indexed): 恒定分配 k*10 ~ k*10 + 9 (例如 10~19, 20~29...)
+        """
+        if frame_id == "world":
+            return list(range(0, 10))
+
+        non_world_frames = [f.frame_id for f in self.list_frames() if f.frame_id != "world"]
+        if frame_id in non_world_frames:
+            k = non_world_frames.index(frame_id) + 1
+            start = k * 10
+            return list(range(start, start + 10))
+        return list(range(10, 20))
+
+    def get_frame_id_by_tag_id(self, tag_id: int) -> str:
+        """
+        依据全局原则，通过 AprilTag 编号反查其归属的坐标系 Frame ID:
+        - 0 <= tag_id <= 9 -> 'world'
+        - tag_id >= 10 -> 依据分段区间反查对应子坐标系
+        """
+        tid = int(tag_id)
+        if 0 <= tid <= 9:
+            return "world"
+
+        # 1. 优先检查是否有坐标系显式指定了该 tag_id
+        for fid, f in self._frames.items():
+            if fid == "world":
+                continue
+            if tid in f.get_tag_ids():
+                return fid
+            spec = f.calibration_spec or {}
+            ref_tags = spec.get("reference_tags", {})
+            if str(tid) in ref_tags or tid in ref_tags:
+                return fid
+
+        # 2. 依据全局标准分段区间反查: k = tid // 10
+        k = tid // 10
+        non_world_frames = [f.frame_id for f in self.list_frames() if f.frame_id != "world"]
+        if 1 <= k <= len(non_world_frames):
+            return non_world_frames[k - 1]
+
+        # 若超出当前声明的子坐标系数量，回退至首个子系或 world
+        if non_world_frames:
+            return non_world_frames[0]
+        return "world"
+
     def _has_cycle(self, frames_dict: Dict[str, FrameDefinition]) -> bool:
         """检测坐标系拓扑树是否存在环路"""
         visited = set()

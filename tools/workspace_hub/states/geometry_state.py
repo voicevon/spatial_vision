@@ -117,14 +117,10 @@ class GeometryState:
 
     def get_frame_tag_range(self, frame_id: str) -> list[int]:
         """获取坐标系分配的专属 Tag ID 命名空间区间 (0~9, 10~19, 20~29...)"""
+        if self.coord_mgr:
+            return self.coord_mgr.get_frame_tag_range(frame_id)
         if frame_id == "world":
             return list(range(0, 10))
-        frames = self.get_coordinate_frames()
-        non_world_frames = [f.frame_id for f in frames if f.frame_id != "world"]
-        if frame_id in non_world_frames:
-            k = non_world_frames.index(frame_id) + 1
-            start = k * 10
-            return list(range(start, start + 10))
         return list(range(10, 20))
 
     def toggle_frame_tag_allowed(self, frame_id: str, tag_id: int) -> bool:

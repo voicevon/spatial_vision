@@ -531,6 +531,8 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 lines.append(conflict_diag)
 
         text = "\n".join(lines)
+        if getattr(self, "latest_milestone_markdown", None):
+            text = f"{self.latest_milestone_markdown}\n\n---\n\n{text}"
         try:
             import subprocess
             process = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=True)

@@ -20,6 +20,10 @@ from src.calibration.workspace_manager import (
     load_workspace_tag_anchors,
 )
 from src.calibration.world_datum_aligner import WorldDatumAligner
+from src.calibration.multiframe_milestone_solver import (
+    MultiFrameMilestoneSolver,
+    MultiFrameMilestoneReport,
+)
 from tools.spatial_mapping_studio.mapping_state import MappingDataManager
 from src.utils.logger import get_logger
 
@@ -51,6 +55,7 @@ class MappingBARunner:
         self.marker_size_mm = marker_size_mm
         self.on_status_change = on_status_change
         self.workspace = workspace  # 当前工位对象引用 (用于锚点装载)
+        self.latest_milestone_report: Optional[MultiFrameMilestoneReport] = None
 
         # 运行状态与指标
         self.is_ba_running: bool = False
@@ -207,23 +212,37 @@ class MappingBARunner:
 
         # 2. 重新加载工位最新世界锚点配置
         self._load_alignment_config()
-        if not self.anchor_tags:
-            return False, "工位未配置已知世界锚点！请在白名单或 anchor_tags.yaml 录入>=3 枚标靶物理坐标。", None
 
-        try:
-            # 3. 独立求解世界系刚体变换 (纯 3D 几何，完全解耦自视觉平差求解器)
-            aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
-            world_map = aligner.align_relative_map_to_world(
-                relative_map=rel_map,
-                anchor_tags=self.anchor_tags,
-                origin_tag_id=self.origin_tag_id,
-                x_align_tag_id=self.x_align_tag_id,
-                strict=True
-            )
-        except Exception as e:
-            return False, f"世界坐标系校准拦截: {e}", None
+        # 3. 接入多坐标系分层里程碑解算器 (主干 M1/M2 + 动态 1..N 个子坐标系局部质检与熔断反推)
+        coord_mgr = None
+        if self.workspace:
+            try:
+                from src.calibration.workspace_manager import load_workspace_coordinate_manager
+                coord_mgr = load_workspace_coordinate_manager(self.workspace)
+            except Exception as e:
+                log.debug(f"[SPATIAL_MAPPING] load_workspace_coordinate_manager: {e}")
+
+        milestone_solver = MultiFrameMilestoneSolver(marker_size_mm=self.marker_size_mm)
+        milestone_ok, milestone_rep, world_map = milestone_solver.solve(
+            relative_map=rel_map,
+            anchor_tags=self.anchor_tags,
+            coord_mgr=coord_mgr,
+            origin_tag_id=self.origin_tag_id,
+            x_align_tag_id=self.x_align_tag_id,
+            strict_world_datum=True,
+        )
+        self.latest_milestone_report = milestone_rep
+
+        if not world_map:
+            # 世界基准锚定未通过
+            err_msg = milestone_rep.m2_msg or "世界基准解算未收敛"
+            return False, f"世界坐标系校准拦截: {err_msg}", None
 
         # 4. 持久化生产世界地图 tags_map.yaml 并更新运行时引擎
+        world_map["milestone_report"] = milestone_rep.to_dict()
+        world_map["milestone_markdown"] = milestone_solver.format_markdown_report(milestone_rep)
+        world_map["milestone_dialog_text"] = milestone_solver.format_diagnostic_dialog_text(milestone_rep)
+
         ManifestRepository.save_map(world_map, self.map_path)
         self.data_mgr.tags_map_data = world_map
         if getattr(self.data_mgr, "pnp_solver", None):
@@ -232,8 +251,15 @@ class MappingBARunner:
             self.data_mgr.set_marker_size_mm(world_map["marker_size_mm"])
         self.data_mgr.refresh_all_frame_metrics()
 
-        # 5. 【阶段三: 子坐标系外参反推与固化】
-        solved_frames = self._calibrate_sub_frames(world_map)
+        # 5. 【阶段三: 保存子坐标系树 frames.yaml (若有外参更新)】
+        if coord_mgr:
+            try:
+                succ_frames = sum(1 for s in milestone_rep.sub_frames.values() if s.extrinsic_solved)
+                if succ_frames > 0:
+                    coord_mgr.save()
+                    log.info(f"[SPATIAL_MAPPING] [PHASE 3] 子坐标系外参反推完成 ({succ_frames} 个成功) 并已写穿 frames.yaml")
+            except Exception as e:
+                log.warning(f"[SPATIAL_MAPPING] [PHASE 3] 保存 frames.yaml 失败: {e}")
 
         w_info = world_map.get("world_anchor", {})
         res = w_info.get("anchor_residual_mm", {})
@@ -241,9 +267,16 @@ class MappingBARunner:
         max_res = res.get("max_mm", 0.0)
         has_warn = res.get("has_warn", False)
         solver = w_info.get("solver_type", "3D")
-        sub_tip = f" | 反推子坐标系: {len(solved_frames)}个" if solved_frames else ""
-        if has_warn:
-            msg = f"世界系校准完成(⚠️注意：存在偏差过大标靶)：[{solver}] 均值残差: {mean_res:.2f}mm, 最大偏差: {max_res:.2f}mm{sub_tip}"
+        sub_count = len(milestone_rep.sub_frames)
+        sub_succ = sum(1 for s in milestone_rep.sub_frames.values() if s.extrinsic_solved)
+        sub_isolated = sum(1 for s in milestone_rep.sub_frames.values() if s.is_isolated)
+        sub_tip = f" | 子坐标系外参: {sub_succ}/{sub_count}" if sub_count > 0 else ""
+        if sub_isolated > 0:
+            sub_tip += f" (⚠️ {sub_isolated}个局部超差已熔断)"
+
+        if has_warn or sub_isolated > 0:
+            warn_desc = "⚠️注意：存在偏差过大标靶/隔离项" if sub_isolated > 0 else "⚠️注意：存在偏差过大标靶"
+            msg = f"世界系校准完成({warn_desc})：[{solver}] 均值残差: {mean_res:.2f}mm, 最大偏差: {max_res:.2f}mm{sub_tip}"
         else:
             msg = f"世界坐标系校准成功！[{solver}] 锚点残差均值: {mean_res:.2f} mm，生产地图已更新。{sub_tip}"
         self._notify(msg)

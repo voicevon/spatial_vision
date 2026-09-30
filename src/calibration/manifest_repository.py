@@ -310,13 +310,25 @@ class ManifestRepository:
         return frame_detections, valid_frame_names, stats
 
     @staticmethod
+    def _sanitize_for_yaml(obj: Any) -> Any:
+        """递归清洗数据结构，将 tuple 转换为 list，杜绝产生 !!python/tuple 等 YAML 私有标签"""
+        if isinstance(obj, tuple):
+            return [ManifestRepository._sanitize_for_yaml(x) for x in obj]
+        elif isinstance(obj, list):
+            return [ManifestRepository._sanitize_for_yaml(x) for x in obj]
+        elif isinstance(obj, dict):
+            return {k: ManifestRepository._sanitize_for_yaml(v) for k, v in obj.items()}
+        return obj
+
+    @staticmethod
     def save_map(map_data: Dict, output_path: str):
         """保存标靶地图至 YAML 文件. 必须显式传入路径 — 默认值已废弃 (Tag 地图必须写入工位沙盒)"""
         if not output_path:
             raise ValueError("save_map: output_path 不能为空 (Tag 地图必须写入工位沙盒, 不再回退全局 config/tags_map.yaml)")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        sanitized = ManifestRepository._sanitize_for_yaml(map_data)
         with open(output_path, "w", encoding="utf-8") as f:
-            yaml.dump(map_data, f, allow_unicode=True, sort_keys=False)
+            yaml.dump(sanitized, f, allow_unicode=True, sort_keys=False)
         log.info(f"[OK] 标靶空间立体地图已成功保存至: {output_path}")
 
     @staticmethod

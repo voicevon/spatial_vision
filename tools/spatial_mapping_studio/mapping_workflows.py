@@ -194,29 +194,30 @@ class MappingWorkflowMixin:
             log.warning(f"导出质检报告异常: {e}")
 
     def align_current_workspace_world_datum(self):
-        """【阶段二/三交互入口】执行世界坐标系校准与子坐标系外参逆解，毫秒级生效"""
+        """【阶段二/三交互入口】执行世界坐标系校准与多坐标系分层里程碑解算，毫秒级生效"""
         succ, msg, world_map = self.ba_runner.execute_world_alignment()
         if succ and world_map:
             rep = world_map.get("world_anchor", {}).get("alignment_report")
             if rep:
                 self.alignment_report = rep
+            if "milestone_markdown" in world_map:
+                self.latest_milestone_markdown = world_map["milestone_markdown"]
             if hasattr(self, "_load_workspace_geometry"):
                 self._load_workspace_geometry()
 
-            # 校验是否存在锚点几何严重冲突 (即使强制对齐成功，也必须在 GUI 弹出 Warning 提醒)
+            # 校验是否存在子系熔断隔离或锚点几何冲突
+            milestone_rep_dict = world_map.get("milestone_report", {})
+            sub_frames_dict = milestone_rep_dict.get("sub_frames", {})
+            has_isolated = any(s.get("extrinsic", {}).get("isolated", False) for s in sub_frames_dict.values())
             conflict_pairs = world_map.get("world_anchor", {}).get("conflict_pairs", [])
-            if conflict_pairs:
-                from src.calibration.world_datum_aligner import format_conflict_pairs_report
+
+            if has_isolated or conflict_pairs:
                 from src.utils.dialog_utils import show_error_dialog
-                conflict_text = format_conflict_pairs_report(conflict_pairs)
-                cur_ws_name = getattr(self, "current_workspace_name", "当前工位")
-                warn_dialog_msg = (
-                    f"【当前工位】{cur_ws_name}\n\n"
-                    f"世界坐标系校准已解算完成，但在锚点间检测到严重几何形变/测距冲突：\n\n"
-                    f"{conflict_text}\n\n"
-                    f"⚠️ 提示：上述标靶的世界坐标标称值与视觉实测距离存在显著超差，可能严重影响下游机械臂或作业定位精度，请仔细核对已知锚点坐标！"
-                )
-                show_error_dialog("世界坐标系校准警告 (几何形变冲突)", warn_dialog_msg)
+                dialog_text = world_map.get("milestone_dialog_text", "")
+                if not dialog_text:
+                    cur_ws_name = getattr(self, "current_workspace_name", "当前工位")
+                    dialog_text = f"【当前工位】{cur_ws_name}\n\n{msg}"
+                show_error_dialog("多坐标系校准质检诊断 (Milestone Diagnostic)", dialog_text)
 
             self.set_toast(msg)
         else:
@@ -224,22 +225,33 @@ class MappingWorkflowMixin:
             self.alignment_report = None
             cur_ws_name = getattr(self, "current_workspace_name", "未知工位")
             cur_ws_id = getattr(self, "current_workspace_id", "")
-            configured_anchors = sorted(self.ba_runner.anchor_tags.keys()) if (hasattr(self, "ba_runner") and getattr(self.ba_runner, "anchor_tags", None)) else []
-            observed_tags = sorted(list(self.data_mgr.tags_map_data.get("tags", {}).keys())) if (hasattr(self, "data_mgr") and getattr(self.data_mgr, "tags_map_data", None) and "tags" in self.data_mgr.tags_map_data) else []
-            intersection_anchors = sorted(list(set(configured_anchors) & set(observed_tags)))
 
-            detail_msg = (
-                f"【当前工位】{cur_ws_name} ({cur_ws_id})\n"
-                f"【工位配置已知锚点】Tag {configured_anchors}\n"
-                f"【当前平差有效检出锚点】Tag {intersection_anchors}\n\n"
-                f"世界坐标系校准拦截失败：\n"
-                f"{msg}\n\n"
-                f"【排查指引】\n"
-                f"1. 确认当前工位是否已先执行阶段一【自由平差 (B)】生成相对底图；\n"
-                f"2. 检查当前工位世界锚点配置（anchor_tags.yaml 或 tag_whitelist.yaml）；\n"
-                f"3. 确认锚点标靶是否在观测数据中至少检出 >= 3 个且空间分布不共线（XY 坐标不可重合）。"
-            )
+            # 优先使用里程碑求解器的结构化四阶段诊断
+            latest_rep = getattr(self.ba_runner, "latest_milestone_report", None)
+            if latest_rep:
+                from src.calibration.multiframe_milestone_solver import MultiFrameMilestoneSolver
+                diag_content = MultiFrameMilestoneSolver.format_diagnostic_dialog_text(latest_rep)
+                detail_msg = f"【当前工位】{cur_ws_name} ({cur_ws_id})\n\n{diag_content}"
+                dialog_title = "建图里程碑多坐标系质检诊断 (Milestone Diagnostic)"
+            else:
+                configured_anchors = sorted(self.ba_runner.anchor_tags.keys()) if (hasattr(self, "ba_runner") and getattr(self.ba_runner, "anchor_tags", None)) else []
+                observed_tags = sorted(list(self.data_mgr.tags_map_data.get("tags", {}).keys())) if (hasattr(self, "data_mgr") and getattr(self.data_mgr, "tags_map_data", None) and "tags" in self.data_mgr.tags_map_data) else []
+                intersection_anchors = sorted(list(set(configured_anchors) & set(observed_tags)))
+
+                detail_msg = (
+                    f"【当前工位】{cur_ws_name} ({cur_ws_id})\n"
+                    f"【工位配置已知锚点】Tag {configured_anchors}\n"
+                    f"【当前平差有效检出锚点】Tag {intersection_anchors}\n\n"
+                    f"世界坐标系校准拦截失败：\n"
+                    f"{msg}\n\n"
+                    f"【排查指引】\n"
+                    f"1. 确认当前工位是否已先执行阶段一【自由平差 (B)】生成相对底图；\n"
+                    f"2. 检查当前工位世界锚点配置（anchor_tags.yaml 或 tag_whitelist.yaml）；\n"
+                    f"3. 确认锚点标靶是否在观测数据中至少检出 >= 3 个且空间分布不共线（XY 坐标不可重合）。"
+                )
+                dialog_title = "世界坐标系校准失败 (World Datum Error)"
+
             brief_err = msg.splitlines()[0] if msg else "未知异常"
             self.set_toast(f"❌ 校准失败: {brief_err}")
-            show_error_dialog("世界坐标系校准失败 (World Datum Error)", detail_msg)
+            show_error_dialog(dialog_title, detail_msg)
 

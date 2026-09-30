@@ -217,7 +217,11 @@ class WhitelistState:
                 with open(path, "r", encoding="utf-8") as f:
                     cfg = yaml.safe_load(f) or {}
                 cfg["tag_anchors"] = {
-                    tid: {"xyz_mm": [float(v) for v in a["xyz_mm"]], "known": [bool(b) for b in a.get("known", [True, True, True])]}
+                    tid: {
+                        "xyz_mm": [float(v) for v in a["xyz_mm"]],
+                        "known": [bool(b) for b in a.get("known", [True, True, True])],
+                        **({"frame_id": str(a["frame_id"])} if a.get("frame_id") else {}),
+                    }
                     for tid, a in sorted(self.anchor_map.items())
                 }
                 # 自动将具有已知轴约束的 tag 加入 allowed_ids
