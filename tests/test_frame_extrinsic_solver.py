@@ -171,6 +171,53 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
         np.testing.assert_allclose(rpy_est, [0.0, 0.0, 0.0], atol=1e-2)
         self.assertAlmostEqual(rmse, 0.0, places=2)
 
+    def test_solve_by_two_tags_arbitrary_direction(self):
+        """测试任意非 X 轴走向的双标靶刚体对齐 (如沿局部 Y 轴或任意斜向)"""
+        # 设子坐标系在世界系中的真值外参: Yaw = 45°, t = [200.0, 300.0, 50.0]
+        yaw_gt_deg = 45.0
+        yaw_rad = np.radians(yaw_gt_deg)
+        R_gt = np.array([
+            [np.cos(yaw_rad), -np.sin(yaw_rad), 0.0],
+            [np.sin(yaw_rad),  np.cos(yaw_rad), 0.0],
+            [0.0,              0.0,             1.0]
+        ])
+        t_gt = np.array([200.0, 300.0, 50.0])
+
+        # 两标靶在局部系中非纯 X 轴，例如类似皮带机走向: Tag 10 在 [0, 0, 0], Tag 11 在 [-30.0, 400.0, 0.0]
+        p_child_10 = np.array([0.0, 0.0, 0.0])
+        p_child_11 = np.array([-30.0, 400.0, 0.0])
+
+        # 投影至世界系
+        p_world_10 = R_gt @ p_child_10 + t_gt
+        p_world_11 = R_gt @ p_child_11 + t_gt
+
+        tags_map = {
+            10: make_transform_matrix(R_gt, p_world_10.tolist()),
+            11: make_transform_matrix(R_gt, p_world_11.tolist()),
+        }
+        solver = FrameExtrinsicSolver(tags_map=tags_map)
+
+        sub_frame = FrameDefinition(
+            frame_id="frame_tilted",
+            name="斜向标靶子系",
+            parent_frame_id="world",
+            type="fixed_transform",
+            status="unknown",
+            calibration_spec={
+                "method": "anchor_tags_registration",
+                "reference_tags": {
+                    10: p_child_10.tolist(),
+                    11: p_child_11.tolist(),
+                }
+            }
+        )
+
+        succ, t_est, rpy_est, rmse, msg = solver.solve_frame_extrinsic(sub_frame, self.coord_mgr)
+        self.assertTrue(succ, f"反推失败: {msg}")
+        self.assertLess(rmse, 1e-4, f"残差应极小: {rmse}")
+        np.testing.assert_allclose(t_est, t_gt, atol=1e-3, err_msg="平移应精准恢复")
+        np.testing.assert_allclose(rpy_est, [0.0, 0.0, 45.0], atol=1e-3, err_msg="偏航角应精准恢复为 45°")
+
     def test_solve_all_unknown_frames_pipeline(self):
         """测试整树批量反推及状态写穿与持久化流程"""
         # 构建两级待反推坐标系:

@@ -399,21 +399,8 @@ class MultiFrameMilestoneSolver:
                     frames_to_check.append(f)
 
         # ---------------------------------------------------------
-        # 动态子坐标系 阶段 A: 局部刚体一致性质检 (Local Rigidity Check)
-        # ---------------------------------------------------------
-        for frame in frames_to_check:
-            sub_rep = check_sub_frame_local_rigidity(
-                frame=frame,
-                relative_tags=rel_tags_3d,
-                dist_tol_mm=self.dist_tol_mm,
-                dist_tol_ratio=self.dist_tol_ratio,
-                fallback_anchor_tags=anchor_tags,
-                coord_mgr=coord_mgr,
-            )
-            report.sub_frames[frame.frame_id] = sub_rep
-
-        # ---------------------------------------------------------
         # 里程碑 M2: 绝对世界基准系锚定 (World Datum Base Alignment)
+        # 优先完成世界基准锚定并确立工位全局真实物理尺度 (Metric Scale)
         # ---------------------------------------------------------
         aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
         world_map = None
@@ -444,6 +431,11 @@ class MultiFrameMilestoneSolver:
             res_info = w_info.get("anchor_residual_mm", {})
             conflicts = w_info.get("conflict_pairs", [])
 
+            report.m2_solver_type = w_info.get("solver_type", "3D")
+            report.m2_mean_residual_mm = float(res_info.get("mean_mm", 0.0))
+            report.m2_max_residual_mm = float(res_info.get("max_mm", 0.0))
+            report.m2_conflict_pairs = conflicts
+
             if conflicts:
                 report.m2_world_datum_passed = False
                 report.m2_msg = (
@@ -458,8 +450,25 @@ class MultiFrameMilestoneSolver:
                 )
 
         # ---------------------------------------------------------
-        # 动态子坐标系 阶段 B: 空间外参反推与挂接 (Extrinsics Attachment)
+        # 动态子坐标系 阶段 A: 局部刚体一致性质检 (Local Rigidity Check)
+        # 关键修正: 必须采用真实物理尺度 (Metric Scale) 进行测距核对，彻底消除未校准名义尺度引发的假超差
         # ---------------------------------------------------------
+        if world_map and world_map.get("tags"):
+            metric_tags_3d = extract_tag_positions_from_map(world_map)
+        else:
+            metric_tags_3d = rel_tags_3d
+
+        for frame in frames_to_check:
+            sub_rep = check_sub_frame_local_rigidity(
+                frame=frame,
+                relative_tags=metric_tags_3d,
+                dist_tol_mm=self.dist_tol_mm,
+                dist_tol_ratio=self.dist_tol_ratio,
+                fallback_anchor_tags=anchor_tags,
+                coord_mgr=coord_mgr,
+            )
+            report.sub_frames[frame.frame_id] = sub_rep
+
         # ---------------------------------------------------------
         # 动态子坐标系 阶段 B: 空间外参反推与挂接 (Extrinsics Attachment)
         # ---------------------------------------------------------
@@ -481,12 +490,33 @@ class MultiFrameMilestoneSolver:
 
                 # 若未配置 calibration_spec 但 anchor_tags 中已有本子坐标系标靶，自动合成规范
                 if not frame.calibration_spec and anchor_tags:
+                    target_range = None
+                    if coord_mgr:
+                        try:
+                            target_range = set(coord_mgr.get_frame_tag_range(frame.frame_id))
+                        except Exception:
+                            pass
+                    if target_range is None:
+                        parts = frame.frame_id.split("_")
+                        idx = 1
+                        for p in parts:
+                            if p.isdigit():
+                                idx = int(p)
+                                break
+                        target_range = set(range(idx * 10, idx * 10 + 10))
+
                     sub_anchors = {}
                     for tid_raw, a in anchor_tags.items():
-                        if isinstance(a, dict) and a.get("frame_id") == frame.frame_id:
-                            pos = a.get("xyz_mm") or a.get("coords") or a.get("position_mm")
-                            if pos:
-                                sub_anchors[str(tid_raw)] = [float(x) for x in pos[:3]]
+                        if isinstance(a, dict):
+                            try:
+                                tid = int(tid_raw)
+                            except (ValueError, TypeError):
+                                continue
+                            fid = a.get("frame_id")
+                            if fid == frame.frame_id or (fid is None and tid in target_range):
+                                pos = a.get("xyz_mm") or a.get("coords") or a.get("position_mm")
+                                if pos and len(pos) >= 3 and None not in pos[:3]:
+                                    sub_anchors[str(tid)] = [float(x) for x in pos[:3]]
                     if sub_anchors:
                         frame.calibration_spec = {
                             "method": "anchor_tags_registration",

@@ -268,6 +268,51 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
         self.assertEqual(updated_frame.status, "calibrated")
         np.testing.assert_allclose(updated_frame.translation_xyz_mm, [50.0, 100.0, 0.0], atol=1e-1)
 
+    def test_sub_frame_scale_normalization(self):
+        """测试当底图尺度与真实物理尺度不一致 (scale != 1.0) 时，阶段 A 自动按真实物理尺度核对，彻底消除假超差"""
+        # 真实物理世界中: 标靶 0, 1 间距为 500mm; 子系标靶 11, 14 间距为 490mm
+        # 模拟相机自由平差因为名义标靶尺寸偏大，底图坐标被整体放大了 1.2 倍 (scale_factor 应为 1 / 1.2 = 0.83333)
+        scale_err = 1.2
+        rel_map = {
+            "final_rmse": 0.3,
+            "tags": {
+                "0": {"position_mm": [0.0, 0.0, 0.0]},
+                "1": {"position_mm": [0.0, 500.0 * scale_err, 0.0]},
+                "2": {"position_mm": [300.0 * scale_err, 0.0, 0.0]},
+                # 子系 1: 未缩放前间距为 490 * 1.2 = 588mm
+                "11": {"position_mm": [50.0 * scale_err, 100.0 * scale_err, 0.0]},
+                "14": {"position_mm": [540.0 * scale_err, 100.0 * scale_err, 0.0]},
+            }
+        }
+
+        # 世界锚点真值与子系名义真值 (严格物理毫米)
+        anchor_tags = {
+            0: {"coords": [0.0, 0.0, 0.0], "frame_id": "world"},
+            1: {"coords": [0.0, 500.0, 0.0], "frame_id": "world"},
+            2: {"coords": [300.0, 0.0, 0.0], "frame_id": "world"},
+            11: {"coords": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            14: {"coords": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+        }
+
+        coord_mgr = CoordinateTreeManager(workspace_id="test_scale_norm")
+        coord_mgr.add_frame(self.frame_sub_1)
+
+        solver = MultiFrameMilestoneSolver(marker_size_mm=80.0)
+        succ, rep, world_map = solver.solve(
+            relative_map=rel_map,
+            anchor_tags=anchor_tags,
+            coord_mgr=coord_mgr,
+        )
+
+        self.assertTrue(succ, f"M2 msg: {rep.m2_msg}")
+        self.assertTrue(rep.m2_world_datum_passed)
+        sub_rep = rep.sub_frames["frame_sub_1"]
+        # 核心断言: 阶段 A 成功通过，未因底图放大了 1.2 倍而误报超差 98mm
+        self.assertTrue(sub_rep.local_rigidity_passed, f"阶段 A 应通过，但实际消息: {sub_rep.local_status_msg}")
+        self.assertLess(sub_rep.local_max_err_mm, 1.0)
+        self.assertTrue(sub_rep.extrinsic_solved)
+        self.assertFalse(sub_rep.is_isolated)
+
 
 if __name__ == "__main__":
     unittest.main()

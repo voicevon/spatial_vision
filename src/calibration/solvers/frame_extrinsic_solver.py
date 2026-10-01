@@ -14,6 +14,7 @@
 4. 输出逐标靶物理拟合残差与全局 RMSE，提供装配精度与形变评估。
 """
 
+import math
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -230,60 +231,90 @@ class FrameExtrinsicSolver:
         spec: Dict[str, Any],
         T_parent_from_world: np.ndarray,
     ) -> Tuple[bool, Optional[List[float]], Optional[List[float]], Optional[float], str]:
-        """模式 2: 双标靶基准定轴模式 (原点靶 + X轴靶)"""
-        origin_tid = spec.get("origin_tag_id")
-        x_tid = spec.get("x_axis_tag_id")
-        if origin_tid is None or x_tid is None:
-            return False, None, None, None, "定轴模式必须提供 origin_tag_id 与 x_axis_tag_id"
+        """
+        模式 2: 双标靶刚体对齐模式 (通用双标靶基准或原点靶+定轴靶)
+        数学原理与世界坐标系对齐完全统一:
+        1. 提取两标靶在子坐标系中的名义向量 v_child 与在父坐标系中的实测向量 v_parent;
+        2. 基于水平方位角之差求解相对偏航角 Yaw:
+           Yaw = atan2(v_parent.y, v_parent.x) - atan2(v_child.y, v_child.x);
+        3. 构造旋转矩阵 R = R_z(Yaw) (保持 Z 轴垂直工业基准);
+        4. 双点最小二乘平均平移 t = 0.5 * sum(p_parent_i - R @ p_child_i);
+        5. 计算综合残差 RMSE，杜绝单点绑架与轴向扭转。
+        """
+        origin_tid = spec.get("origin_tag_id") if spec.get("origin_tag_id") is not None else spec.get("tag_a_id")
+        target_tid = spec.get("x_axis_tag_id") if spec.get("x_axis_tag_id") is not None else spec.get("tag_b_id")
+        if origin_tid is None or target_tid is None:
+            return False, None, None, None, "双标靶对齐模式必须提供 origin_tag_id/tag_a_id 与 x_axis_tag_id/tag_b_id"
 
         pw_o = self.get_tag_world_center(int(origin_tid))
-        pw_x = self.get_tag_world_center(int(x_tid))
-        if pw_o is None or pw_x is None:
+        pw_t = self.get_tag_world_center(int(target_tid))
+        if pw_o is None or pw_t is None:
             missing = []
             if pw_o is None:
                 missing.append(int(origin_tid))
-            if pw_x is None:
-                missing.append(int(x_tid))
-            return False, None, None, None, f"定轴标靶在当前地图中未找到: Tag {missing}"
+            if pw_t is None:
+                missing.append(int(target_tid))
+            return False, None, None, None, f"双标靶在当前地图中未找到: Tag {missing}"
 
         # 映射至父坐标系
-        p_parent_o = (T_parent_from_world @ np.array([pw_o[0], pw_o[1], pw_o[2], 1.0]))[:3]
-        p_parent_x = (T_parent_from_world @ np.array([pw_x[0], pw_x[1], pw_x[2], 1.0]))[:3]
+        p_parent_o = (T_parent_from_world @ np.array([pw_o[0], pw_o[1], pw_o[2], 1.0], dtype=np.float64))[:3]
+        p_parent_t = (T_parent_from_world @ np.array([pw_t[0], pw_t[1], pw_t[2], 1.0], dtype=np.float64))[:3]
 
-        # 计算 X 轴向量
-        vx = p_parent_x - p_parent_o
-        dist_meas = float(np.linalg.norm(vx))
-        if dist_meas < 1e-3:
-            return False, None, None, None, "原点标靶与 X 轴标靶在物理空间重合，无法定轴"
+        # 计算父坐标系下的实测向量
+        v_parent = p_parent_t - p_parent_o
+        dist_meas_xy = float(np.hypot(v_parent[0], v_parent[1]))
+        dist_meas_3d = float(np.linalg.norm(v_parent))
+        if dist_meas_xy < 1e-3:
+            return False, None, None, None, "两枚标靶在水平面投影距离过小 (< 1mm)，无法唯一定向水平偏航角"
 
-        vx_unit = vx / dist_meas
+        # 获取子坐标系下的名义坐标与名义向量
+        p_child_o = np.array(spec.get("origin_local_xyz_mm") or spec.get("tag_a_local_xyz_mm", [0.0, 0.0, 0.0])[:3], dtype=np.float64)
+        target_local = spec.get("x_axis_local_xyz_mm") or spec.get("tag_b_local_xyz_mm")
+        if target_local is not None:
+            p_child_t = np.array(target_local[:3], dtype=np.float64)
+            v_child = p_child_t - p_child_o
+        else:
+            # 若未显式提供目标靶的局部坐标，默认沿子系 +X 轴延伸 (与实测间距一致)
+            v_child = np.array([dist_meas_3d, 0.0, 0.0], dtype=np.float64)
+            p_child_t = p_child_o + v_child
 
-        # 计算 Y/Z 轴: 优先保持父坐标系水平/垂直基准
-        vz_candidate = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-        if abs(float(np.dot(vx_unit, vz_candidate))) > 0.95:
-            # 若 X 轴几乎垂直，改用 Y 轴为辅助
-            vz_candidate = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+        dist_nom_xy = float(np.hypot(v_child[0], v_child[1]))
+        if dist_nom_xy < 1e-3:
+            return False, None, None, None, "两枚标靶在子系名义坐标下的水平投影距离过小 (< 1mm)，无法唯一定向水平偏航角"
 
-        vy = np.cross(vz_candidate, vx_unit)
-        vy_unit = vy / np.linalg.norm(vy)
-        vz_unit = np.cross(vx_unit, vy_unit)
+        # 计算水平方位角之差 -> 相对偏航角 Yaw
+        theta_child = math.atan2(v_child[1], v_child[0])
+        theta_parent = math.atan2(v_parent[1], v_parent[0])
+        yaw_rad = theta_parent - theta_child
 
-        R_mat = np.column_stack([vx_unit, vy_unit, vz_unit])
+        cos_y = math.cos(yaw_rad)
+        sin_y = math.sin(yaw_rad)
+        R_mat = np.array([
+            [cos_y, -sin_y, 0.0],
+            [sin_y,  cos_y, 0.0],
+            [0.0,    0.0,   1.0]
+        ], dtype=np.float64)
         rpy = rot_mat_to_rpy_deg(R_mat)
 
-        # 考虑局部名义偏移 (若标靶并不在 child 的 [0,0,0])
-        origin_local = spec.get("origin_local_xyz_mm", [0.0, 0.0, 0.0])
-        t_vec = p_parent_o - R_mat @ np.array(origin_local[:3], dtype=np.float64)
+        # 双点最小二乘平移均值: t = 0.5 * sum(p_parent - R @ p_child)
+        t_o = p_parent_o - R_mat @ p_child_o
+        t_t = p_parent_t - R_mat @ p_child_t
+        t_vec = 0.5 * (t_o + t_t)
         t_xyz = [float(x) for x in t_vec]
 
-        # 若提供了理论标称距离，评估尺差
-        rmse = 0.0
-        x_local = spec.get("x_axis_local_xyz_mm")
-        if x_local:
-            dist_nom = float(np.linalg.norm(np.array(x_local[:3]) - np.array(origin_local[:3])))
-            rmse = abs(dist_meas - dist_nom)
+        # 计算残差与 RMSE
+        err_o = p_parent_o - (R_mat @ p_child_o + t_vec)
+        err_t = p_parent_t - (R_mat @ p_child_t + t_vec)
+        rmse = float(np.sqrt(0.5 * (np.sum(err_o ** 2) + np.sum(err_t ** 2))))
 
-        msg = f"双标靶定轴对齐成功: Tag {origin_tid} -> Tag {x_tid}，实测间距: {dist_meas:.1f} mm"
+        dist_nom_3d = float(np.linalg.norm(v_child))
+        scale_err = abs(dist_meas_3d - dist_nom_3d)
+
+        msg = (
+            f"双标靶刚体对齐成功: Tag {origin_tid} 与 Tag {target_tid}，"
+            f"实测间距: {dist_meas_3d:.1f} mm (标称: {dist_nom_3d:.1f} mm, 差值: {scale_err:.2f} mm)，"
+            f"残差 RMSE: {rmse:.3f} mm, 偏航角 Yaw: {rpy[2]:.2f}°"
+        )
         log.info(f"[FrameExtrinsic] 坐标系 [{frame.frame_id}] {msg}")
         return True, t_xyz, rpy, rmse, msg
 
