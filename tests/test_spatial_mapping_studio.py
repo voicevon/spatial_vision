@@ -803,6 +803,92 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
                 new_rep = (self.studio.data_mgr.tags_map_data or {}).get("world_anchor", {}).get("alignment_report")
                 self.assertEqual(self.studio.alignment_report, new_rep)
 
+    def test_active_reference_frame_switch_and_tooltip_projection(self):
+        """测试基准参考坐标系动态切换及标靶在参考系下的投影与浮层展示"""
+        from src.workspace.coordinate_manager import CoordinateTreeManager, FrameDefinition
+
+        # 构造模拟坐标系树: world -> frame_sub_1 (沿 X 轴平移 100mm)
+        coord_mgr = CoordinateTreeManager(workspace_id="test_ws")
+        sub_frame = FrameDefinition(
+            frame_id="frame_sub_1",
+            name="测试子系统",
+            parent_frame_id="world",
+            type="fixed_transform",
+            status="calibrated",
+            translation_xyz_mm=[100.0, 0.0, 0.0],
+            rotation_rpy_deg=[0.0, 0.0, 0.0],
+            calibration_spec={
+                "reference_tags": {
+                    5: [0.0, 0.0, 0.0],  # Tag 5 在子系的名义坐标为 [0, 0, 0]
+                }
+            }
+        )
+        coord_mgr.add_frame(sub_frame)
+        self.studio.coord_mgr = coord_mgr
+
+        # 默认基准为 world
+        self.assertEqual(self.studio.active_reference_frame_id, "world")
+
+        # 切换基准为 frame_sub_1
+        self.studio.set_active_reference_frame("frame_sub_1")
+        self.assertEqual(self.studio.active_reference_frame_id, "frame_sub_1")
+        self.assertIn("测试子系统", self.studio.status_toast)
+
+        # 测试无效 frame_id 切换自动回退到 world
+        self.studio.set_active_reference_frame("non_existent_frame")
+        self.assertEqual(self.studio.active_reference_frame_id, "world")
+
+        # 重新切换为 frame_sub_1 并测试视口局部坐标投影
+        self.studio.set_active_reference_frame("frame_sub_1")
+
+        # 模拟视口标靶渲染并捕获传给 visualizer.render_tag_dual_prisms 的参数
+        disp_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+        observations = [{
+            "tag_id": 5,
+            "corners": [[100, 100], [150, 100], [150, 150], [100, 150]],
+            "keep": True
+        }]
+        # 设 Tag 5 在世界系绝对坐标为 [100.0, 0.0, 0.0] (对应子系中的 [0, 0, 0])
+        self.studio.data_mgr.tags_map_data = {
+            "tags": {
+                5: {
+                    "position_mm": [100.0, 0.0, 0.0],
+                    "transform_matrix": np.eye(4).tolist()
+                }
+            }
+        }
+
+        render_calls = []
+        original_render = self.studio.visualizer.render_tag_dual_prisms
+        def mock_render(*args, **kwargs):
+            render_calls.append(kwargs)
+            return original_render(*args, **kwargs)
+
+        self.studio.visualizer.render_tag_dual_prisms = mock_render
+        try:
+            self.studio.ui_renderer.overlay_visual_elements(
+                app=self.studio,
+                disp_frame=disp_frame,
+                observations=observations,
+                is_frame_excluded=False,
+                meta={"rvec": [0.0, 0.0, 0.0], "tvec": [0.0, 0.0, 1000.0]}
+            )
+        finally:
+            self.studio.visualizer.render_tag_dual_prisms = original_render
+
+        tag5_calls = [c for c in render_calls if c.get("tag_id") == 5]
+        self.assertTrue(len(tag5_calls) > 0, "Tag 5 必须调用 3D 棱柱渲染")
+        call_5 = tag5_calls[0]
+
+        # 核心断言：参考系必须被标记为 frame_sub_1
+        self.assertEqual(call_5.get("ref_frame_id"), "frame_sub_1")
+        # 标靶在子系局部实测坐标应为 [0, 0, 0] (因为世界坐标 100 - 子系平移 100 = 0)
+        np.testing.assert_allclose(call_5.get("ref_position_mm"), [0.0, 0.0, 0.0], atol=1e-3)
+        # 名义坐标也为 [0, 0, 0]
+        np.testing.assert_allclose(call_5.get("nominal_local_xyz"), [0.0, 0.0, 0.0], atol=1e-3)
+        # 偏差应极小
+        self.assertAlmostEqual(call_5.get("nominal_error_mm"), 0.0, places=3)
+
 
 if __name__ == "__main__":
     unittest.main()

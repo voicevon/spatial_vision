@@ -99,9 +99,12 @@ class MappingInspectorMixin:
             obs_list = meta.get("observations", [])
             tag_errors = meta.get("tag_errors", {})
             # FR-9.6 世界系坐标 (平差锚定后每枚标靶的 XYZ)
+            # FR-9.6 当前参考系下的坐标 (平差锚定后每枚标靶的 XYZ)
+            ref_fid = getattr(app, "active_reference_frame_id", "world")
             tags_meta = (app.data_mgr.tags_map_data or {}).get("tags", {})
-            put_text(canvas, f"标靶残差+世界XYZ ({len(obs_list)}) 降序↓", (x + 8, list_y + 16),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 220, 255), 1, cv2.LINE_AA)
+            ref_label = f"[{ref_fid}]" if ref_fid != "world" else "世界"
+            put_text(canvas, f"标靶残差+{ref_label}XYZ ({len(obs_list)}) 降序↓", (x + 8, list_y + 16),
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 240, 220) if ref_fid != "world" else (0, 220, 255), 1, cv2.LINE_AA)
 
             # 按残差降序排序：离差最大的坏标靶置顶优先显示
             sorted_obs_list = sorted(
@@ -114,6 +117,13 @@ class MappingInspectorMixin:
             box_y = list_y + 24
             box_w = w - 12
             box_h = max(40, diag_y - box_y - 6)
+
+            # 预计算局部坐标转换矩阵 (若非世界系)
+            T_ref_from_w = None
+            if ref_fid != "world" and getattr(app, "coord_mgr", None):
+                T_r_w, is_res = app.coord_mgr.get_transform("world", ref_fid)
+                if is_res:
+                    T_ref_from_w = T_r_w
 
             def _draw_tag_item(cvs, rect, obs, idx, is_hover, is_selected):
                 rx1, ry1, rw, rh = rect
@@ -142,12 +152,17 @@ class MappingInspectorMixin:
                 (ew, _), _ = measure_text(err_str, cv2.FONT_HERSHEY_SIMPLEX, 0.52, 1)
                 put_text(cvs, err_str, (rx2 - ew - 6, ry1 + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.52, err_c, 1, cv2.LINE_AA)
 
-                # 第二行: FR-9.6 世界系坐标 XYZ (mm)
+                # 第二行: 当前基准下的 XYZ 坐标 (mm)
                 rec = tags_meta.get(tid) or {}
                 pos_mm = rec.get("position_mm")
                 if pos_mm and len(pos_mm) >= 3:
-                    xyz_str = f"X{pos_mm[0]:.0f} Y{pos_mm[1]:.0f} Z{pos_mm[2]:.0f} mm"
-                    xyz_c = (140, 190, 220)
+                    if T_ref_from_w is not None:
+                        p_loc = (T_ref_from_w @ np.array([pos_mm[0], pos_mm[1], pos_mm[2], 1.0], dtype=np.float64))[:3]
+                        xyz_str = f"[{p_loc[0]:+.0f},{p_loc[1]:+.0f},{p_loc[2]:+.0f}]"
+                        xyz_c = (0, 240, 220)
+                    else:
+                        xyz_str = f"X{pos_mm[0]:.0f} Y{pos_mm[1]:.0f} Z{pos_mm[2]:.0f}"
+                        xyz_c = (140, 190, 220)
                 else:
                     xyz_str = "XYZ: --"
                     xyz_c = (110, 115, 125)

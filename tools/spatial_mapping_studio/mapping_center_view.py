@@ -120,22 +120,29 @@ class MappingCenterViewMixin:
         app.gui_buttons.append(("TOGGLE_ROI_LIST_PANEL", (draw_roi_x1, row_y1, draw_roi_x2, row_y2), "ROI_LIST_PANEL"))
         cursor_x = draw_roi_x2 + 8
 
-        # 4. 绘制坐标系 —— dropdown 触发器 (点击展开坐标系 CheckList 浮层)
+        # 4. 绘制坐标系 —— dropdown 触发器 (点击展开坐标系基准切换与 CheckList 浮层)
         coord_mgr = getattr(app, "coord_mgr", None)
         visibility = getattr(app, "coord_frame_visibility", {})
         coord_panel_open = (app.active_dropdown == "COORD_FRAME_PANEL")
+        ref_fid = getattr(app, "active_reference_frame_id", "world")
         if coord_mgr is not None:
             all_frames = coord_mgr.list_frames()
             vis_count = sum(1 for f in all_frames if visibility.get(f.frame_id, False))
             total_count = len(all_frames)
-            coord_btn_lbl = f"坐标系 {vis_count}/{total_count}" if total_count > 0 else "坐标系"
+            if ref_fid == "world":
+                coord_btn_lbl = f"基准:世界 ({vis_count}/{total_count})"
+            else:
+                f_obj = coord_mgr.get_frame(ref_fid)
+                f_name = f_obj.name if f_obj and f_obj.name else ref_fid
+                coord_btn_lbl = f"基准:{f_name}★"
         else:
             coord_btn_lbl = "坐标系"
-        coord_w = 110
+        coord_w = 135
         coord_x1, coord_x2 = cursor_x, cursor_x + coord_w
+        btn_theme = (0, 240, 220) if ref_fid != "world" else ((0, 220, 255) if coord_panel_open else (140, 160, 180))
         draw_dropdown_button(canvas, (coord_x1, row_y1, coord_x2, row_y2), coord_btn_lbl,
                              is_open=coord_panel_open, mouse_pos=app.mouse_pos,
-                             theme_color=(0, 220, 255) if coord_panel_open else (140, 160, 180))
+                             theme_color=btn_theme)
         app.dropdown_boxes["COORD_FRAME_PANEL"] = {
             "rect": (coord_x1, row_y1, coord_x2, row_y2),
             "options": [],
@@ -309,6 +316,26 @@ class MappingCenterViewMixin:
                     elif obs is None:
                         status_hint = "[BA理论:未检出/遮挡]"
 
+                    # 若当前设置了非世界基准坐标系，计算局部相对位置与名义偏差
+                    ref_fid = getattr(app, "active_reference_frame_id", "world")
+                    coord_mgr = getattr(app, "coord_mgr", None)
+                    ref_pos = None
+                    nom_pos = None
+                    nom_err = None
+                    if ref_fid != "world" and coord_mgr is not None:
+                        T_ref_w, is_res = coord_mgr.get_transform("world", ref_fid)
+                        if is_res:
+                            pw = (tags_meta.get(tid) or {}).get("position_mm")
+                            if pw is not None and len(pw) >= 3:
+                                ref_pos = (T_ref_w @ np.array([pw[0], pw[1], pw[2], 1.0], dtype=np.float64))[:3].tolist()
+                            ref_frame = coord_mgr.get_frame(ref_fid)
+                            if ref_frame and getattr(ref_frame, "calibration_spec", None):
+                                ref_tags = ref_frame.calibration_spec.get("reference_tags", {})
+                                if tid in ref_tags or str(tid) in ref_tags:
+                                    nom_pos = ref_tags.get(tid) or ref_tags.get(str(tid))
+                                    if nom_pos is not None and ref_pos is not None:
+                                        nom_err = float(np.linalg.norm(np.array(ref_pos[:3]) - np.array(nom_pos[:3])))
+
                     app.visualizer.render_tag_dual_prisms(
                         img=disp_frame,
                         ba_rvec=r_tag if ba_mode == "3d" else None,
@@ -324,7 +351,11 @@ class MappingCenterViewMixin:
                         world_rpy_deg=(tags_meta.get(tid) or {}).get("rpy_deg"),
                         ba_center_xyz=(t_tag_center.tolist() if r_tag is not None else None),
                         obs_center_xyz=(obs_t.flatten().tolist() if obs_t is not None else None),
-                        hovered=is_hovered
+                        hovered=is_hovered,
+                        ref_frame_id=ref_fid,
+                        ref_position_mm=ref_pos,
+                        nominal_local_xyz=nom_pos,
+                        nominal_error_mm=nom_err
                     )
                     rendered_tids.add(tid)
 
@@ -492,6 +523,20 @@ class MappingCenterViewMixin:
         COL_BLUE = (245, 150, 50)  # BGR 格式高亮科技蓝
         COL_WHITE = (220, 220, 220)
 
+        coord_mgr = getattr(app, "coord_mgr", None)
+        ref_fid = getattr(app, "active_reference_frame_id", "world")
+        T_w_ref = np.eye(4, dtype=np.float64)
+        if ref_fid != "world" and coord_mgr is not None:
+            T_w_f, is_res = coord_mgr.get_frame_to_world(ref_fid)
+            if is_res:
+                T_w_ref = T_w_f
+
+        def _to_world(p_loc):
+            if ref_fid == "world":
+                return p_loc
+            homo = np.array([p_loc[0], p_loc[1], p_loc[2], 1.0], dtype=np.float64)
+            return (T_w_ref @ homo)[:3]
+
         def _project(p_w):
             p_cam = R @ np.asarray(p_w, dtype=np.float64).reshape(3) + t_flat
             if p_cam[2] <= 1e-6:
@@ -502,12 +547,14 @@ class MappingCenterViewMixin:
 
         def _seg(p0, p1, color, thick):
             """长线段沿线采样投影连线 (自动处理出画与近裁剪)"""
+            p0_w = _to_world(p0)
+            p1_w = _to_world(p1)
             prev = None
             for k in range(25):
                 s = k / 24.0
-                p = (p0[0] + (p1[0] - p0[0]) * s,
-                     p0[1] + (p1[1] - p0[1]) * s,
-                     p0[2] + (p1[2] - p0[2]) * s)
+                p = (p0_w[0] + (p1_w[0] - p0_w[0]) * s,
+                     p0_w[1] + (p1_w[1] - p0_w[1]) * s,
+                     p0_w[2] + (p1_w[2] - p0_w[2]) * s)
                 uv = _project(p)
                 if uv is not None and prev is not None:
                     cv2.line(canvas, prev, uv, color, thick, cv2.LINE_AA)
@@ -540,14 +587,14 @@ class MappingCenterViewMixin:
 
         # 4. Z 轴高度刻度 (每 100mm) + 顶端箭头
         for hz in range(100, plane_z_max, 100):
-            tp = _project((0, 0, hz))
+            tp = _project(_to_world((0, 0, hz)))
             if tp is not None:
                 cv2.line(canvas, (tp[0] - 5, tp[1]), (tp[0] + 5, tp[1]), COL_BLUE, 2, cv2.LINE_AA)
                 put_text(canvas, str(hz), (tp[0] + 8, tp[1] - 6),
                          cv2.FONT_HERSHEY_SIMPLEX, 0.40, COL_BLUE, 1, cv2.LINE_AA)
 
-        p_top = _project((0, 0, plane_z_max))
-        p_base = _project((0, 0, 0))
+        p_top = _project(_to_world((0, 0, plane_z_max)))
+        p_base = _project(_to_world((0, 0, 0)))
         if p_top is not None and p_base is not None:
             d = np.array(p_top, dtype=np.float64) - np.array(p_base, dtype=np.float64)
             n = float(np.linalg.norm(d))
@@ -560,11 +607,12 @@ class MappingCenterViewMixin:
                 cv2.fillPoly(canvas, [arrow], COL_BLUE)
 
         # 5. 坐标轴端点标签 (X/Y/Z/0)
+        origin_label = f"0 ({ref_fid})" if ref_fid != "world" else "0"
         for label, p, col in (("X", (ext + 50, 0, z0), COL_RED),
                               ("Y", (0, ext + 50, z0), COL_GREEN),
                               ("Z", (0, 0, plane_z_max + 50), COL_BLUE),
-                              ("0", (0, 0, 0), COL_WHITE)):
-            uv = _project(p)
+                              (origin_label, (0, 0, 0), COL_WHITE)):
+            uv = _project(_to_world(p))
             if uv is not None:
                 put_text(canvas, label, (uv[0] + 6, uv[1] - 8),
                          cv2.FONT_HERSHEY_SIMPLEX, 0.50, col, 2, cv2.LINE_AA)

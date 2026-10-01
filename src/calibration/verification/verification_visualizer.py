@@ -48,7 +48,11 @@ class VerificationVisualizer:
         world_rpy_deg: Optional[List[float]] = None,
         ba_center_xyz: Optional[List[float]] = None,
         obs_center_xyz: Optional[List[float]] = None,
-        hovered: bool = True
+        hovered: bool = True,
+        ref_frame_id: Optional[str] = None,
+        ref_position_mm: Optional[List[float]] = None,
+        nominal_local_xyz: Optional[List[float]] = None,
+        nominal_error_mm: Optional[float] = None,
     ):
 
         """
@@ -123,9 +127,18 @@ class VerificationVisualizer:
                     return f"{v:>7.1f}"
 
                 info_lines = [(label, (255, 255, 255), 15)]
-                if world_position_mm is not None and len(world_position_mm) >= 3:
+                # 若指定了非世界基准参考坐标系，优先展示局部坐标与名义偏差
+                if ref_frame_id and ref_frame_id != "world" and ref_position_mm is not None and len(ref_position_mm) >= 3:
+                    info_lines.append((f"基准[{ref_frame_id}] {_fmt(ref_position_mm[0])}, {_fmt(ref_position_mm[1])}, "
+                                       f"{_fmt(ref_position_mm[2])} mm", (0, 240, 220), 14))
+                    if nominal_local_xyz is not None and len(nominal_local_xyz) >= 3:
+                        err_str = f" (偏差: {nominal_error_mm:.2f}mm)" if nominal_error_mm is not None else ""
+                        info_lines.append((f"名义{_fmt(nominal_local_xyz[0])}, {_fmt(nominal_local_xyz[1])}, "
+                                           f"{_fmt(nominal_local_xyz[2])} mm{err_str}", (255, 200, 80), 13))
+                elif world_position_mm is not None and len(world_position_mm) >= 3:
                     info_lines.append((f"世界{_fmt(world_position_mm[0])}, {_fmt(world_position_mm[1])}, "
                                        f"{_fmt(world_position_mm[2])} mm", (150, 220, 255), 14))
+
                 if ba_center_xyz is not None and len(ba_center_xyz) >= 3:
                     info_lines.append((f"理论{_fmt(ba_center_xyz[0])}, {_fmt(ba_center_xyz[1])}, "
                                        f"{_fmt(ba_center_xyz[2])} mm", (0, 255, 100), 14))

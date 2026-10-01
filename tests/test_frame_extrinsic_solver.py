@@ -276,6 +276,61 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
         self.assertEqual(restored.status, "calibrated")
         np.testing.assert_allclose(restored.translation_xyz_mm, updated_frame.translation_xyz_mm)
 
+    def test_solve_by_two_tags_with_pitch_roll_eliminates_z_error(self):
+        """测试存在 3D 空间倾角(包含 Pitch/Roll)的双标靶对齐，局部 Z 轴误差严格归零"""
+        # 设子坐标系在世界系中存在 Pitch 和 Roll 倾角 (类似真实物理工装微小倾斜)
+        rpy_gt = [3.5, -2.8, 85.0]
+        R_gt = rpy_deg_to_rot_mat(rpy_gt)
+        t_gt = np.array([500.0, 200.0, -100.0])
+        T_gt = make_transform_matrix(R_gt, t_gt.tolist())
+
+        # 子坐标系中名义 Z 均为 0.0
+        p_child_a = np.array([0.0, 0.0, 0.0])
+        p_child_b = np.array([-33.0, 490.0, 0.0])
+
+        # 在世界坐标系中生成两标靶的实测坐标 (由于倾角，两标靶在世界系下 Z 轴有显著高度差)
+        p_world_a = (T_gt @ np.append(p_child_a, 1.0))[:3]
+        p_world_b = (T_gt @ np.append(p_child_b, 1.0))[:3]
+
+        tags_map = {
+            20: make_transform_matrix(R_gt, p_world_a.tolist()),
+            21: make_transform_matrix(R_gt, p_world_b.tolist()),
+        }
+        solver = FrameExtrinsicSolver(tags_map=tags_map)
+
+        sub_frame = FrameDefinition(
+            frame_id="frame_conveyor_3d",
+            name="空间倾斜输送机",
+            parent_frame_id="world",
+            type="fixed_transform",
+            status="unknown",
+            calibration_spec={
+                "method": "anchor_tags_registration",
+                "reference_tags": {
+                    20: p_child_a.tolist(),
+                    21: p_child_b.tolist(),
+                }
+            }
+        )
+
+        succ, t_est, rpy_est, rmse, msg = solver.solve_frame_extrinsic(sub_frame, self.coord_mgr)
+        self.assertTrue(succ, f"反推应成功: {msg}")
+        self.assertLess(rmse, 1e-4, f"残差应极小: {rmse}")
+
+        # 校验恢复的外参姿态能完全吸收 Pitch 和 Roll
+        np.testing.assert_allclose(t_est, t_gt, atol=1e-3)
+        np.testing.assert_allclose(rpy_est, rpy_gt, atol=1e-2)
+
+        # 核心断言：将世界实测坐标反投影回子坐标系后，两已知标靶的局部 Z 坐标必须严格为 0.00 mm
+        T_est = make_transform_matrix(rpy_deg_to_rot_mat(rpy_est), t_est)
+        T_inv = np.linalg.inv(T_est)
+        p_loc_a = (T_inv @ np.append(p_world_a, 1.0))[:3]
+        p_loc_b = (T_inv @ np.append(p_world_b, 1.0))[:3]
+
+        self.assertAlmostEqual(p_loc_a[2], 0.0, places=4, msg="标靶 A 在子系下的 Z 坐标必须严格为 0.0 mm")
+        self.assertAlmostEqual(p_loc_b[2], 0.0, places=4, msg="标靶 B 在子系下的 Z 坐标必须严格为 0.0 mm")
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -32,6 +32,92 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
+def align_vectors_3d(v_from: np.ndarray, v_to: np.ndarray) -> np.ndarray:
+    """
+    计算将 3D 空间向量 v_from 严格旋转对齐至 v_to 的最小旋转矩阵 R (SO(3))
+    满足: R @ (v_from / ||v_from||) = v_to / ||v_to||
+    基于 Rodrigues 旋转公式 (轴角最小测地线旋转，无多余绕轴自旋)
+    """
+    norm_from = float(np.linalg.norm(v_from))
+    norm_to = float(np.linalg.norm(v_to))
+    if norm_from < 1e-9 or norm_to < 1e-9:
+        return np.eye(3, dtype=np.float64)
+
+    u_from = v_from / norm_from
+    u_to = v_to / norm_to
+
+    v_cross = np.cross(u_from, u_to)
+    s = float(np.linalg.norm(v_cross))
+    c = float(np.dot(u_from, u_to))
+
+    # 两向量同向共线
+    if s < 1e-7:
+        if c > 0:
+            return np.eye(3, dtype=np.float64)
+        else:
+            # 180 度反向共线翻转: 选取一个与 u_from 正交的单位轴进行 180 度旋转
+            if abs(u_from[0]) < 0.9:
+                ortho = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+            else:
+                ortho = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+            axis = np.cross(u_from, ortho)
+            axis = axis / np.linalg.norm(axis)
+            return 2.0 * np.outer(axis, axis) - np.eye(3, dtype=np.float64)
+
+    # Rodrigues 旋转公式
+    vx = np.array([
+        [0.0, -v_cross[2], v_cross[1]],
+        [v_cross[2], 0.0, -v_cross[0]],
+        [-v_cross[1], v_cross[0], 0.0]
+    ], dtype=np.float64)
+    R = np.eye(3, dtype=np.float64) + vx + (vx @ vx) * ((1.0 - c) / (s ** 2))
+    return R
+
+
+def two_points_rigid_align_3d(
+    p_from_a: np.ndarray,
+    p_from_b: np.ndarray,
+    p_to_a: np.ndarray,
+    p_to_b: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    两点 3D 空间刚体对齐 (保距刚体变换, scale=1.0)
+    数学原理与设计哲学:
+    1. 已知点是坐标系建立的第一真理源和最大约束；
+    2. 提取两标靶在源空间的名义向量 v_from 与在目标空间的实测向量 v_to；
+    3. 通过 align_vectors_3d 求解将单位向量 u_from 旋转至 u_to 的测地线最小旋转矩阵 R in SO(3)；
+    4. 质心对齐平移 t = centroid_to - R @ centroid_from；
+    5. 对齐后两点在垂直于连线方向的残差分量严格为 0 (完全消除 Z 轴等法向假超差)，
+       残差仅由两点标称间距与实测间距的尺度差 (欧氏距离差的一半) 决定。
+    :return: (R 3x3, t 3, rmse_mm)
+    """
+    p_from_a = np.asarray(p_from_a, dtype=np.float64)
+    p_from_b = np.asarray(p_from_b, dtype=np.float64)
+    p_to_a = np.asarray(p_to_a, dtype=np.float64)
+    p_to_b = np.asarray(p_to_b, dtype=np.float64)
+
+    v_from = p_from_b - p_from_a
+    v_to = p_to_b - p_to_a
+
+    dist_from = float(np.linalg.norm(v_from))
+    dist_to = float(np.linalg.norm(v_to))
+    if dist_from < 1e-4 or dist_to < 1e-4:
+        raise ValueError("两标靶空间距离过小 (<0.1mm)，无法唯一定向坐标轴")
+
+    R_mat = align_vectors_3d(v_from, v_to)
+
+    centroid_from = 0.5 * (p_from_a + p_from_b)
+    centroid_to = 0.5 * (p_to_a + p_to_b)
+    t_vec = centroid_to - R_mat @ centroid_from
+
+    # 计算逐点残差与 RMSE
+    err_a = p_to_a - (R_mat @ p_from_a + t_vec)
+    err_b = p_to_b - (R_mat @ p_from_b + t_vec)
+    rmse = float(np.sqrt(0.5 * (np.sum(err_a ** 2) + np.sum(err_b ** 2))))
+
+    return R_mat, t_vec, rmse
+
+
 def rigid_transform_3d(pts_from: np.ndarray, pts_to: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     闭式求解 3D 刚体变换: P_to = R @ P_from + t (尺度严格固定为 1.0, 纯刚体)
@@ -41,8 +127,10 @@ def rigid_transform_3d(pts_from: np.ndarray, pts_to: np.ndarray) -> Tuple[np.nda
     """
     assert pts_from.shape == pts_to.shape, "点集维度必须一致"
     n = pts_from.shape[0]
-    if n < 3:
-        raise ValueError("刚体 3D 配准至少需要 3 个非共线点对")
+    if n < 2:
+        raise ValueError("刚体 3D 配准至少需要 2 个对应点")
+    if n == 2:
+        return two_points_rigid_align_3d(pts_from[0], pts_from[1], pts_to[0], pts_to[1])
 
     centroid_from = np.mean(pts_from, axis=0)
     centroid_to = np.mean(pts_to, axis=0)
@@ -232,14 +320,13 @@ class FrameExtrinsicSolver:
         T_parent_from_world: np.ndarray,
     ) -> Tuple[bool, Optional[List[float]], Optional[List[float]], Optional[float], str]:
         """
-        模式 2: 双标靶刚体对齐模式 (通用双标靶基准或原点靶+定轴靶)
-        数学原理与世界坐标系对齐完全统一:
-        1. 提取两标靶在子坐标系中的名义向量 v_child 与在父坐标系中的实测向量 v_parent;
-        2. 基于水平方位角之差求解相对偏航角 Yaw:
-           Yaw = atan2(v_parent.y, v_parent.x) - atan2(v_child.y, v_child.x);
-        3. 构造旋转矩阵 R = R_z(Yaw) (保持 Z 轴垂直工业基准);
-        4. 双点最小二乘平均平移 t = 0.5 * sum(p_parent_i - R @ p_child_i);
-        5. 计算综合残差 RMSE，杜绝单点绑架与轴向扭转。
+        模式 2: 双标靶 3D 刚体空间对齐模式 (通用双标靶基准或原点靶+定轴靶)
+        数学原理与设计哲学:
+        1. 已知标靶是该坐标系的第一真理源和最大约束，坐标系建立必须严格服从已知点的几何定义；
+        2. 提取两标靶在子坐标系中的名义向量 v_child 与在父坐标系中的实测向量 v_parent；
+        3. 通过 align_vectors_3d 求解最优 3D 空间刚体旋转矩阵 R in SO(3) (Rodrigues 最小测地线旋转)；
+        4. 质心对齐平移 t = centroid_parent - R @ centroid_child；
+        5. 垂直于标靶连线方向的残差 (包含局部 Z 轴方向) 严格为 0.00 mm，彻底消灭人为假超差。
         """
         origin_tid = spec.get("origin_tag_id") if spec.get("origin_tag_id") is not None else spec.get("tag_a_id")
         target_tid = spec.get("x_axis_tag_id") if spec.get("x_axis_tag_id") is not None else spec.get("tag_b_id")
@@ -262,10 +349,9 @@ class FrameExtrinsicSolver:
 
         # 计算父坐标系下的实测向量
         v_parent = p_parent_t - p_parent_o
-        dist_meas_xy = float(np.hypot(v_parent[0], v_parent[1]))
         dist_meas_3d = float(np.linalg.norm(v_parent))
-        if dist_meas_xy < 1e-3:
-            return False, None, None, None, "两枚标靶在水平面投影距离过小 (< 1mm)，无法唯一定向水平偏航角"
+        if dist_meas_3d < 1e-3:
+            return False, None, None, None, "两枚标靶空间实测间距过小 (< 1mm)，无法唯一定向坐标轴"
 
         # 获取子坐标系下的名义坐标与名义向量
         p_child_o = np.array(spec.get("origin_local_xyz_mm") or spec.get("tag_a_local_xyz_mm", [0.0, 0.0, 0.0])[:3], dtype=np.float64)
@@ -278,42 +364,21 @@ class FrameExtrinsicSolver:
             v_child = np.array([dist_meas_3d, 0.0, 0.0], dtype=np.float64)
             p_child_t = p_child_o + v_child
 
-        dist_nom_xy = float(np.hypot(v_child[0], v_child[1]))
-        if dist_nom_xy < 1e-3:
-            return False, None, None, None, "两枚标靶在子系名义坐标下的水平投影距离过小 (< 1mm)，无法唯一定向水平偏航角"
+        dist_nom_3d = float(np.linalg.norm(v_child))
+        if dist_nom_3d < 1e-3:
+            return False, None, None, None, "两枚标靶在子系名义坐标下的空间距离过小 (< 1mm)，无法唯一定向坐标轴"
 
-        # 计算水平方位角之差 -> 相对偏航角 Yaw
-        theta_child = math.atan2(v_child[1], v_child[0])
-        theta_parent = math.atan2(v_parent[1], v_parent[0])
-        yaw_rad = theta_parent - theta_child
-
-        cos_y = math.cos(yaw_rad)
-        sin_y = math.sin(yaw_rad)
-        R_mat = np.array([
-            [cos_y, -sin_y, 0.0],
-            [sin_y,  cos_y, 0.0],
-            [0.0,    0.0,   1.0]
-        ], dtype=np.float64)
+        # 执行 3D 两点刚体空间对齐
+        R_mat, t_vec, rmse = two_points_rigid_align_3d(p_child_o, p_child_t, p_parent_o, p_parent_t)
         rpy = rot_mat_to_rpy_deg(R_mat)
-
-        # 双点最小二乘平移均值: t = 0.5 * sum(p_parent - R @ p_child)
-        t_o = p_parent_o - R_mat @ p_child_o
-        t_t = p_parent_t - R_mat @ p_child_t
-        t_vec = 0.5 * (t_o + t_t)
         t_xyz = [float(x) for x in t_vec]
 
-        # 计算残差与 RMSE
-        err_o = p_parent_o - (R_mat @ p_child_o + t_vec)
-        err_t = p_parent_t - (R_mat @ p_child_t + t_vec)
-        rmse = float(np.sqrt(0.5 * (np.sum(err_o ** 2) + np.sum(err_t ** 2))))
-
-        dist_nom_3d = float(np.linalg.norm(v_child))
         scale_err = abs(dist_meas_3d - dist_nom_3d)
 
         msg = (
-            f"双标靶刚体对齐成功: Tag {origin_tid} 与 Tag {target_tid}，"
+            f"双标靶 3D 空间刚体对齐成功: Tag {origin_tid} 与 Tag {target_tid}，"
             f"实测间距: {dist_meas_3d:.1f} mm (标称: {dist_nom_3d:.1f} mm, 差值: {scale_err:.2f} mm)，"
-            f"残差 RMSE: {rmse:.3f} mm, 偏航角 Yaw: {rpy[2]:.2f}°"
+            f"残差 RMSE: {rmse:.3f} mm, 姿态 RPY: [{rpy[0]:.2f}°, {rpy[1]:.2f}°, {rpy[2]:.2f}°]"
         )
         log.info(f"[FrameExtrinsic] 坐标系 [{frame.frame_id}] {msg}")
         return True, t_xyz, rpy, rmse, msg

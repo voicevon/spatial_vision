@@ -136,10 +136,10 @@ class MappingEventMixin:
 
             # 5. 检查是否直接点击在中间视口图片的标靶区域上 (画布直接打叉剔除 / 恢复审核模式)
             if mid_x1 <= mx < mid_x2 and content_y1 <= my < content_y2:
-                if self.image_files and 0 <= self.current_img_idx < len(self.image_files):
-                    cur_file = self.image_files[self.current_img_idx]
+                if self.data_mgr.image_files and 0 <= self.data_mgr.current_img_idx < len(self.data_mgr.image_files):
+                    cur_file = self.data_mgr.image_files[self.data_mgr.current_img_idx]
                     bname = os.path.basename(cur_file)
-                    meta = self.frame_metrics_cache.get(bname, {})
+                    meta = self.data_mgr.frame_metrics_cache.get(bname, {})
                     obs_list = meta.get("observations", [])
 
                     if obs_list:
@@ -255,6 +255,9 @@ class MappingEventMixin:
         elif btn_id.startswith("TOGGLE_COORD_FRAME_VIS_"):
             frame_id = extra  # extra 即 frame.frame_id (字符串)
             self.toggle_coord_frame_visibility(frame_id)
+        elif btn_id.startswith("SET_ACTIVE_REF_FRAME_"):
+            frame_id = extra
+            self.set_active_reference_frame(frame_id)
 
         elif btn_id == "ACCEPT_PRUNE":
             self.accept_prune_results()

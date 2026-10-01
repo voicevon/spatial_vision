@@ -219,6 +219,8 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         # 4d. 坐标系可见性字典 {frame_id: bool} —— 控制哪些坐标系显示 XY 平面和三轴正向
         # 默认: world 坐标系开启，其余隐藏
         self.coord_frame_visibility: dict = {"world": True}
+        # 4e. 当前主参考基准坐标系 (默认 'world', 可切换为任意已解算子坐标系如 'frame_sub_1')
+        self.active_reference_frame_id: str = "world"
 
         # 4c. 工位多坐标系树与 ROI 空间物件集合管理器 (供 ROI 绘制场景使用)
         self.coord_mgr = None
@@ -460,10 +462,25 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         try:
             self.coord_mgr = load_workspace_coordinate_manager(self.current_workspace)
             self.roi_mgr = load_workspace_roi_manager(self.current_workspace)
+            if self.coord_mgr and getattr(self.coord_mgr, "active_frame_id", None):
+                self.active_reference_frame_id = self.coord_mgr.active_frame_id
+            else:
+                self.active_reference_frame_id = "world"
         except Exception as e:
             log.warning(f"[SPATIAL_MAPPING] 装载工位 ROI/坐标系失败: {e}")
             self.coord_mgr = None
             self.roi_mgr = None
+
+    def set_active_reference_frame(self, frame_id: str):
+        """切换当前视口观察基准坐标系 (如 'world' 或 'frame_sub_1')"""
+        if self.coord_mgr and frame_id in self.coord_mgr._frames:
+            self.active_reference_frame_id = frame_id
+            frame = self.coord_mgr.get_frame(frame_id)
+            name = frame.name if frame else frame_id
+            self.set_toast(f"基准参考坐标系已切换为: {name} ({frame_id})")
+        else:
+            self.active_reference_frame_id = "world"
+            self.set_toast("基准参考坐标系已复位为: 绝对世界系 (world)")
 
     def reset_viewport_zoom(self):
         """重置中间视口缩放与平移状态为适应屏幕 (1.0x)"""

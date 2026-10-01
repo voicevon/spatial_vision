@@ -689,7 +689,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         ax1, ay1, ax2, ay2 = anchor
 
         item_h = 28
-        panel_w = max(200, ax2 - ax1)
+        panel_w = max(290, ax2 - ax1)
         header_h = 24
         empty_h = 32
 
@@ -720,19 +720,21 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         cv2.rectangle(canvas, (pop_x1, pop_y1), (pop_x2, pop_y2), (0, 220, 255), 1)
 
         # 标题行
-        _put_text(canvas, "坐标系显示",
+        _put_text(canvas, "坐标系显隐与观察基准 (点击名称设为基准)",
                   (pop_x1 + 10, pop_y1 + 16),
-                  cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 220, 255), 1, cv2.LINE_AA)
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 220, 255), 1, cv2.LINE_AA)
         cv2.line(canvas, (pop_x1 + 6, pop_y1 + header_h),
                  (pop_x2 - 6, pop_y1 + header_h), (50, 56, 70), 1)
 
         if not frames:
             _put_text(canvas, "暂无坐标系",
-                      (pop_x1 + 10, pop_y1 + header_h + 20),
-                      cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 130, 150), 1, cv2.LINE_AA)
+                       (pop_x1 + 10, pop_y1 + header_h + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 130, 150), 1, cv2.LINE_AA)
             return
 
         mx, my = app.mouse_pos
+        active_ref_fid = getattr(app, "active_reference_frame_id", "world")
+
         for i, frame in enumerate(frames):
             iy1 = pop_y1 + header_h + 3 + i * item_h
             iy2 = iy1 + item_h
@@ -740,26 +742,33 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
                 break
 
             is_visible = visibility.get(frame.frame_id, False)
-            item_rect = (pop_x1 + 2, iy1, pop_x2 - 2, iy2)
-            is_hover = (item_rect[0] <= mx <= item_rect[2] and item_rect[1] <= my <= item_rect[3])
+            is_active_ref = (frame.frame_id == active_ref_fid)
 
-            if is_hover:
-                cv2.rectangle(canvas, (item_rect[0], iy1), (item_rect[2], iy2),
-                              (38, 44, 56), -1)
+            # 左侧复选框区域 (显隐) 与 右侧名称/设为基准区域
+            cb_hit_rect = (pop_x1 + 2, iy1, pop_x1 + 32, iy2)
+            name_hit_rect = (pop_x1 + 32, iy1, pop_x2 - 2, iy2)
+
+            is_hover_cb = (cb_hit_rect[0] <= mx <= cb_hit_rect[2] and cb_hit_rect[1] <= my <= cb_hit_rect[3])
+            is_hover_name = (name_hit_rect[0] <= mx <= name_hit_rect[2] and name_hit_rect[1] <= my <= name_hit_rect[3])
+
+            if is_hover_name or is_active_ref:
+                bg_col = (45, 52, 68) if is_active_ref else (34, 40, 52)
+                cv2.rectangle(canvas, (name_hit_rect[0], iy1), (name_hit_rect[2], iy2), bg_col, -1)
 
             # Checkbox 方块 (12x12)
             cb_x = pop_x1 + 10
             cb_y = iy1 + (item_h - 12) // 2
             cb_color = (0, 220, 255) if is_visible else (70, 80, 100)
+            if is_hover_cb:
+                cb_color = (0, 255, 220)
             cv2.rectangle(canvas, (cb_x, cb_y), (cb_x + 12, cb_y + 12),
                           cb_color, -1 if is_visible else 1)
             if is_visible:
                 cv2.line(canvas, (cb_x + 2, cb_y + 6), (cb_x + 5, cb_y + 9), (10, 20, 30), 2)
                 cv2.line(canvas, (cb_x + 5, cb_y + 9), (cb_x + 10, cb_y + 3), (10, 20, 30), 2)
 
-            # 坐标系名称 + frame_id
+            # 坐标系名称 + 解算状态指示
             name_lbl = (frame.name or frame.frame_id)
-            # 已解算状态指示
             T_w_f = None
             try:
                 T_w_f, is_resolved = coord_mgr.get_frame_to_world(frame.frame_id)
@@ -767,14 +776,25 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
                 is_resolved = False
             status_dot = "●" if is_resolved else "○"
             dot_col = (60, 200, 80) if is_resolved else (100, 100, 130)
-            txt_col = (220, 230, 245) if is_visible else (100, 110, 130)
+            txt_col = (0, 255, 220) if is_active_ref else ((220, 230, 245) if is_visible else (140, 150, 165))
 
             _put_text(canvas, status_dot,
-                      (cb_x + 18, iy1 + (item_h - 14) // 2 + 10),
+                      (pop_x1 + 36, iy1 + (item_h - 14) // 2 + 10),
                       cv2.FONT_HERSHEY_SIMPLEX, 0.34, dot_col, 1, cv2.LINE_AA)
             _put_text(canvas, name_lbl,
-                      (cb_x + 30, iy1 + (item_h - 14) // 2 + 10),
+                      (pop_x1 + 48, iy1 + (item_h - 14) // 2 + 10),
                       cv2.FONT_HERSHEY_SIMPLEX, 0.38, txt_col, 1, cv2.LINE_AA)
 
-            # 注册可点击按钮区域 (整行)
-            app.gui_buttons.append((f"TOGGLE_COORD_FRAME_VIS_{frame.frame_id}", item_rect, frame.frame_id))
+            # 右侧基准状态指示或提示
+            if is_active_ref:
+                _put_text(canvas, "[★当前基准]",
+                          (pop_x2 - 76, iy1 + (item_h - 14) // 2 + 10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.34, (255, 210, 60), 1, cv2.LINE_AA)
+            elif is_hover_name:
+                _put_text(canvas, "[设为基准]",
+                          (pop_x2 - 70, iy1 + (item_h - 14) // 2 + 10),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.34, (0, 220, 255), 1, cv2.LINE_AA)
+
+            # 注册可点击区域: 左侧点击切换显隐, 右侧点击设为基准
+            app.gui_buttons.append((f"TOGGLE_COORD_FRAME_VIS_{frame.frame_id}", cb_hit_rect, frame.frame_id))
+            app.gui_buttons.append((f"SET_ACTIVE_REF_FRAME_{frame.frame_id}", name_hit_rect, frame.frame_id))
