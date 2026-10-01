@@ -14,6 +14,7 @@ from typing import Any
 
 from src.ui.gui_components import draw_text, put_text
 from tools.workspace_hub.hub_state import HubState
+from tools.workspace_hub.states.gallery_state import GalleryState
 
 
 class GalleryPageRenderer:
@@ -66,12 +67,12 @@ class GalleryPageRenderer:
             draw_text(canvas, empty_hint, (hint_x, empty_box_y + 32), font_size=17, color=(0, 200, 240), bold=True)
             return
 
-        # 3. 图片卡片网格墙 (4 列 x 3 行, 每页 12 张大卡片, 铺满面板底部空白)
-        visible_imgs = images[grid_offset: grid_offset + HubState.GRID_PAGE]
+        # 3. 图片卡片网格墙 (3 列 x 3 行, 每页 9 张大卡片)
+        visible_imgs = images[grid_offset: grid_offset + GalleryState.GRID_PAGE]
 
         for i, img_path in enumerate(visible_imgs):
             real_idx = grid_offset + i
-            row, col = divmod(i, HubState.GRID_COLS)
+            row, col = divmod(i, GalleryState.GRID_COLS)
             x = self.r.GRID_X0 + col * (self.r.GRID_CELL_W + self.r.GRID_GAP_X)
             y = self.r.GRID_Y0 + row * (self.r.GRID_CELL_H + self.r.GRID_GAP_Y)
 

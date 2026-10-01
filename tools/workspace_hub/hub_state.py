@@ -47,6 +47,8 @@ class HubState:
     VIEW_STANDARD = GalleryState.VIEW_STANDARD
     VIEW_EXPANDED = GalleryState.VIEW_EXPANDED
     GRID_COLS = GalleryState.GRID_COLS
+    GRID_ROWS = GalleryState.GRID_ROWS
+    GRID_PAGE = GalleryState.GRID_PAGE
     ROI_VISIBLE_COUNT = GeometryState.ROI_VISIBLE_COUNT
 
     # 3. 生产工作流模式枚举定义 [(mode_key, display_name, pipeline_id), ...]

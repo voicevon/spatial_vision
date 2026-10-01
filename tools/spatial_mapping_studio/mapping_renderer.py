@@ -147,11 +147,16 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         if getattr(app, 'alignment_report', None):
             self.render_alignment_report_toast(app, canvas, w, h, bot_h)
 
-        # 6. 置顶悬浮下拉列表
+        # 6. 置顶悬浮下拉列表 (ROI_LIST_PANEL / COORD_FRAME_PANEL 走 checkbox 专用渲染，其余走通用单选渲染)
         if app.active_dropdown and app.active_dropdown in app.dropdown_boxes:
-            dd_info = app.dropdown_boxes[app.active_dropdown]
-            self.render_dropdown_popup(app, canvas, app.active_dropdown,
-                                      dd_info["rect"], dd_info["options"], dd_info["active_key"])
+            if app.active_dropdown == "ROI_LIST_PANEL":
+                self.render_roi_list_panel(app, canvas)
+            elif app.active_dropdown == "COORD_FRAME_PANEL":
+                self.render_coord_frame_panel(app, canvas)
+            else:
+                dd_info = app.dropdown_boxes[app.active_dropdown]
+                self.render_dropdown_popup(app, canvas, app.active_dropdown,
+                                          dd_info["rect"], dd_info["options"], dd_info["active_key"])
 
         # 7. Hover 帮助气泡 (最后绘制, 覆盖在所有面板之上, 不自动关闭)
         mx, my = app.mouse_pos
@@ -565,3 +570,211 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         for _, item_rect, opt_key in reg_btns:
             btn_id = f"DD_SELECT_{pop_name}_{opt_key}"
             app.gui_buttons.append((btn_id, item_rect, (pop_name, opt_key)))
+
+    def render_roi_list_panel(
+        self,
+        app: Any,
+        canvas: np.ndarray,
+    ):
+        """ROI 物件 CheckList 浮层 — 从 ROI_LIST_PANEL anchor rect 向上弹出。
+
+        每行: [☑/☐ checkbox] + ROI 名称
+        勾选/取消直接切换 RoiDefinition.enabled，并立即写盘到 spatial_scene.yaml。
+        """
+        from src.ui.text_rendering import put_text as _put_text
+        from src.ui.gui_theme import GuiTheme
+
+        roi_mgr = getattr(app, "roi_mgr", None)
+        rois = roi_mgr.list_rois() if roi_mgr else []
+
+        anchor = app.dropdown_boxes.get("ROI_LIST_PANEL", {}).get("rect", (0, 0, 110, 22))
+        ax1, ay1, ax2, ay2 = anchor
+
+        item_h = 28
+        panel_w = max(180, ax2 - ax1)
+        header_h = 24
+        empty_h = 32
+
+        if not rois:
+            panel_h = header_h + empty_h + 4
+        else:
+            panel_h = header_h + len(rois) * item_h + 6
+
+        # 向下弹出（紧贴按钮底边）
+        pop_x1 = ax1
+        pop_y1 = ay2 + 2
+        pop_y2 = pop_y1 + panel_h
+        pop_x2 = pop_x1 + panel_w
+
+        # 边界裁剪 (防溢出画布)
+        ch, cw = canvas.shape[:2]
+        if pop_x2 > cw - 4:
+            pop_x1 = max(4, cw - panel_w - 4)
+            pop_x2 = pop_x1 + panel_w
+        if pop_y2 > ch - 4:
+            pop_y2 = ch - 4
+            pop_y1 = max(4, pop_y2 - panel_h)
+
+        # 背景磨砂遮罩
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (pop_x1, pop_y1), (pop_x2, pop_y2), (22, 26, 34), -1)
+        cv2.addWeighted(overlay, 0.96, canvas, 0.04, 0, canvas)
+        cv2.rectangle(canvas, (pop_x1, pop_y1), (pop_x2, pop_y2), (0, 215, 90), 1)
+
+        # 标题行
+        _put_text(canvas, "ROI 物件显示",
+                  (pop_x1 + 10, pop_y1 + 16),
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 215, 90), 1, cv2.LINE_AA)
+        cv2.line(canvas, (pop_x1 + 6, pop_y1 + header_h),
+                 (pop_x2 - 6, pop_y1 + header_h), (50, 56, 70), 1)
+
+        if not rois:
+            _put_text(canvas, "暂无 ROI 物件",
+                      (pop_x1 + 10, pop_y1 + header_h + 20),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 130, 150), 1, cv2.LINE_AA)
+            return
+
+        mx, my = app.mouse_pos
+        for i, roi in enumerate(rois):
+            iy1 = pop_y1 + header_h + 3 + i * item_h
+            iy2 = iy1 + item_h
+            if iy2 > pop_y2 - 2:
+                break
+
+            item_rect = (pop_x1 + 2, iy1, pop_x2 - 2, iy2)
+            is_hover = (item_rect[0] <= mx <= item_rect[2] and item_rect[1] <= my <= item_rect[3])
+
+            # Hover 高亮背景
+            if is_hover:
+                cv2.rectangle(canvas, (item_rect[0], iy1), (item_rect[2], iy2),
+                              (38, 44, 56), -1)
+
+            # Checkbox 方块 (12x12)
+            cb_x = pop_x1 + 10
+            cb_y = iy1 + (item_h - 12) // 2
+            cb_color = (0, 215, 90) if roi.enabled else (70, 80, 100)
+            cv2.rectangle(canvas, (cb_x, cb_y), (cb_x + 12, cb_y + 12), cb_color, -1 if roi.enabled else 1)
+            if roi.enabled:
+                # 勾号
+                cv2.line(canvas, (cb_x + 2, cb_y + 6), (cb_x + 5, cb_y + 9), (10, 20, 10), 2)
+                cv2.line(canvas, (cb_x + 5, cb_y + 9), (cb_x + 10, cb_y + 3), (10, 20, 10), 2)
+
+            # ROI 名称
+            name_lbl = roi.name or roi.roi_id
+            txt_col = (220, 230, 245) if roi.enabled else (100, 110, 130)
+            _put_text(canvas, name_lbl,
+                      (cb_x + 18, iy1 + (item_h - 14) // 2 + 10),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.38, txt_col, 1, cv2.LINE_AA)
+
+            # 注册可点击按钮区域 (整行)
+            app.gui_buttons.append((f"TOGGLE_ROI_ENABLED_{roi.roi_id}", item_rect, roi.roi_id))
+
+    def render_coord_frame_panel(
+        self,
+        app: Any,
+        canvas: np.ndarray,
+    ):
+        """坐标系 CheckList 浮层 —— 从 COORD_FRAME_PANEL anchor rect 向下弹出。
+
+        每行: [☑/☐ checkbox] + 坐标系名称 + frame_id
+        勾选/取消直接切换 coord_frame_visibility[frame_id]。
+        """
+        from src.ui.text_rendering import put_text as _put_text
+
+        coord_mgr = getattr(app, "coord_mgr", None)
+        frames = coord_mgr.list_frames() if coord_mgr else []
+        visibility = getattr(app, "coord_frame_visibility", {})
+
+        anchor = app.dropdown_boxes.get("COORD_FRAME_PANEL", {}).get("rect", (0, 0, 110, 22))
+        ax1, ay1, ax2, ay2 = anchor
+
+        item_h = 28
+        panel_w = max(200, ax2 - ax1)
+        header_h = 24
+        empty_h = 32
+
+        if not frames:
+            panel_h = header_h + empty_h + 4
+        else:
+            panel_h = header_h + len(frames) * item_h + 6
+
+        # 向下弹出（紧贴按钮底边）
+        pop_x1 = ax1
+        pop_y1 = ay2 + 2
+        pop_y2 = pop_y1 + panel_h
+        pop_x2 = pop_x1 + panel_w
+
+        # 边界裁剪
+        ch, cw = canvas.shape[:2]
+        if pop_x2 > cw - 4:
+            pop_x1 = max(4, cw - panel_w - 4)
+            pop_x2 = pop_x1 + panel_w
+        if pop_y2 > ch - 4:
+            pop_y2 = ch - 4
+            pop_y1 = max(4, pop_y2 - panel_h)
+
+        # 背景磨砂遮罩
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (pop_x1, pop_y1), (pop_x2, pop_y2), (22, 26, 34), -1)
+        cv2.addWeighted(overlay, 0.96, canvas, 0.04, 0, canvas)
+        cv2.rectangle(canvas, (pop_x1, pop_y1), (pop_x2, pop_y2), (0, 220, 255), 1)
+
+        # 标题行
+        _put_text(canvas, "坐标系显示",
+                  (pop_x1 + 10, pop_y1 + 16),
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 220, 255), 1, cv2.LINE_AA)
+        cv2.line(canvas, (pop_x1 + 6, pop_y1 + header_h),
+                 (pop_x2 - 6, pop_y1 + header_h), (50, 56, 70), 1)
+
+        if not frames:
+            _put_text(canvas, "暂无坐标系",
+                      (pop_x1 + 10, pop_y1 + header_h + 20),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 130, 150), 1, cv2.LINE_AA)
+            return
+
+        mx, my = app.mouse_pos
+        for i, frame in enumerate(frames):
+            iy1 = pop_y1 + header_h + 3 + i * item_h
+            iy2 = iy1 + item_h
+            if iy2 > pop_y2 - 2:
+                break
+
+            is_visible = visibility.get(frame.frame_id, False)
+            item_rect = (pop_x1 + 2, iy1, pop_x2 - 2, iy2)
+            is_hover = (item_rect[0] <= mx <= item_rect[2] and item_rect[1] <= my <= item_rect[3])
+
+            if is_hover:
+                cv2.rectangle(canvas, (item_rect[0], iy1), (item_rect[2], iy2),
+                              (38, 44, 56), -1)
+
+            # Checkbox 方块 (12x12)
+            cb_x = pop_x1 + 10
+            cb_y = iy1 + (item_h - 12) // 2
+            cb_color = (0, 220, 255) if is_visible else (70, 80, 100)
+            cv2.rectangle(canvas, (cb_x, cb_y), (cb_x + 12, cb_y + 12),
+                          cb_color, -1 if is_visible else 1)
+            if is_visible:
+                cv2.line(canvas, (cb_x + 2, cb_y + 6), (cb_x + 5, cb_y + 9), (10, 20, 30), 2)
+                cv2.line(canvas, (cb_x + 5, cb_y + 9), (cb_x + 10, cb_y + 3), (10, 20, 30), 2)
+
+            # 坐标系名称 + frame_id
+            name_lbl = (frame.name or frame.frame_id)
+            # 已解算状态指示
+            T_w_f = None
+            try:
+                T_w_f, is_resolved = coord_mgr.get_frame_to_world(frame.frame_id)
+            except Exception:
+                is_resolved = False
+            status_dot = "●" if is_resolved else "○"
+            dot_col = (60, 200, 80) if is_resolved else (100, 100, 130)
+            txt_col = (220, 230, 245) if is_visible else (100, 110, 130)
+
+            _put_text(canvas, status_dot,
+                      (cb_x + 18, iy1 + (item_h - 14) // 2 + 10),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.34, dot_col, 1, cv2.LINE_AA)
+            _put_text(canvas, name_lbl,
+                      (cb_x + 30, iy1 + (item_h - 14) // 2 + 10),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.38, txt_col, 1, cv2.LINE_AA)
+
+            # 注册可点击按钮区域 (整行)
+            app.gui_buttons.append((f"TOGGLE_COORD_FRAME_VIS_{frame.frame_id}", item_rect, frame.frame_id))

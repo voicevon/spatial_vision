@@ -245,8 +245,17 @@ class MappingEventMixin:
             self.start_auto_prune_ba()
         elif btn_id == "TOGGLE_MATRIX_VIEW":
             self.toggle_matrix_view_mode()
-        elif btn_id == "DRAW_ROI_OBJECT":
-            self.toggle_draw_roi_mode()
+        elif btn_id == "TOGGLE_ROI_LIST_PANEL":
+            self.active_dropdown = None if self.active_dropdown == "ROI_LIST_PANEL" else "ROI_LIST_PANEL"
+        elif btn_id.startswith("TOGGLE_ROI_ENABLED_"):
+            roi_id = extra  # extra 即 roi.roi_id (字符串)
+            self.toggle_roi_enabled(roi_id)
+        elif btn_id == "TOGGLE_COORD_FRAME_PANEL":
+            self.active_dropdown = None if self.active_dropdown == "COORD_FRAME_PANEL" else "COORD_FRAME_PANEL"
+        elif btn_id.startswith("TOGGLE_COORD_FRAME_VIS_"):
+            frame_id = extra  # extra 即 frame.frame_id (字符串)
+            self.toggle_coord_frame_visibility(frame_id)
+
         elif btn_id == "ACCEPT_PRUNE":
             self.accept_prune_results()
         elif btn_id == "UNDO_PRUNE":

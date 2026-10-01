@@ -231,6 +231,62 @@ class TestWorldDatumAligner(unittest.TestCase):
         self.assertNotIn(11, report_tids)
         self.assertNotIn(14, report_tids)
 
+    def test_planar_leveled_alignment(self):
+        """测试当三轴全知锚点不足3枚但存在>=3枚共面Z锚点时，自适应激活 planar_leveled 调平并消除倾角"""
+        # 4 个角点物理真值 (Z 严格为 0.0)
+        true_world = {
+            0: np.array([0.0, 0.0, 0.0]),
+            1: np.array([300.0, 0.0, 0.0]),
+            2: np.array([0.0, 400.0, 0.0]),
+            3: np.array([300.0, 400.0, 0.0])
+        }
+
+        # 模拟相机平差由于基准标靶贴装倾斜，坐标系法向存在 Roll = 2.5°, Pitch = -1.5°, Yaw = 10° 的姿态倾角
+        # 并且带整体平移 [50, -30, 20] 与尺度 1.0
+        r_roll = math.radians(2.5)
+        r_pitch = math.radians(-1.5)
+        r_yaw = math.radians(10.0)
+        # R = Rz * Ry * Rx
+        Rz = np.array([[math.cos(r_yaw), -math.sin(r_yaw), 0], [math.sin(r_yaw), math.cos(r_yaw), 0], [0, 0, 1]])
+        Ry = np.array([[math.cos(r_pitch), 0, math.sin(r_pitch)], [0, 1, 0], [-math.sin(r_pitch), 0, math.cos(r_pitch)]])
+        Rx = np.array([[1, 0, 0], [0, math.cos(r_roll), -math.sin(r_roll)], [0, math.sin(r_roll), math.cos(r_roll)]])
+        R_sim = Rz @ Ry @ Rx
+        t_sim = np.array([50.0, -30.0, 20.0])
+
+        # BA 坐标系下的点 (即 tag_poses)
+        tag_poses = {}
+        for tid, pt in true_world.items():
+            pt_ba = R_sim.T @ (pt - t_sim)
+            T = np.eye(4)
+            T[:3, :3] = R_sim.T
+            T[:3, 3] = pt_ba
+            tag_poses[tid] = T
+
+        # 用户锚点输入: 仅 2 个点全知 (0 和 3)，另外 2 个点 (1 和 2) 仅已知 Z=0.0
+        anchors_input = {
+            0: {"xyz_mm": [0.0, 0.0, 0.0], "known": [True, True, True]},
+            1: {"xyz_mm": [None, None, 0.0], "known": [False, False, True]},
+            2: {"xyz_mm": [None, None, 0.0], "known": [False, False, True]},
+            3: {"xyz_mm": [300.0, 400.0, 0.0], "known": [True, True, True]},
+        }
+
+        res = self.aligner.anchor_to_absolute_world(tag_poses, anchors_input, strict=True)
+        w_anchor = res["world_anchor"]
+        report = w_anchor["alignment_report"]
+
+        # 验证:
+        # 1. 成功命中调平求解器
+        self.assertEqual(w_anchor["solver_type"], "planar_leveled")
+        self.assertEqual(report["solver_type"], "planar_leveled")
+        # 2. 倾角被完美调平消除，所有标靶的残差极小 (< 0.1mm)
+        self.assertLess(report["max_mm"], 0.1)
+        self.assertFalse(report["has_warn"])
+
+        # 3. 验证各标靶在世界系下的实际 Z 坐标几乎为 0.0
+        for tid in true_world:
+            z_val = res["tags"][tid]["position_mm"][2]
+            self.assertAlmostEqual(z_val, 0.0, delta=0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -223,8 +223,10 @@ class WorldDatumAligner:
         - 优先分支 (Umeyama 3D): 当存在 >=3 枚三轴全知且非共线锚点时, 采用闭式解析 Umeyama 算法
           求解全局最优 3D 刚体旋转 R in SO(3) 与尺度/平移, 彻底解除世界系法向对单个基准 Tag
           自身平贴倾角的绑架, 使得世界坐标系严格以用户标定的 3D 地面真值为绝对基准!
-        - 降级分支 (Planar 2D + Z平移): 当仅有 2 枚锚点或仅已知部分轴时, 以共同轴测距求解尺度,
-          以共同 XY 方向求解偏航角 yaw 并独立平移各轴.
+        - 调平分支 (Planar Leveled): 当三轴全知锚点不足但存在 >=3 枚已知 Z 且共面的锚点时，
+          通过 SVD 拟合工作台法向量并进行空间调平旋转 (消除单目平差基准标靶贴纸法向微小倾角被大跨度
+          杠杆放大的 Z 轴系统误差)，再在调平水平面求解偏航角 yaw 并逐轴平移.
+        - 纯 2D 分支 (Planar 2D): 约束进一步不足时，以共同轴测距求解尺度, 偏航角 yaw 并独立平移各轴.
         - 锚点一致性守门: 对所有锚点对的世界几何距离与相机重构距离进行相对形变校验, 发现严重录入
           冲突时记录警告, 杜绝错误几何污染全图.
         :return: (mode, info); mode in full|partial|none
@@ -311,7 +313,42 @@ class WorldDatumAligner:
             yaw_pairs_count = len(full_3d_tids) * (len(full_3d_tids) - 1) // 2
             solver_type = "umeyama_3d"
         else:
-            # 降级分支: 2D 偏航 + 独立 Z 平移 (兼容双锚点及部分已知轴模式)
+            # 降级分支: 优先利用多锚点空间共面先验进行水平法向调平 (planar_leveled)，若约束不足退化为纯 2D 偏航 (planar_2d)
+            z_tids = [tid for tid in tids if usable[tid]["known"][2]]
+            use_leveling = False
+            R_level = np.eye(3, dtype=np.float64)
+
+            if len(z_tids) >= 3:
+                # 检查这些已知 Z 标靶是否处于同一水平面上 (极差在合理几何容差内 <= 2.0mm)
+                z_targets = [usable[tid]["xyz_mm"][2] for tid in z_tids]
+                if (max(z_targets) - min(z_targets)) <= 2.0:
+                    z_pts = np.array([p_ba[tid] for tid in z_tids])
+                    z_c = z_pts - np.mean(z_pts, axis=0)
+                    _, sv_z, vh_z = np.linalg.svd(z_c)
+                    # 空间平面非共线退化 (第二奇异值明显大于 0)
+                    if len(sv_z) >= 2 and sv_z[1] > 1e-2:
+                        normal = vh_z[2]
+                        if normal[2] < 0:
+                            normal = -normal
+                        z_axis = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+                        v_rot = np.cross(normal, z_axis)
+                        s_rot = float(np.linalg.norm(v_rot))
+                        c_rot = float(np.dot(normal, z_axis))
+                        if s_rot > 1e-6:
+                            vx = np.array([
+                                [0.0, -v_rot[2], v_rot[1]],
+                                [v_rot[2], 0.0, -v_rot[0]],
+                                [-v_rot[1], v_rot[0], 0.0]
+                            ], dtype=np.float64)
+                            R_level = np.eye(3, dtype=np.float64) + vx + (vx @ vx) * ((1.0 - c_rot) / (s_rot ** 2))
+                        use_leveling = True
+                        log.info(
+                            f"[ANCHOR] 激活水平面法向调平先验 (Planar Leveling, {len(z_tids)} 枚共面锚点): "
+                            f"校正法向倾角 {math.degrees(math.acos(np.clip(normal[2], -1.0, 1.0))):.2f}°"
+                        )
+
+            # 偏航角计算: 在调平系 (或原始平面) 下基于共同已知 XY 的锚点对进行解算
+            p_for_yaw = {tid: R_level @ p_ba[tid] for tid in tids}
             yaw_obs: List[float] = []
             for i in range(len(tids)):
                 for j in range(i + 1, len(tids)):
@@ -319,7 +356,7 @@ class WorldDatumAligner:
                     a, b = usable[ia], usable[ib]
                     if all(a["known"][k] and b["known"][k] for k in (0, 1)):
                         wdx, wdy = a["xyz_mm"][0] - b["xyz_mm"][0], a["xyz_mm"][1] - b["xyz_mm"][1]
-                        bdx, bdy = p_ba[ia][0] - p_ba[ib][0], p_ba[ia][1] - p_ba[ib][1]
+                        bdx, bdy = p_for_yaw[ia][0] - p_for_yaw[ib][0], p_for_yaw[ia][1] - p_for_yaw[ib][1]
                         if math.hypot(wdx, wdy) >= 1e-6 and math.hypot(bdx, bdy) >= 1e-6:
                             yaw_obs.append(math.atan2(wdy, wdx) - math.atan2(bdy, bdx))
 
@@ -329,7 +366,8 @@ class WorldDatumAligner:
             scale = scale_median
             yaw = math.atan2(sum(math.sin(v) for v in yaw_obs), sum(math.cos(v) for v in yaw_obs))
             cos_y, sin_y = math.cos(yaw), math.sin(yaw)
-            R = np.array([[cos_y, -sin_y, 0.0], [sin_y, cos_y, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+            R_yaw = np.array([[cos_y, -sin_y, 0.0], [sin_y, cos_y, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+            R = R_yaw @ R_level
 
             # ③ 平移: 逐轴对已知锚点残差取均值 (缺失轴为 None)
             t_axes: List[Optional[float]] = []
@@ -342,7 +380,7 @@ class WorldDatumAligner:
             t = np.array([v if v is not None else 0.0 for v in t_axes], dtype=np.float64)
             mode = "full" if t_axes[2] is not None else "partial"
             yaw_pairs_count = len(yaw_obs)
-            solver_type = "planar_2d"
+            solver_type = "planar_leveled" if use_leveling else "planar_2d"
 
         # ④ 残差: 各锚点已知轴的变换后偏差 (锚定质量指标与质检单)
         per_tag: Dict[str, List[float]] = {}

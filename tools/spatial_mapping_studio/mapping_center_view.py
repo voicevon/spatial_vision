@@ -98,45 +98,51 @@ class MappingCenterViewMixin:
         app.gui_buttons.append(("TOGGLE_OBS_VIEW_DROPDOWN", (obs_x1, row_y1, obs_x2, row_y2), "OBS_VIEW_DROPDOWN"))
         cursor_x = obs_x2 + 8
 
-        # 3. 绘制 ROI 物件按钮
-        draw_roi_active = getattr(app, "draw_roi_mode", False)
-        draw_roi_txt = "✓ 绘制ROI物件" if draw_roi_active else "绘制ROI物件"
-        draw_roi_accent = (0, 215, 90) if draw_roi_active else None
+        # 3. 绘制 ROI 物件 — dropdown 触发器 (点击展开 ROI CheckList 浮层)
+        roi_mgr = getattr(app, "roi_mgr", None)
+        roi_count = len(roi_mgr.list_rois()) if roi_mgr else 0
+        roi_panel_open = (app.active_dropdown == "ROI_LIST_PANEL")
+        roi_enabled_count = sum(1 for r in roi_mgr.list_rois() if r.enabled) if roi_mgr else 0
+        if roi_count > 0:
+            roi_btn_lbl = f"ROI物件 {roi_enabled_count}/{roi_count}"
+        else:
+            roi_btn_lbl = "ROI物件"
         draw_roi_w = 110
         draw_roi_x1, draw_roi_x2 = cursor_x, cursor_x + draw_roi_w
-        draw_dashboard_button(canvas, (draw_roi_x1, row_y1, draw_roi_x2, row_y2), draw_roi_txt,
-                              mouse_pos=app.mouse_pos, accent=draw_roi_accent)
-        app.gui_buttons.append(("DRAW_ROI_OBJECT", (draw_roi_x1, row_y1, draw_roi_x2, row_y2), "DRAW_ROI_OBJECT"))
+        draw_dropdown_button(canvas, (draw_roi_x1, row_y1, draw_roi_x2, row_y2), roi_btn_lbl,
+                             is_open=roi_panel_open, mouse_pos=app.mouse_pos,
+                             theme_color=(0, 215, 90) if roi_panel_open else (140, 160, 180))
+        app.dropdown_boxes["ROI_LIST_PANEL"] = {
+            "rect": (draw_roi_x1, row_y1, draw_roi_x2, row_y2),
+            "options": [],
+            "active_key": "",
+        }
+        app.gui_buttons.append(("TOGGLE_ROI_LIST_PANEL", (draw_roi_x1, row_y1, draw_roi_x2, row_y2), "ROI_LIST_PANEL"))
         cursor_x = draw_roi_x2 + 8
 
-        # 4. 绘制 XY 平面按钮
-        xy_on = app.data_mgr.show_xy_plane_on
-        xy_lbl = "√ XY平面" if xy_on else "绘制XY平面"
-        xy_accent = (0, 255, 180) if xy_on else None
-        xy_w = 88
-        xy_x1, xy_x2 = cursor_x, cursor_x + xy_w
-        draw_dashboard_button(canvas, (xy_x1, row_y1, xy_x2, row_y2), xy_lbl,
-                              mouse_pos=app.mouse_pos, accent=xy_accent)
-        app.gui_buttons.append(("TOGGLE_DRAW_XY_PLANE", (xy_x1, row_y1, xy_x2, row_y2), "TOGGLE_DRAW_XY_PLANE"))
-        cursor_x = xy_x2 + 8
-
-        # 5. Z 轴特殊点下拉框
-        z_w = 120
-        z_x1, z_x2 = cursor_x, cursor_x + z_w
-        cur_z_lbl = app.get_current_plane_z_label() if hasattr(app, "get_current_plane_z_label") else "Z轴特殊点"
-        is_z_open = (app.active_dropdown == "PLANE_Z_DROPDOWN")
-        draw_dropdown_button(canvas, (z_x1, row_y1, z_x2, row_y2), cur_z_lbl,
-                             is_open=is_z_open, mouse_pos=app.mouse_pos,
-                             theme_color=(0, 220, 255) if xy_on else (140, 160, 180))
-        plane_opts = [(str(val) if val is not None else "NONE", lbl)
-                      for val, lbl in app.get_plane_z_options()] if hasattr(app, "get_plane_z_options") else []
-        active_z_key = str(app.plane_z) if (xy_on and hasattr(app, "plane_z")) else "NONE"
-        app.dropdown_boxes["PLANE_Z_DROPDOWN"] = {
-            "rect": (z_x1, row_y1, z_x2, row_y2),
-            "options": plane_opts,
-            "active_key": active_z_key
+        # 4. 绘制坐标系 —— dropdown 触发器 (点击展开坐标系 CheckList 浮层)
+        coord_mgr = getattr(app, "coord_mgr", None)
+        visibility = getattr(app, "coord_frame_visibility", {})
+        coord_panel_open = (app.active_dropdown == "COORD_FRAME_PANEL")
+        if coord_mgr is not None:
+            all_frames = coord_mgr.list_frames()
+            vis_count = sum(1 for f in all_frames if visibility.get(f.frame_id, False))
+            total_count = len(all_frames)
+            coord_btn_lbl = f"坐标系 {vis_count}/{total_count}" if total_count > 0 else "坐标系"
+        else:
+            coord_btn_lbl = "坐标系"
+        coord_w = 110
+        coord_x1, coord_x2 = cursor_x, cursor_x + coord_w
+        draw_dropdown_button(canvas, (coord_x1, row_y1, coord_x2, row_y2), coord_btn_lbl,
+                             is_open=coord_panel_open, mouse_pos=app.mouse_pos,
+                             theme_color=(0, 220, 255) if coord_panel_open else (140, 160, 180))
+        app.dropdown_boxes["COORD_FRAME_PANEL"] = {
+            "rect": (coord_x1, row_y1, coord_x2, row_y2),
+            "options": [],
+            "active_key": "",
         }
-        app.gui_buttons.append(("TOGGLE_PLANE_Z_DROPDOWN", (z_x1, row_y1, z_x2, row_y2), "PLANE_Z_DROPDOWN"))
+        app.gui_buttons.append(("TOGGLE_COORD_FRAME_PANEL", (coord_x1, row_y1, coord_x2, row_y2), "COORD_FRAME_PANEL"))
+
 
     def overlay_visual_elements(
         self,
@@ -362,13 +368,10 @@ class MappingCenterViewMixin:
                     put_text(disp_frame, f"? Tag #{tid} [漏检预测]", (mcx - 45, mcy),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 2, cv2.LINE_AA)
 
-        # 6. 世界 XY 平面透视网格与 Z 轴特殊点辅助线叠加 (移植自在线跟踪)
-        if app.data_mgr.show_xy_plane_on and success and rvec is not None and tvec is not None:
-            self.draw_xy_plane_overlay(app, disp_frame, rvec, tvec)
-
-        # 7. 3D ROI 空间物件投影绘制 (黄色半透明长方体覆盖)
-        if getattr(app, "draw_roi_mode", False) and success and rvec is not None and tvec is not None:
-            self._draw_roi_cuboids_overlay(app, disp_frame, rvec, tvec)
+        # 6. 坐标系可见性绘制：XY 平面（正象限）+ X/Y/Z 三轴正向箭头
+        coord_mgr_local = getattr(app, "coord_mgr", None)
+        if coord_mgr_local is not None and success and rvec is not None and tvec is not None:
+            self._draw_visible_coord_frames(app, disp_frame, rvec, tvec)
 
     def _draw_roi_cuboids_overlay(self, app: Any, disp_frame: np.ndarray,
                                   rvec: np.ndarray, tvec: np.ndarray):
@@ -556,6 +559,7 @@ class MappingCenterViewMixin:
                 arrow = np.array([tip, tip - wing + 6.0 * perp, tip - wing - 6.0 * perp], dtype=np.int32)
                 cv2.fillPoly(canvas, [arrow], COL_BLUE)
 
+        # 5. 坐标轴端点标签 (X/Y/Z/0)
         for label, p, col in (("X", (ext + 50, 0, z0), COL_RED),
                               ("Y", (0, ext + 50, z0), COL_GREEN),
                               ("Z", (0, 0, plane_z_max + 50), COL_BLUE),
@@ -564,3 +568,262 @@ class MappingCenterViewMixin:
             if uv is not None:
                 put_text(canvas, label, (uv[0] + 6, uv[1] - 8),
                          cv2.FONT_HERSHEY_SIMPLEX, 0.50, col, 2, cv2.LINE_AA)
+
+    def _draw_coord_frames_overlay(
+        self,
+        app: Any,
+        disp_frame: np.ndarray,
+        rvec: np.ndarray,
+        tvec: np.ndarray,
+        axis_len_mm: float = 120.0,
+    ):
+        """遍历 coord_mgr 所有已解算坐标系，绘制 X+/Y+/Z+ 三轴正方向箭头。
+
+        颜色约定 (BGR):
+          X+ 轴 → 蓝红色  (0,  60, 220)
+          Y+ 轴 → 青绿色  (40, 200,  40)
+          Z+ 轴 → 科技蓝  (220, 140, 30)
+        箭头长度 = axis_len_mm (世界单位 mm)，自动按 ROI 平均尺寸自适应。
+        仅绘制正方向（原点 → +轴端），背后的轴（相机深度 ≤ 0）静默跳过。
+        """
+        coord_mgr = getattr(app, "coord_mgr", None)
+        if coord_mgr is None:
+            return
+        pnp_solver = getattr(app, "pnp_solver", None)
+        if pnp_solver is None:
+            return
+        K = getattr(pnp_solver, "camera_matrix", None)
+        if K is None:
+            return
+        dist = getattr(pnp_solver, "dist_coeffs", None)
+
+        h_f, w_f = disp_frame.shape[:2]
+        R_c_w, _ = cv2.Rodrigues(rvec)
+        t_flat = np.asarray(tvec, dtype=np.float64).flatten()
+
+        # 三轴颜色 (BGR)
+        AXIS_COLORS = [
+            ((0, 60, 220),   "X"),   # X+ 红
+            ((40, 200, 40),  "Y"),   # Y+ 绿
+            ((220, 140, 30), "Z"),   # Z+ 蓝
+        ]
+        # 三轴世界方向单位向量
+        AXIS_DIRS = [
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 0.0]),
+            np.array([0.0, 0.0, 1.0]),
+        ]
+
+        def _proj_world(pt_w):
+            """世界坐标点 → 图像像素，返回 None 表示相机背面或出界"""
+            p_cam = R_c_w @ np.asarray(pt_w, dtype=np.float64) + t_flat
+            if p_cam[2] <= 1e-3:
+                return None
+            pts, _ = cv2.projectPoints(
+                np.asarray(pt_w, dtype=np.float64).reshape(1, 1, 3),
+                rvec, tvec, K, dist
+            )
+            u, v = int(round(pts[0, 0, 0])), int(round(pts[0, 0, 1]))
+            # 允许稍微出界（让长箭头末端也能绘出）
+            if -60 <= u <= w_f + 60 and -60 <= v <= h_f + 60:
+                return (u, v)
+            return None
+
+        def _draw_arrow(p0_uv, p1_uv, color, label: str):
+            """在图像上绘制从 p0→p1 的箭头 + 轴标签"""
+            if p0_uv is None or p1_uv is None:
+                return
+            # 主干
+            cv2.line(disp_frame, p0_uv, p1_uv, color, 2, cv2.LINE_AA)
+            # 箭头头部 (fillPoly 三角形)
+            d = np.array(p1_uv, dtype=np.float64) - np.array(p0_uv, dtype=np.float64)
+            n = float(np.linalg.norm(d))
+            if n < 8:
+                return
+            d /= n
+            perp = np.array([-d[1], d[0]])
+            tip = np.array(p1_uv, dtype=np.float64)
+            wing_len = min(10.0, n * 0.25)
+            arrow_head = np.array([
+                tip,
+                tip - wing_len * d + (wing_len * 0.45) * perp,
+                tip - wing_len * d - (wing_len * 0.45) * perp,
+            ], dtype=np.int32)
+            cv2.fillPoly(disp_frame, [arrow_head], color)
+            # 轴标签
+            lx = int(p1_uv[0] + d[0] * 6 + 4)
+            ly = int(p1_uv[1] + d[1] * 6 + 4)
+            put_text(disp_frame, label, (lx, ly),
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 2, cv2.LINE_AA)
+
+        frames = coord_mgr.list_frames()
+        for frame in frames:
+            # 只绘制已就绪的坐标系
+            T_w_f, is_resolved = coord_mgr.get_frame_to_world(frame.frame_id)
+            if not is_resolved:
+                continue
+
+            # 坐标系原点（世界坐标）
+            origin_w = T_w_f[:3, 3]
+            # 坐标系三轴正方向（世界坐标中的方向向量）
+            R_w_f = T_w_f[:3, :3]   # 坐标系三列 = X/Y/Z 在世界系的方向
+
+            origin_uv = _proj_world(origin_w)
+
+            for (color, label), axis_dir_local in zip(AXIS_COLORS, AXIS_DIRS):
+                # 轴终点：从原点沿该轴正方向延伸 axis_len_mm
+                tip_w = origin_w + R_w_f @ (axis_dir_local * axis_len_mm)
+                tip_uv = _proj_world(tip_w)
+                _draw_arrow(origin_uv, tip_uv, color, label)
+
+            # 坐标系 ID 标注（原点旁）
+            if origin_uv is not None:
+                name_lbl = frame.name or frame.frame_id
+                put_text(disp_frame, f"[{name_lbl}]",
+                         (origin_uv[0] + 14, origin_uv[1] - 14),
+                         cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 210, 230), 1, cv2.LINE_AA)
+
+    def _draw_visible_coord_frames(
+        self,
+        app: Any,
+        disp_frame: np.ndarray,
+        rvec: np.ndarray,
+        tvec: np.ndarray,
+        axis_len_mm: float = 120.0,
+        grid_ext_mm: float = 400.0,
+        grid_step_mm: float = 100.0,
+    ):
+        """遍历 coord_frame_visibility 勾选的坐标系，各自绘制：
+          - 正象限 XY 平面网格 (X: 0→+ext, Y: 0→+ext)
+          - X+/Y+/Z+ 三轴正向箭头（各轴仅正方向，负方向不画）
+          - 坐标系名称标注
+
+        颜色约定 (BGR): X=红(0,60,220) / Y=绿(40,200,40) / Z=蓝橙(220,140,30)
+        网格颜色: 半透明灰 (80,85,95)
+        """
+        coord_mgr = getattr(app, "coord_mgr", None)
+        if coord_mgr is None:
+            return
+        visibility = getattr(app, "coord_frame_visibility", {})
+        pnp_solver = getattr(app, "pnp_solver", None)
+        if pnp_solver is None:
+            return
+        K = getattr(pnp_solver, "camera_matrix", None)
+        if K is None:
+            return
+        dist = getattr(pnp_solver, "dist_coeffs", None)
+
+        # ROI 物件也在这里统一绘制（保持渲染顺序）
+        roi_mgr = getattr(app, "roi_mgr", None)
+        if roi_mgr is not None:
+            self._draw_roi_cuboids_overlay(app, disp_frame, rvec, tvec)
+
+        h_f, w_f = disp_frame.shape[:2]
+        R_c_w, _ = cv2.Rodrigues(rvec)
+        t_flat = np.asarray(tvec, dtype=np.float64).flatten()
+
+        # 轴颜色与方向
+        AXIS_COLORS = [
+            ((0, 60, 220),   "X"),
+            ((40, 200, 40),  "Y"),
+            ((220, 140, 30), "Z"),
+        ]
+        AXIS_DIRS = [
+            np.array([1.0, 0.0, 0.0]),
+            np.array([0.0, 1.0, 0.0]),
+            np.array([0.0, 0.0, 1.0]),
+        ]
+        COL_GRID = (80, 85, 95)
+
+        def _proj_w(pt_w):
+            """世界坐标点 → 图像像素，相机背面返回 None"""
+            p_cam = R_c_w @ np.asarray(pt_w, dtype=np.float64) + t_flat
+            if p_cam[2] <= 1e-3:
+                return None
+            pts, _ = cv2.projectPoints(
+                np.asarray(pt_w, dtype=np.float64).reshape(1, 1, 3),
+                rvec, tvec, K, dist
+            )
+            u, v = int(round(pts[0, 0, 0])), int(round(pts[0, 0, 1]))
+            if -80 <= u <= w_f + 80 and -80 <= v <= h_f + 80:
+                return (u, v)
+            return None
+
+        def _seg_w(p0_w, p1_w, color, thick, n_samples=20):
+            """世界坐标两端点 → 采样投影连线（自动处理近裁剪）"""
+            p0 = np.asarray(p0_w, dtype=np.float64)
+            p1 = np.asarray(p1_w, dtype=np.float64)
+            prev = None
+            for k in range(n_samples + 1):
+                s = k / float(n_samples)
+                uv = _proj_w(p0 + (p1 - p0) * s)
+                if uv is not None and prev is not None:
+                    cv2.line(disp_frame, prev, uv, color, thick, cv2.LINE_AA)
+                prev = uv
+
+        def _draw_arrow_uv(p0_uv, p1_uv, color, label):
+            """图像坐标箭头 + 轴标签"""
+            if p0_uv is None or p1_uv is None:
+                return
+            cv2.line(disp_frame, p0_uv, p1_uv, color, 2, cv2.LINE_AA)
+            d = np.array(p1_uv, dtype=np.float64) - np.array(p0_uv, dtype=np.float64)
+            n = float(np.linalg.norm(d))
+            if n < 8:
+                return
+            d /= n
+            perp = np.array([-d[1], d[0]])
+            tip = np.array(p1_uv, dtype=np.float64)
+            wl = min(10.0, n * 0.25)
+            head = np.array([tip,
+                             tip - wl * d + wl * 0.45 * perp,
+                             tip - wl * d - wl * 0.45 * perp], dtype=np.int32)
+            cv2.fillPoly(disp_frame, [head], color)
+            lx = int(p1_uv[0] + d[0] * 6 + 4)
+            ly = int(p1_uv[1] + d[1] * 6 + 4)
+            put_text(disp_frame, label, (lx, ly),
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 2, cv2.LINE_AA)
+
+        for frame in coord_mgr.list_frames():
+            if not visibility.get(frame.frame_id, False):
+                continue
+            T_w_f, is_resolved = coord_mgr.get_frame_to_world(frame.frame_id)
+            if not is_resolved:
+                continue
+
+            origin_w = T_w_f[:3, 3]
+            R_w_f = T_w_f[:3, :3]
+
+            ext = grid_ext_mm
+            step = grid_step_mm
+
+            # ---- 正象限 XY 平面网格 ----
+            # Y 方向平行线 (固定 y, x 从 0 扫到 ext)
+            y_vals = list(range(0, int(ext) + 1, int(step)))
+            for iy in y_vals:
+                p0_local = np.array([0.0,  iy, 0.0])
+                p1_local = np.array([ext,  iy, 0.0])
+                p0_w = origin_w + R_w_f @ p0_local
+                p1_w = origin_w + R_w_f @ p1_local
+                _seg_w(p0_w, p1_w, COL_GRID, 1)
+            # X 方向平行线 (固定 x, y 从 0 扫到 ext)
+            x_vals = list(range(0, int(ext) + 1, int(step)))
+            for ix in x_vals:
+                p0_local = np.array([ix, 0.0, 0.0])
+                p1_local = np.array([ix,  ext, 0.0])
+                p0_w = origin_w + R_w_f @ p0_local
+                p1_w = origin_w + R_w_f @ p1_local
+                _seg_w(p0_w, p1_w, COL_GRID, 1)
+
+            # ---- 三轴正向箭头 ----
+            origin_uv = _proj_w(origin_w)
+            for (color, lbl), axis_dir in zip(AXIS_COLORS, AXIS_DIRS):
+                tip_w = origin_w + R_w_f @ (axis_dir * axis_len_mm)
+                tip_uv = _proj_w(tip_w)
+                _draw_arrow_uv(origin_uv, tip_uv, color, lbl)
+
+            # ---- 坐标系名称标注 ----
+            if origin_uv is not None:
+                name_lbl = frame.name or frame.frame_id
+                put_text(disp_frame, f"[{name_lbl}]",
+                         (origin_uv[0] + 14, origin_uv[1] - 14),
+                         cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 210, 230), 1, cv2.LINE_AA)

@@ -439,6 +439,18 @@ class TestWorkspaceHub(unittest.TestCase):
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 510, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_CALIB_IMAGES)
 
+        # 6. 验证在相册页签下触发真实页面渲染，防止 GRID 属性缺失引发 AttributeError
+        canvas = app.render()
+        self.assertIsNotNone(canvas)
+        self.assertEqual(canvas.shape, (720, 960, 3))
+
+        # 切换生产相册并渲染
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
+        self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
+        canvas_prod = app.render()
+        self.assertIsNotNone(canvas_prod)
+        self.assertEqual(canvas_prod.shape, (720, 960, 3))
+
     def test_tag_whitelist_creation_and_context_menu(self):
         """测试工位白名单自动创建与结构验证"""
         import yaml

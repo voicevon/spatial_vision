@@ -216,6 +216,10 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         # 4b. ROI 物件绘制模式 (子工具栏切换)
         self.draw_roi_mode: bool = False
 
+        # 4d. 坐标系可见性字典 {frame_id: bool} —— 控制哪些坐标系显示 XY 平面和三轴正向
+        # 默认: world 坐标系开启，其余隐藏
+        self.coord_frame_visibility: dict = {"world": True}
+
         # 4c. 工位多坐标系树与 ROI 空间物件集合管理器 (供 ROI 绘制场景使用)
         self.coord_mgr = None
         self.roi_mgr = None
@@ -610,6 +614,31 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             self.set_toast("ROI 物件绘制模式：已开启 (下一步在中央视口框选区域)")
         else:
             self.set_toast("ROI 物件绘制模式：已关闭")
+
+    def toggle_roi_enabled(self, roi_id: str):
+        """切换指定 ROI 的 enabled 状态，并立即持久化写盘至 spatial_scene.yaml (方案 A)"""
+        if not self.roi_mgr:
+            return
+        roi = self.roi_mgr.get_roi(roi_id)
+        if roi is None:
+            return
+        roi.enabled = not roi.enabled
+        ok = self.roi_mgr.save()
+        state_str = "已启用 ✓" if roi.enabled else "已隐藏 ✗"
+        name_str = roi.name or roi_id
+        if ok:
+            self.set_toast(f"ROI [{name_str}] {state_str} (已写盘)")
+        else:
+            self.set_toast(f"ROI [{name_str}] {state_str} (⚠ 写盘失败)")
+        log.info(f"[SPATIAL_MAPPING] toggle_roi_enabled: {roi_id} → enabled={roi.enabled}")
+
+    def toggle_coord_frame_visibility(self, frame_id: str):
+        """切换指定坐标系的显示/隐藏（控制 XY 平面 + 三轴正向显示）"""
+        current = self.coord_frame_visibility.get(frame_id, False)
+        self.coord_frame_visibility[frame_id] = not current
+        state_str = "已显示" if self.coord_frame_visibility[frame_id] else "已隐藏"
+        self.set_toast(f"坐标系 [{frame_id}] {state_str}")
+        log.info(f"[SPATIAL_MAPPING] toggle_coord_frame_visibility: {frame_id} → {self.coord_frame_visibility[frame_id]}")
 
 
     # ===================== 渲染管线 (三栏自适应排版) =====================
