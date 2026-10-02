@@ -160,14 +160,22 @@ def rigid_transform_3d(pts_from: np.ndarray, pts_to: np.ndarray) -> Tuple[np.nda
 class FrameExtrinsicSolver:
     """工位子坐标系外参反推求解器"""
 
-    def __init__(self, tags_map: Union[Dict[int, np.ndarray], Dict[str, Any]]):
+    def __init__(
+        self,
+        tags_map: Union[Dict[int, np.ndarray], Dict[str, Any]],
+        whitelist_anchors: Optional[Dict[int, Dict]] = None,
+    ):
         """
         :param tags_map: 当前工位 BA 平差解算出的标靶地图，支持以下格式:
                          - {tag_id: 4x4 T_world_from_tag}
                          - tags_map.yaml 字典 (含 "tags" 节点)
+        :param whitelist_anchors: tag_whitelist.yaml 解析后的锚点字典 {tag_id: {"xyz_mm": [x,y,z], "known": [b,b,b]}}
+                                  为子坐标系外参反推提供唯一权威的局部名义坐标真理源。
         """
         self._tag_poses_world: Dict[int, np.ndarray] = {}
         self._tag_centers_world: Dict[int, np.ndarray] = {}
+        # whitelist_anchors 中的 xyz_mm 是 Tag 在其所属子坐标系中的名义局部坐标
+        self._whitelist_anchors: Dict[int, Dict] = whitelist_anchors or {}
         self._parse_tags_map(tags_map)
 
     def _parse_tags_map(self, tags_map: Union[Dict[int, np.ndarray], Dict[str, Any]]):
@@ -259,31 +267,49 @@ class FrameExtrinsicSolver:
         T_parent_from_world: np.ndarray,
     ) -> Tuple[bool, Optional[List[float]], Optional[List[float]], Optional[float], str]:
         """模式 1: 多标靶 3D 点云刚体配准反推"""
-        ref_tags = spec.get("reference_tags", {})
-        if not ref_tags:
-            return False, None, None, None, "未指定 reference_tags 标靶名义坐标表"
+        # 从 reference_tag_ids 读取参与配准的 Tag ID 列表 (新规范)
+        ref_ids_raw = spec.get("reference_tag_ids")
+        if not ref_ids_raw:
+            return False, None, None, None, (
+                f"calibration_spec 未指定 reference_tag_ids，"
+                f"请在 tag_whitelist.yaml 录入 Tag 局部坐标并在 calibration_spec 填写 reference_tag_ids: [11, 14]"
+            )
+        if not self._whitelist_anchors:
+            return False, None, None, None, "whitelist_anchors 未传入，无法读取 Tag 局部名义坐标"
 
         pts_child_list = []
         pts_parent_list = []
         matched_tids = []
+        missing_tids = []
 
-        for tid_raw, pos_local in ref_tags.items():
+        for tid_raw in ref_ids_raw:
             try:
                 tid = int(tid_raw)
             except (ValueError, TypeError):
+                continue
+
+            anchor = self._whitelist_anchors.get(tid)
+            if anchor is None:
+                missing_tids.append(tid)
+                continue
+            pos_local = anchor.get("xyz_mm")
+            if pos_local is None or len(pos_local) < 3 or None in pos_local:
+                missing_tids.append(tid)
                 continue
 
             pw = self.get_tag_world_center(tid)
             if pw is None:
                 continue
 
-            # 变换到父坐标系下
             pw_homo = np.array([pw[0], pw[1], pw[2], 1.0], dtype=np.float64)
             p_parent = (T_parent_from_world @ pw_homo)[:3]
 
             pts_child_list.append(np.array(pos_local[:3], dtype=np.float64))
             pts_parent_list.append(p_parent)
             matched_tids.append(tid)
+
+        if missing_tids:
+            log.warning(f"[FrameExtrinsic] Tag {missing_tids} 在 whitelist_anchors 中无完整 xyz_mm，已跳过")
 
         if len(matched_tids) < 3:
             # 若恰好匹配 2 枚标靶，智能降级为双标靶定轴模式
@@ -297,7 +323,6 @@ class FrameExtrinsicSolver:
                 }
                 return self._solve_by_axis_align(frame, spec_axis, T_parent_from_world)
             return False, None, None, None, f"有效匹配标靶数量不足 ({len(matched_tids)} < 3)，无法执行 3D 刚体配准"
-
         pts_child = np.array(pts_child_list, dtype=np.float64)
         pts_parent = np.array(pts_parent_list, dtype=np.float64)
 

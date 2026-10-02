@@ -279,16 +279,17 @@ class HubModalsRenderer:
                 FRAME_PARAM_BTN_UNKNOWN, FRAME_PARAM_BTN_EDIT6D
             )
             draw_text(canvas, "固定外参变换矩阵 (相对于父级坐标系):", (mx + 32, param_y + 12), font_size=13, color=(0, 240, 220), bold=True)
-            
+
             st = d.get("status", "unknown")
-            k_dof = d.get("known_dof", [False]*6)
-            n_known = sum(1 for b in k_dof if b)
+            prior_t = d.get("prior_translation_xyz_mm") or [None, None, None]
+            prior_r = d.get("prior_rotation_rpy_deg") or [None, None, None]
+            n_known = sum(1 for v in prior_t + prior_r if v is not None)
             is_unknown = (st == "unknown" or n_known == 0)
 
             # 右侧操作按钮
             unk_btn_col = (180, 100, 30) if is_unknown else (90, 60, 35)
             self.r._draw_button(canvas, FRAME_PARAM_BTN_UNKNOWN, "设为全未知", mpos, theme_color=unk_btn_col)
-            self.r._draw_button(canvas, FRAME_PARAM_BTN_EDIT6D, "6DoF位姿编辑", mpos, theme_color=(0, 200, 180))
+            self.r._draw_button(canvas, FRAME_PARAM_BTN_EDIT6D, "6DoF先验编辑", mpos, theme_color=(0, 200, 180))
 
             t = d.get("translation_xyz_mm", [0, 0, 0])
             r = d.get("rotation_rpy_deg", [0, 0, 0])
@@ -297,11 +298,14 @@ class HubModalsRenderer:
             if is_unknown:
                 st_text = "⚠ 外参待定 (未知) · 等待 BA 平差后通过绑定的标靶自动反推"
                 st_col = (0, 210, 255)
+            elif st == "calibrated":
+                st_text = "● 外参已由视觉标定求解 (6/6 轴已解算)"
+                st_col = (0, 230, 140)
             elif n_known == 6:
-                st_text = "● 外参已全部人工指定 (6/6 轴已知硬约束)"
+                st_text = "● 外参已全部人工指定 (6/6 轴已知先验)"
                 st_col = (0, 230, 140)
             else:
-                st_text = f"◐ 部分已知先验约束 ({n_known}/6 轴已知，其余待BA最优化)"
+                st_text = f"◐ 部分已知先验约束 ({n_known}/6 轴已知，其余待BA求解)"
                 st_col = (255, 180, 50)
             draw_text(canvas, st_text, (mx + 32, param_y + 30), font_size=11, color=st_col)
 
@@ -309,8 +313,10 @@ class HubModalsRenderer:
             t_rects = [(mx + 125, param_y + 48, 130, 28), (mx + 265, param_y + 48, 130, 28), (mx + 405, param_y + 48, 130, 28)]
             t_disp = []
             for i in range(3):
-                if k_dof[i] and not is_unknown and t is not None:
+                if st == "calibrated" and t is not None:
                     t_disp.append(f"{t[i]:.1f}")
+                elif prior_t[i] is not None:
+                    t_disp.append(f"{prior_t[i]:.1f}")
                 else:
                     t_disp.append("? (待解)")
             self.draw_custom_vector3_row(canvas, "平移 (mm):", (mx + 32, param_y + 54), t_rects, ["X", "Y", "Z"], t_disp, mpos)
@@ -319,12 +325,15 @@ class HubModalsRenderer:
             r_rects = [(mx + 125, param_y + 94, 130, 28), (mx + 265, param_y + 94, 130, 28), (mx + 405, param_y + 94, 130, 28)]
             r_disp = []
             for i in range(3):
-                if k_dof[i+3] and not is_unknown and r is not None:
+                if st == "calibrated" and r is not None:
                     r_disp.append(f"{r[i]:.1f}")
+                elif prior_r[i] is not None:
+                    r_disp.append(f"{prior_r[i]:.1f}")
                 else:
                     r_disp.append("? (待解)")
             self.draw_custom_vector3_row(canvas, "旋转 (°):", (mx + 32, param_y + 100), r_rects, ["Roll", "Pitch", "Yaw"], r_disp, mpos)
         else:
+
             draw_text(canvas, "AprilTag 动标绑定配置:", (mx + 32, param_y + 12), font_size=13, color=(0, 210, 255), bold=True)
             tid = d.get("tag_id", 0)
             off = d.get("offset_xyz_mm", [0, 0, 0])

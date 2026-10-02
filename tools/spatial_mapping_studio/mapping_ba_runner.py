@@ -291,14 +291,18 @@ class MappingBARunner:
         if not ws:
             return {}
         try:
-            from src.workspace.workspace_manager import load_workspace_coordinate_manager
+            from src.workspace.workspace_manager import (
+                load_workspace_coordinate_manager,
+                load_workspace_anchor_tags,
+            )
             from src.calibration.solvers.frame_extrinsic_solver import FrameExtrinsicSolver
 
             coord_mgr = load_workspace_coordinate_manager(ws)
             if not coord_mgr:
                 return {}
 
-            solver = FrameExtrinsicSolver(tags_map=world_map)
+            whitelist_anchors = load_workspace_anchor_tags(getattr(ws, "workspace_dir", "")) or {}
+            solver = FrameExtrinsicSolver(tags_map=world_map, whitelist_anchors=whitelist_anchors)
             solved_summary = solver.solve_all_unknown_frames(coord_mgr)
 
             succ_count = sum(1 for item in solved_summary.values() if item.get("success"))

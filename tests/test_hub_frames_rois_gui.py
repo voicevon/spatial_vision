@@ -76,7 +76,8 @@ class TestHubFramesRoisGui(unittest.TestCase):
         state.geometry.frame_modal_data["name"] = "机械臂末端法兰"
         state.geometry.frame_modal_data["type"] = "fixed_transform"
         state.geometry.frame_modal_data["status"] = "manual"
-        state.geometry.frame_modal_data["known_dof"] = [True] * 6
+        state.geometry.frame_modal_data["prior_translation_xyz_mm"] = [150.0, 30.0, -80.0]
+        state.geometry.frame_modal_data["prior_rotation_rpy_deg"] = [0.0, 45.0, 0.0]
         state.geometry.frame_modal_data["translation_xyz_mm"] = [150.0, 30.0, -80.0]
         state.geometry.frame_modal_data["rotation_rpy_deg"] = [0.0, 45.0, 0.0]
 

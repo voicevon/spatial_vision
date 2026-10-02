@@ -204,13 +204,8 @@ class GeometryState:
             tag_str = ",".join(str(x) for x in b_tags) if b_tags else str(f.tag_id or 0)
             
             st = getattr(f, "status", "unknown")
-            k_dof = getattr(f, "known_dof", None)
-            if k_dof is None:
-                if st in ("manual", "calibrated"):
-                    k_dof = [True] * 6
-                else:
-                    k_dof = [False] * 6
-
+            prior_t = list(f.prior_translation_xyz_mm) if f.prior_translation_xyz_mm is not None else [None, None, None]
+            prior_r = list(f.prior_rotation_rpy_deg) if f.prior_rotation_rpy_deg is not None else [None, None, None]
             t_val = [float(x) for x in f.translation_xyz_mm] if f.translation_xyz_mm is not None else [0.0, 0.0, 0.0]
             r_val = [float(x) for x in f.rotation_rpy_deg] if f.rotation_rpy_deg is not None else [0.0, 0.0, 0.0]
 
@@ -220,7 +215,8 @@ class GeometryState:
                 "parent_frame_id": f.parent_frame_id or "world",
                 "type": f.type,
                 "status": st,
-                "known_dof": list(k_dof),
+                "prior_translation_xyz_mm": prior_t,
+                "prior_rotation_rpy_deg": prior_r,
                 "translation_xyz_mm": t_val,
                 "rotation_rpy_deg": r_val,
                 "tag_id": tag_str,
@@ -237,7 +233,8 @@ class GeometryState:
                 "parent_frame_id": "world",
                 "type": "fixed_transform",
                 "status": "unknown",
-                "known_dof": [False] * 6,
+                "prior_translation_xyz_mm": [None, None, None],
+                "prior_rotation_rpy_deg": [None, None, None],
                 "translation_xyz_mm": [0.0, 0.0, 0.0],
                 "rotation_rpy_deg": [0.0, 0.0, 0.0],
                 "tag_id": 0,
@@ -295,8 +292,9 @@ class GeometryState:
         calib_metrics = existing_frame.calibration_metrics if existing_frame else None
 
         st = d.get("status", "unknown")
-        k_dof = d.get("known_dof", [False]*6)
-        n_known = sum(1 for b in k_dof if b)
+        prior_t = d.get("prior_translation_xyz_mm") or [None, None, None]
+        prior_r = d.get("prior_rotation_rpy_deg") or [None, None, None]
+        n_known = sum(1 for v in (prior_t + prior_r) if v is not None)
 
         if n_known == 0 and st != "calibrated":
             final_status = "unknown"
@@ -304,12 +302,13 @@ class GeometryState:
             r_rpy = None
         elif n_known == 6:
             final_status = "manual" if st != "calibrated" else "calibrated"
-            t_xyz = [float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])]
-            r_rpy = [float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])]
+            t_xyz = [float(v) for v in prior_t]  # type: ignore[arg-type]
+            r_rpy = [float(v) for v in prior_r]  # type: ignore[arg-type]
         else:
             final_status = "partial" if st != "calibrated" else "calibrated"
-            t_xyz = [float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])]
-            r_rpy = [float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])]
+            # calibrated 状态保留求解器写入的有效外参
+            t_xyz = [float(x) for x in d.get("translation_xyz_mm", [0, 0, 0])] if st == "calibrated" else None
+            r_rpy = [float(x) for x in d.get("rotation_rpy_deg", [0, 0, 0])] if st == "calibrated" else None
 
         frame = FrameDefinition(
             frame_id=fid,
@@ -317,7 +316,8 @@ class GeometryState:
             parent_frame_id=parent,
             type=ftype,
             status=final_status,
-            known_dof=k_dof,
+            prior_translation_xyz_mm=prior_t,
+            prior_rotation_rpy_deg=prior_r,
             translation_xyz_mm=t_xyz,
             rotation_rpy_deg=r_rpy,
             calibration_spec=calib_spec,
@@ -414,18 +414,16 @@ class GeometryState:
 
     # ---------------- 6DoF 外参位姿与约束独立模态弹窗方法 ----------------
     def open_pose6d_modal(self, axis_idx: int = 0):
-        """打开 6DoF 外参位姿与约束编辑模态窗"""
+        """打开 6DoF 外参先验约束编辑模态窗 (编辑先验定义, 非标定后结果)"""
         d = self.frame_modal_data
-        t = d.get("translation_xyz_mm", [0.0, 0.0, 0.0]) or [0.0, 0.0, 0.0]
-        r = d.get("rotation_rpy_deg", [0.0, 0.0, 0.0]) or [0.0, 0.0, 0.0]
-        st = d.get("status", "unknown")
-        default_known = [True]*6 if st in ("manual", "calibrated") else [False]*6
-        k_dof = list(d.get("known_dof", default_known))
-        if len(k_dof) < 6:
-            k_dof = k_dof + [False]*(6 - len(k_dof))
+        prior_t = d.get("prior_translation_xyz_mm") or [None, None, None]
+        prior_r = d.get("prior_rotation_rpy_deg") or [None, None, None]
+        t_val = [float(v) if v is not None else 0.0 for v in prior_t]
+        r_val = [float(v) if v is not None else 0.0 for v in prior_r]
+        k_dof = [v is not None for v in list(prior_t) + list(prior_r)]
 
-        self.pose6d_modal_vals = [float(t[0]), float(t[1]), float(t[2]), float(r[0]), float(r[1]), float(r[2])]
-        self.pose6d_modal_known = [bool(b) for b in k_dof]
+        self.pose6d_modal_vals = [*t_val, *r_val]
+        self.pose6d_modal_known = k_dof
         self.pose6d_modal_axis_sel = max(0, min(5, axis_idx))
         self.pose6d_modal_axis_buf = ""
         self.pose6d_modal_open = True
@@ -525,7 +523,7 @@ class GeometryState:
                 pass
 
     def save_pose6d_modal(self):
-        """保存 6DoF 位姿与约束回 frame_modal_data"""
+        """将 6DoF 先验约束保存回 frame_modal_data"""
         if self.pose6d_modal_axis_buf:
             try:
                 v = float(self.pose6d_modal_axis_buf)
@@ -536,9 +534,15 @@ class GeometryState:
             self.pose6d_modal_axis_buf = ""
 
         d = self.frame_modal_data
-        d["translation_xyz_mm"] = [round(float(x), 2) for x in self.pose6d_modal_vals[:3]]
-        d["rotation_rpy_deg"] = [round(float(x), 2) for x in self.pose6d_modal_vals[3:]]
-        d["known_dof"] = list(self.pose6d_modal_known)
+        # 先验应用：已知轴写入数值，未知轴写 None
+        d["prior_translation_xyz_mm"] = [
+            round(float(self.pose6d_modal_vals[i]), 2) if self.pose6d_modal_known[i] else None
+            for i in range(3)
+        ]
+        d["prior_rotation_rpy_deg"] = [
+            round(float(self.pose6d_modal_vals[i + 3]), 2) if self.pose6d_modal_known[i + 3] else None
+            for i in range(3)
+        ]
 
         n_known = sum(1 for b in self.pose6d_modal_known if b)
         if n_known == 0:
@@ -546,12 +550,16 @@ class GeometryState:
             self.hub.set_toast("已应用外参配置: 【全未知】(待 BA 平差反向求解)")
         elif n_known == 6:
             d["status"] = "manual"
+            # 全已知：同步有效外参（供坐标变换计算）
+            d["translation_xyz_mm"] = d["prior_translation_xyz_mm"]
+            d["rotation_rpy_deg"] = d["prior_rotation_rpy_deg"]
             self.hub.set_toast("已应用外参配置: 【全已知人工指定】")
         else:
             d["status"] = "partial"
-            self.hub.set_toast(f"已应用外参配置: 【部分已知先验约束】(已知 {n_known}/6 轴)")
+            self.hub.set_toast(f"已应用外参配置: 【部分先验约束】(已知 {n_known}/6 轴)")
 
         self.close_pose6d_modal()
+
 
     # ---------------- 结构化 ROI 表单弹窗方法 ----------------
     def open_roi_modal(self, roi_id: str | None = None):

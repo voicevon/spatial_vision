@@ -278,17 +278,30 @@ class FramesRoisPageRenderer:
                 draw_text(canvas, "● 外参位姿约束状态: 未知 / 待解 (Unknown / To be Calibrated)", (card_x + 24, unk_box_y + 9), font_size=12, color=(140, 160, 255), bold=True)
                 draw_text(canvas, "位姿特性: 6自由度外参均处于待解状态，将在全局建图或视觉求解时进行标定", (card_x + 24, unk_box_y + 33), font_size=11, color=(160, 175, 195))
             else:
-                k_dof = getattr(cur_frame, "known_dof", None) or [True] * 6
-                tx, ty, tz = cur_frame.translation_xyz_mm
-                rx, ry, rz = cur_frame.rotation_rpy_deg
+                st = getattr(cur_frame, "status", "unknown")
+                prior_t = getattr(cur_frame, "prior_translation_xyz_mm", None) or [None, None, None]
+                prior_r = getattr(cur_frame, "prior_rotation_rpy_deg", None) or [None, None, None]
+                t_vals = cur_frame.translation_xyz_mm or [0.0, 0.0, 0.0]
+                r_vals = cur_frame.rotation_rpy_deg or [0.0, 0.0, 0.0]
+                tx, ty, tz = t_vals
+                rx, ry, rz = r_vals
 
-                tx_str = f"X:{tx:+.1f}" if k_dof[0] else "X:? (待解)"
-                ty_str = f"Y:{ty:+.1f}" if k_dof[1] else "Y:? (待解)"
-                tz_str = f"Z:{tz:+.1f}" if k_dof[2] else "Z:? (待解)"
+                def fmt_t(i: int, lbl: str, val: float) -> str:
+                    if st == "calibrated":
+                        return f"{lbl}:{val:+.1f}"
+                    return f"{lbl}:{prior_t[i]:+.1f}" if prior_t[i] is not None else f"{lbl}:? (待解)"
 
-                rx_str = f"Rx:{rx:+.1f}°" if k_dof[3] else "Rx:? (待解)"
-                ry_str = f"Ry:{ry:+.1f}°" if k_dof[4] else "Ry:? (待解)"
-                rz_str = f"Rz:{rz:+.1f}°" if k_dof[5] else "Rz:? (待解)"
+                def fmt_r(i: int, lbl: str, val: float) -> str:
+                    if st == "calibrated":
+                        return f"{lbl}:{val:+.1f}°"
+                    return f"{lbl}:{prior_r[i]:+.1f}°" if prior_r[i] is not None else f"{lbl}:? (待解)"
+
+                tx_str = fmt_t(0, "X", tx)
+                ty_str = fmt_t(1, "Y", ty)
+                tz_str = fmt_t(2, "Z", tz)
+                rx_str = fmt_r(0, "Rx", rx)
+                ry_str = fmt_r(1, "Ry", ry)
+                rz_str = fmt_r(2, "Rz", rz)
 
                 t_box_y = c1_y + 64
                 cv2.rectangle(canvas, (card_x + 16, t_box_y), (card_x + card_w - 16, t_box_y + 30), (18, 22, 32), -1)

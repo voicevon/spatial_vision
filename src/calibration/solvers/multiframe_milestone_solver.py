@@ -185,32 +185,8 @@ def check_sub_frame_local_rigidity(
     nominal_tags: Dict[int, np.ndarray] = {}
     spec = frame.calibration_spec or {}
 
-    # 优先从 calibration_spec["reference_tags"] 提取
-    ref_tags = spec.get("reference_tags", {})
-    if isinstance(ref_tags, dict):
-        for tid_raw, pos in ref_tags.items():
-            try:
-                tid = int(tid_raw)
-                if isinstance(pos, (list, tuple, np.ndarray)) and len(pos) >= 3:
-                    nominal_tags[tid] = np.array(pos[:3], dtype=np.float64)
-            except (ValueError, TypeError):
-                continue
-
-    # 兼容定轴模式 (axis_align)
-    if not nominal_tags and spec.get("origin_tag_id") is not None and spec.get("x_axis_tag_id") is not None:
-        try:
-            o_tid = int(spec["origin_tag_id"])
-            x_tid = int(spec["x_axis_tag_id"])
-            o_pos = spec.get("origin_local_xyz_mm", [0.0, 0.0, 0.0])
-            x_pos = spec.get("x_axis_local_xyz_mm", [100.0, 0.0, 0.0])
-            nominal_tags[o_tid] = np.array(o_pos[:3], dtype=np.float64)
-            nominal_tags[x_tid] = np.array(x_pos[:3], dtype=np.float64)
-        except (ValueError, TypeError):
-            pass
-
-    # 备选: 从 fallback_anchor_tags 中提取归属此 frame 的标靶
-    # 原则: 优先依据 coord_mgr / 全局 Tag ID 分段映射规约 (如 frame_sub_1 对应 10~19)
-    if not nominal_tags and fallback_anchor_tags:
+    # 优先从 fallback_anchor_tags (tag_whitelist.yaml 第一真理源) 提取名义坐标
+    if fallback_anchor_tags:
         target_range = None
         if coord_mgr:
             try:
@@ -218,7 +194,6 @@ def check_sub_frame_local_rigidity(
             except Exception:
                 pass
         if target_range is None:
-            # 根据 frame_id 解析序号，如 frame_sub_1 -> 1 -> range(10, 20)
             parts = frame.frame_id.split("_")
             idx = 1
             for p in parts:
@@ -231,14 +206,20 @@ def check_sub_frame_local_rigidity(
         for tid_raw, a_entry in fallback_anchor_tags.items():
             try:
                 tid = int(tid_raw)
-                fid = a_entry.get("frame_id") if isinstance(a_entry, dict) else None
-                # 若显式匹配或落在区间内
-                if fid == frame.frame_id or (fid is None and tid in target_range):
-                    coords = a_entry.get("xyz_mm") or a_entry.get("coords") or a_entry.get("position_mm") or a_entry.get("center")
-                    if coords and len(coords) >= 3 and None not in coords[:3]:
-                        nominal_tags[tid] = np.array(coords[:3], dtype=np.float64)
             except (ValueError, TypeError):
                 continue
+            fid = a_entry.get("frame_id") if isinstance(a_entry, dict) else None
+            if fid == frame.frame_id or (fid is None and tid in target_range):
+                coords = a_entry.get("xyz_mm") or a_entry.get("coords") or a_entry.get("position_mm")
+                if coords and len(coords) >= 3 and None not in coords[:3]:
+                    nominal_tags[tid] = np.array(coords[:3], dtype=np.float64)
+
+    # 实验性兼容: 若 whitelist 未定义该坐标局部坐标，尝试从 reference_tag_ids 匹配 (ID 列表模式)
+    if not nominal_tags:
+        ref_ids = spec.get("reference_tag_ids")
+        if ref_ids:
+            # 新规范: 只存 ID 列表，坐标必须在 whitelist 中展开定义才能赊入该分支
+            pass  # nominal_tags 已通过上方 whitelist 路径处理
 
     # 2. 匹配当前相对底图中存在的标靶
     matched_tids = sorted([tid for tid in nominal_tags if tid in relative_tags])
@@ -473,7 +454,7 @@ class MultiFrameMilestoneSolver:
         # 动态子坐标系 阶段 B: 空间外参反推与挂接 (Extrinsics Attachment)
         # ---------------------------------------------------------
         if world_map and coord_mgr and report.m2_world_datum_passed:
-            ext_solver = FrameExtrinsicSolver(tags_map=world_map)
+            ext_solver = FrameExtrinsicSolver(tags_map=world_map, whitelist_anchors=anchor_tags)
 
             for frame in frames_to_check:
                 sub_rep = report.sub_frames[frame.frame_id]
@@ -520,7 +501,7 @@ class MultiFrameMilestoneSolver:
                     if sub_anchors:
                         frame.calibration_spec = {
                             "method": "anchor_tags_registration",
-                            "reference_tags": sub_anchors
+                            "reference_tag_ids": [tid for tid in sub_anchors]
                         }
 
                 # 求解外参

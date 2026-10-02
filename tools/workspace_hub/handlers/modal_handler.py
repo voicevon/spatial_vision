@@ -193,7 +193,8 @@ class ModalHandler:
             return
         if hit == "frame_set_unknown":
             d["status"] = "unknown"
-            d["known_dof"] = [False] * 6
+            d["prior_translation_xyz_mm"] = [None, None, None]
+            d["prior_rotation_rpy_deg"] = [None, None, None]
             d["translation_xyz_mm"] = [0.0, 0.0, 0.0]
             d["rotation_rpy_deg"] = [0.0, 0.0, 0.0]
             self.state.set_toast("已将坐标系外参标记为【全未知】，BA平差时将自动通过绑定的标靶反向求解！")
