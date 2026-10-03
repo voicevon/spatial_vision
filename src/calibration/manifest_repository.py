@@ -14,7 +14,7 @@ import os
 import glob
 import yaml
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Set
 import numpy as np
 import cv2
 
@@ -175,10 +175,13 @@ class ManifestRepository:
         return manifest_path
 
     def load_manifest(self, 
-                      manifest_path: Optional[str] = None) -> Tuple[List[Dict[int, np.ndarray]], List[str], Dict[str, Any]]:
+                      manifest_path: Optional[str] = None,
+                      allowed_tag_ids: Optional[List[int]] = None) -> Tuple[List[Dict[int, np.ndarray]], List[str], Dict[str, Any]]:
         """
         两阶段建图流水线 - 阶段二：
-        从审核清单中加载已审核的标靶观测数据，并过滤掉 keep: false 的坏样本。
+        从审核清单中加载已审核的标靶观测数据，并过滤掉 keep: false 及非白名单准入的坏样本。
+        :param manifest_path: 观测清单 YAML 绝对路径
+        :param allowed_tag_ids: 可选的物理准入标靶白名单 (若未指定，自动尝试从所属工位 tag_whitelist.yaml 继承)
         :return: (frame_detections, valid_frame_names, stats)
         """
         if manifest_path is None:
@@ -187,35 +190,25 @@ class ManifestRepository:
         if not os.path.exists(manifest_path):
             raise FileNotFoundError(f"未找到观测清单文件: {manifest_path}")
 
+        # 解析生效的标靶白名单
+        effective_allowed: Optional[Set[int]] = None
+        if allowed_tag_ids is not None:
+            effective_allowed = set(int(t) for t in allowed_tag_ids)
+        else:
+            try:
+                from src.workspace.workspace_manager import load_workspace_tag_whitelist
+                p1 = os.path.dirname(manifest_path)
+                p2 = os.path.abspath(os.path.join(p1, ".."))
+                wl = load_workspace_tag_whitelist(p2)
+                if not wl:
+                    wl = load_workspace_tag_whitelist(p1)
+                if wl:
+                    effective_allowed = set(int(t) for t in wl)
+            except Exception:
+                effective_allowed = None
+
         with open(manifest_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
-
-        # 核心自愈机制：检测磁盘是否存在未登记的新图片 (如 view_0016~view_0022)，自动增量录入
-        manifest_dir = os.path.dirname(os.path.abspath(manifest_path))
-        disk_files = sorted(glob.glob(os.path.join(manifest_dir, "view_*.png")))
-        if not disk_files:
-            disk_files = sorted(glob.glob(os.path.join(manifest_dir, "raw_images", "view_*.png")))
-        if not disk_files:
-            disk_files = sorted([
-                p for p in glob.glob(os.path.join(manifest_dir, "*.png"))
-                if not p.endswith("_annotated.png") and not p.endswith("_quiver.png")
-            ])
-        if not disk_files:
-            disk_files = sorted([
-                p for p in glob.glob(os.path.join(manifest_dir, "raw_images", "*.png"))
-                if not p.endswith("_annotated.png") and not p.endswith("_quiver.png")
-            ])
-        existing_imgs = data.get("images", {})
-        disk_bases = {os.path.basename(p) for p in disk_files}
-        manifest_bases = set(existing_imgs.keys())
-        
-        # 若磁盘包含未在清单中出现的新文件，自动触发增量导出
-        if disk_bases - manifest_bases:
-            missing_count = len(disk_bases - manifest_bases)
-            log.info(f"[*] 检测到采图目录新增 {missing_count} 张照片，正在自动增量同步录入清单与可视化...")
-            self.export_manifest(disk_files, manifest_path=manifest_path, generate_visualized=True)
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
 
         frame_detections = []
         valid_frame_names = []
@@ -266,6 +259,17 @@ class ManifestRepository:
             for obs in img_info.get("observations", []):
                 stats["total_observations"] += 1
                 tid = int(obs["tag_id"])
+
+                # 物理白名单一票否决：未在准入白名单内的标靶严禁进入平差
+                if effective_allowed is not None and tid not in effective_allowed:
+                    stats["total_excluded"] += 1
+                    stats["excluded_items"].append({
+                        "image": img_name,
+                        "tag_id": tid,
+                        "note": f"非工位白名单准入标靶 (Tag #{tid} 自动强过滤)"
+                    })
+                    continue
+
                 keep = obs.get("keep", True)
                 if not keep:
                     stats["total_excluded"] += 1

@@ -43,8 +43,8 @@ class TestCovisibilityGraph(unittest.TestCase):
         self.assertEqual(res["all_tags"], [0, 1, 2])
         self.assertEqual(len(res["components"]), 1)
         self.assertEqual(len(res["unconnected_tags"]), 0)
-        # 每条边各自出现 1 次，全部为关键桥梁
-        self.assertEqual(len(res["critical_bridges"]), 3)
+        # 每条边各自出现 1 次，全部为单图弱共视边
+        self.assertEqual(len(res["weak_covisibility_pairs"]), 3)
 
     def test_disconnected_network_detection(self):
         """测试孤岛断网识别"""

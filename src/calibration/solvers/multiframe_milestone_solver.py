@@ -558,6 +558,42 @@ class MultiFrameMilestoneSolver:
         else:
             report.summary_toast = f"⚠️ 校准完成但存在隔离项 (子坐标系外参: {sub_succ}/{sub_count})"
 
+        # 严格过滤最终 world_map 中的 tags: 只能包含合法的工位白名单标靶和子坐标系已声明标靶 (Clean Snapshot 原则)
+        if world_map and "tags" in world_map:
+            legal_tags = set()
+            if anchor_tags:
+                legal_tags.update(anchor_tags.keys())
+            if coord_mgr:
+                for f in coord_mgr.list_frames():
+                    legal_tags.update(f.get_tag_ids())
+                    if f.calibration_spec:
+                        ref_tags = f.calibration_spec.get("reference_tags", {})
+                        if isinstance(ref_tags, dict):
+                            for k in ref_tags.keys():
+                                try:
+                                    legal_tags.add(int(k))
+                                except (ValueError, TypeError):
+                                    pass
+                        elif isinstance(ref_tags, (list, set)):
+                            for k in ref_tags:
+                                try:
+                                    legal_tags.add(int(k))
+                                except (ValueError, TypeError):
+                                    pass
+                        ref_tag_ids = f.calibration_spec.get("reference_tag_ids", [])
+                        if isinstance(ref_tag_ids, (list, set)):
+                            for k in ref_tag_ids:
+                                try:
+                                    legal_tags.add(int(k))
+                                except (ValueError, TypeError):
+                                    pass
+            if legal_tags:
+                before_count = len(world_map["tags"])
+                world_map["tags"] = {tid: t_info for tid, t_info in world_map["tags"].items() if tid in legal_tags}
+                cleaned_count = before_count - len(world_map["tags"])
+                if cleaned_count > 0:
+                    log.info(f"[Milestone] 已根据工位白名单与子坐标系声明物理清洗 {cleaned_count} 个非授权游离标靶，生产地图保持纯净")
+
         return report.all_milestones_passed, report, world_map
 
     @staticmethod

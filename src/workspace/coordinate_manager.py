@@ -62,6 +62,9 @@ class FrameDefinition:
     rotation_rpy_deg: Optional[List[float]] = None
     # 逐轴已知掩码 [X, Y, Z, Roll, Pitch, Yaw]，True 为已知约束，False 为待解
     known_dof: Optional[List[bool]] = None
+    # 局部物理标称/先验位姿 (可缺省，用于混合约束反推)
+    prior_translation_xyz_mm: Optional[List[Any]] = None
+    prior_rotation_rpy_deg: Optional[List[Any]] = None
 
     # 外参反推标定规范 (声明如何由视觉标靶/几何约束反推该坐标系)
     calibration_spec: Optional[Dict[str, Any]] = None
@@ -463,30 +466,29 @@ class CoordinateTreeManager:
 
 
         if frame.type == "tag_bound":
-            # 动标绑定类型 (支持多动标冗余跟踪与回退)
-            cand_tags = frame.get_tag_ids()
-            resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
-            R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
-            T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
-
-            if resolved_tag is None:
-                # 所有候选动标均丢失或未标定，降级输出局部偏移，并标记有效性为 False
-                return T_tag_from_frame, False
-
-            # T_world_from_tag
-            T_world_from_tag = self._tags_map[resolved_tag]
-            # 若 parent 是 world，则 T_parent_from_frame = T_world_from_tag * T_tag_from_frame
-            # 若 parent 不是 world，需要按 T_parent_from_world * T_world_from_tag * T_tag_from_frame 计算
-            if frame.parent_frame_id == "world":
-                return T_world_from_tag @ T_tag_from_frame, True
-            else:
-                T_world_from_parent, valid_p = self.get_frame_to_world(frame.parent_frame_id)
-                if not valid_p:
-                    return T_tag_from_frame, False
-                T_parent_from_world = np.linalg.inv(T_world_from_parent)
-                return T_parent_from_world @ T_world_from_tag @ T_tag_from_frame, True
+            # 动标绑定类型: 由世界位姿链式反推相对父系变换
+            T_world_from_frame, valid_f = self.get_frame_to_world(frame_id)
+            parent_id = frame.parent_frame_id or "world"
+            if parent_id == "world":
+                return T_world_from_frame, valid_f
+            T_world_from_parent, valid_p = self.get_frame_to_world(parent_id)
+            if not (valid_f and valid_p):
+                return T_world_from_frame, False
+            return np.linalg.inv(T_world_from_parent) @ T_world_from_frame, True
 
         return np.eye(4, dtype=np.float64), True
+
+    def _resolve_tag_bound_world(self, frame: FrameDefinition) -> Tuple[np.ndarray, bool]:
+        """求解 tag_bound 坐标系到世界坐标系的变换矩阵 T_world_from_frame (支持多动标冗余回退)"""
+        cand_tags = frame.get_tag_ids()
+        resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
+        R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
+        T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
+
+        if resolved_tag is not None:
+            T_world_from_tag = self._tags_map[resolved_tag]
+            return T_world_from_tag @ T_tag_from_frame, True
+        return T_tag_from_frame, False
 
     def get_frame_to_world(self, frame_id: str) -> Tuple[np.ndarray, bool]:
         """
@@ -500,17 +502,7 @@ class CoordinateTreeManager:
 
         frame = self._frames[frame_id]
         if frame.type == "tag_bound":
-            cand_tags = frame.get_tag_ids()
-            resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
-            R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
-            T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
-
-            if resolved_tag is not None:
-                T_world_from_tag = self._tags_map[resolved_tag]
-                return T_world_from_tag @ T_tag_from_frame, True
-            else:
-                # Tag 丢失，未解算
-                return T_tag_from_frame, False
+            return self._resolve_tag_bound_world(frame)
 
         # fixed_transform 沿树递归向上乘
         parent_id = frame.parent_frame_id or "world"
@@ -530,13 +522,12 @@ class CoordinateTreeManager:
         T_world_from_src, valid_src = self.get_frame_to_world(src_frame)
         T_world_from_dst, valid_dst = self.get_frame_to_world(dst_frame)
 
-        if not valid_src or not valid_dst:
-            # 降级尝试
-            pass
+        if not (valid_src and valid_dst):
+            return np.eye(4, dtype=np.float64), False
 
         try:
             T_dst_from_world = np.linalg.inv(T_world_from_dst)
-            return T_dst_from_world @ T_world_from_src, (valid_src and valid_dst)
+            return T_dst_from_world @ T_world_from_src, True
         except Exception as e:
             log.error(f"[FrameTree] 矩阵求逆失败 ({dst_frame}): {e}")
             return np.eye(4, dtype=np.float64), False

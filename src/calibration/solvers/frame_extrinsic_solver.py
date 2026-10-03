@@ -195,13 +195,8 @@ class FrameExtrinsicSolver:
             T = None
             if isinstance(v, np.ndarray) and v.shape == (4, 4):
                 T = v.astype(np.float64)
-            elif isinstance(v, dict):
-                if "transform_matrix" in v:
-                    T = np.array(v["transform_matrix"], dtype=np.float64)
-                elif "center" in v or "position_mm" in v:
-                    pos = v.get("position_mm", v.get("center"))
-                    T = np.eye(4, dtype=np.float64)
-                    T[:3, 3] = np.array(pos[:3], dtype=np.float64)
+            elif isinstance(v, dict) and "transform_matrix" in v:
+                T = np.array(v["transform_matrix"], dtype=np.float64)
 
             if T is not None and T.shape == (4, 4):
                 self._tag_poses_world[tid] = T
@@ -251,11 +246,11 @@ class FrameExtrinsicSolver:
 
         T_parent_from_world = np.linalg.inv(T_world_from_parent)
 
-        if method in ("anchor_tags_registration", "multi_tag_registration", "registration_3d"):
+        if method == "anchor_tags_registration":
             return self._solve_by_registration(frame, spec, T_parent_from_world)
-        elif method in ("axis_align", "two_tag_alignment"):
+        elif method == "axis_align":
             return self._solve_by_axis_align(frame, spec, T_parent_from_world)
-        elif method in ("single_tag_offset", "single_tag"):
+        elif method == "single_tag_offset":
             return self._solve_by_single_tag(frame, spec, T_parent_from_world)
         else:
             return False, None, None, None, f"不支持的反推标定方法: {method}"
@@ -353,10 +348,10 @@ class FrameExtrinsicSolver:
         4. 质心对齐平移 t = centroid_parent - R @ centroid_child；
         5. 垂直于标靶连线方向的残差 (包含局部 Z 轴方向) 严格为 0.00 mm，彻底消灭人为假超差。
         """
-        origin_tid = spec.get("origin_tag_id") if spec.get("origin_tag_id") is not None else spec.get("tag_a_id")
-        target_tid = spec.get("x_axis_tag_id") if spec.get("x_axis_tag_id") is not None else spec.get("tag_b_id")
+        origin_tid = spec.get("origin_tag_id")
+        target_tid = spec.get("x_axis_tag_id")
         if origin_tid is None or target_tid is None:
-            return False, None, None, None, "双标靶对齐模式必须提供 origin_tag_id/tag_a_id 与 x_axis_tag_id/tag_b_id"
+            return False, None, None, None, "双标靶对齐模式必须提供 origin_tag_id 与 x_axis_tag_id"
 
         pw_o = self.get_tag_world_center(int(origin_tid))
         pw_t = self.get_tag_world_center(int(target_tid))
@@ -378,16 +373,17 @@ class FrameExtrinsicSolver:
         if dist_meas_3d < 1e-3:
             return False, None, None, None, "两枚标靶空间实测间距过小 (< 1mm)，无法唯一定向坐标轴"
 
-        # 获取子坐标系下的名义坐标与名义向量
-        p_child_o = np.array(spec.get("origin_local_xyz_mm") or spec.get("tag_a_local_xyz_mm", [0.0, 0.0, 0.0])[:3], dtype=np.float64)
-        target_local = spec.get("x_axis_local_xyz_mm") or spec.get("tag_b_local_xyz_mm")
-        if target_local is not None:
-            p_child_t = np.array(target_local[:3], dtype=np.float64)
-            v_child = p_child_t - p_child_o
-        else:
-            # 若未显式提供目标靶的局部坐标，默认沿子系 +X 轴延伸 (与实测间距一致)
-            v_child = np.array([dist_meas_3d, 0.0, 0.0], dtype=np.float64)
-            p_child_t = p_child_o + v_child
+        # 获取子坐标系下的名义坐标与名义向量 (严格要求规范字段，杜绝隐式实测伪造)
+        origin_local = spec.get("origin_local_xyz_mm")
+        if origin_local is None or len(origin_local) < 3:
+            origin_local = [0.0, 0.0, 0.0]
+        p_child_o = np.array(origin_local[:3], dtype=np.float64)
+
+        target_local = spec.get("x_axis_local_xyz_mm")
+        if target_local is None or len(target_local) < 3:
+            return False, None, None, None, "双标靶外参对齐未提供目标标靶局部标称坐标 (x_axis_local_xyz_mm)，严禁以实测值伪造质检"
+        p_child_t = np.array(target_local[:3], dtype=np.float64)
+        v_child = p_child_t - p_child_o
 
         dist_nom_3d = float(np.linalg.norm(v_child))
         if dist_nom_3d < 1e-3:
@@ -403,7 +399,8 @@ class FrameExtrinsicSolver:
         msg = (
             f"双标靶 3D 空间刚体对齐成功: Tag {origin_tid} 与 Tag {target_tid}，"
             f"实测间距: {dist_meas_3d:.1f} mm (标称: {dist_nom_3d:.1f} mm, 差值: {scale_err:.2f} mm)，"
-            f"残差 RMSE: {rmse:.3f} mm, 姿态 RPY: [{rpy[0]:.2f}°, {rpy[1]:.2f}°, {rpy[2]:.2f}°]"
+            f"残差 RMSE: {rmse:.3f} mm, 姿态 RPY: [{rpy[0]:.2f}°, {rpy[1]:.2f}°, {rpy[2]:.2f}°] "
+            f"(提示: 绕两靶中心连线轴向之旋转自由度按最小测地线先验约束)"
         )
         log.info(f"[FrameExtrinsic] 坐标系 [{frame.frame_id}] {msg}")
         return True, t_xyz, rpy, rmse, msg
@@ -442,7 +439,7 @@ class FrameExtrinsicSolver:
         coord_mgr: CoordinateTreeManager,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        批量求解坐标系树中所有声明了标定规范的 unknown 坐标系 (多轮拓扑递推，支持多级父子继承)
+        批量求解坐标系树中所有声明了标定规范的 unknown 坐标系 (树拓扑排序单趟求解，天然支持多级父子继承)
         :param coord_mgr: 工位坐标系树管理器
         :return: {frame_id: {"success": bool, "translation_xyz_mm": ..., "rotation_rpy_deg": ..., "rmse_mm": ..., "message": ...}}
         """
@@ -454,42 +451,44 @@ class FrameExtrinsicSolver:
             log.info("[FrameExtrinsic] 无待反推的 unknown 坐标系")
             return results
 
-        # 最多进行 N 轮迭代解析 (解决深层父级依赖关系)
-        remaining = list(targets)
-        for _ in range(len(targets) + 1):
-            if not remaining:
-                break
-            progress = False
-            next_remaining = []
+        # 计算每个待求解坐标系到 world 的依赖深度，实现父在前、子在后的拓扑遍历
+        def _get_depth(f: FrameDefinition) -> int:
+            depth = 0
+            cur = f.parent_frame_id
+            visited = set()
+            while cur and cur != "world" and cur not in visited:
+                visited.add(cur)
+                p_frame = coord_mgr.get_frame(cur)
+                if not p_frame:
+                    break
+                cur = p_frame.parent_frame_id
+                depth += 1
+            return depth
 
-            for frame in remaining:
-                succ, t_xyz, rpy, rmse, msg = self.solve_frame_extrinsic(frame, coord_mgr)
-                if succ and t_xyz is not None and rpy is not None:
-                    coord_mgr.update_frame_solved_extrinsic(
-                        frame_id=frame.frame_id,
-                        translation_xyz_mm=t_xyz,
-                        rotation_rpy_deg=rpy,
-                        rmse_mm=rmse,
-                        method=frame.calibration_spec.get("method", "registration")
-                    )
-                    results[frame.frame_id] = {
-                        "success": True,
-                        "translation_xyz_mm": t_xyz,
-                        "rotation_rpy_deg": rpy,
-                        "rmse_mm": rmse,
-                        "message": msg,
-                    }
-                    progress = True
-                else:
-                    next_remaining.append(frame)
-                    results[frame.frame_id] = {
-                        "success": False,
-                        "message": msg,
-                    }
+        # 按依赖深度由浅入深拓扑排序
+        sorted_targets = sorted(targets, key=_get_depth)
 
-            remaining = next_remaining
-            if not progress:
-                # 无法继续推导更深层节点 (可能依赖未解算的父系或标靶缺失)
-                break
+        for frame in sorted_targets:
+            succ, t_xyz, rpy, rmse, msg = self.solve_frame_extrinsic(frame, coord_mgr)
+            if succ and t_xyz is not None and rpy is not None:
+                coord_mgr.update_frame_solved_extrinsic(
+                    frame_id=frame.frame_id,
+                    translation_xyz_mm=t_xyz,
+                    rotation_rpy_deg=rpy,
+                    rmse_mm=rmse,
+                    method=frame.calibration_spec.get("method", "registration")
+                )
+                results[frame.frame_id] = {
+                    "success": True,
+                    "translation_xyz_mm": t_xyz,
+                    "rotation_rpy_deg": rpy,
+                    "rmse_mm": rmse,
+                    "message": msg,
+                }
+            else:
+                results[frame.frame_id] = {
+                    "success": False,
+                    "message": msg,
+                }
 
         return results

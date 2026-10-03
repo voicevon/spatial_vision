@@ -115,7 +115,8 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             T_w_t = make_transform_matrix(R_gt, p_w_noise.tolist())
             tags_map[tid] = T_w_t
 
-        solver = FrameExtrinsicSolver(tags_map=tags_map)
+        whitelist_anchors = {tid: {"xyz_mm": pos} for tid, pos in local_tags.items()}
+        solver = FrameExtrinsicSolver(tags_map=tags_map, whitelist_anchors=whitelist_anchors)
 
         # 定义待标定子坐标系
         conveyor_frame = FrameDefinition(
@@ -126,7 +127,7 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             status="unknown",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": local_tags,
+                "reference_tag_ids": list(local_tags.keys()),
             }
         )
 
@@ -195,7 +196,11 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             10: make_transform_matrix(R_gt, p_world_10.tolist()),
             11: make_transform_matrix(R_gt, p_world_11.tolist()),
         }
-        solver = FrameExtrinsicSolver(tags_map=tags_map)
+        whitelist_anchors = {
+            10: {"xyz_mm": p_child_10.tolist()},
+            11: {"xyz_mm": p_child_11.tolist()},
+        }
+        solver = FrameExtrinsicSolver(tags_map=tags_map, whitelist_anchors=whitelist_anchors)
 
         sub_frame = FrameDefinition(
             frame_id="frame_tilted",
@@ -205,10 +210,7 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             status="unknown",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": {
-                    10: p_child_10.tolist(),
-                    11: p_child_11.tolist(),
-                }
+                "reference_tag_ids": [10, 11],
             }
         )
 
@@ -236,11 +238,7 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             status="unknown",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": {
-                    5: [0.0, 0.0, 0.0],
-                    6: [200.0, 0.0, 0.0],
-                    7: [0.0, 200.0, 0.0],
-                }
+                "reference_tag_ids": [5, 6, 7],
             }
         )
         self.coord_mgr.add_frame(frame_conv)
@@ -251,7 +249,12 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
         self.assertFalse(valid_before)
 
         # 执行求解
-        solver = FrameExtrinsicSolver(tags_map=tags_map)
+        whitelist_anchors = {
+            5: {"xyz_mm": [0.0, 0.0, 0.0]},
+            6: {"xyz_mm": [200.0, 0.0, 0.0]},
+            7: {"xyz_mm": [0.0, 200.0, 0.0]},
+        }
+        solver = FrameExtrinsicSolver(tags_map=tags_map, whitelist_anchors=whitelist_anchors)
         res = solver.solve_all_unknown_frames(self.coord_mgr)
 
         self.assertIn("frame_conveyor", res)
@@ -296,7 +299,11 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             20: make_transform_matrix(R_gt, p_world_a.tolist()),
             21: make_transform_matrix(R_gt, p_world_b.tolist()),
         }
-        solver = FrameExtrinsicSolver(tags_map=tags_map)
+        whitelist_anchors = {
+            20: {"xyz_mm": p_child_a.tolist()},
+            21: {"xyz_mm": p_child_b.tolist()},
+        }
+        solver = FrameExtrinsicSolver(tags_map=tags_map, whitelist_anchors=whitelist_anchors)
 
         sub_frame = FrameDefinition(
             frame_id="frame_conveyor_3d",
@@ -306,10 +313,7 @@ class TestFrameExtrinsicSolver(unittest.TestCase):
             status="unknown",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": {
-                    20: p_child_a.tolist(),
-                    21: p_child_b.tolist(),
-                }
+                "reference_tag_ids": [20, 21],
             }
         )
 

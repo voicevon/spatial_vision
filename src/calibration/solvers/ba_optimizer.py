@@ -17,10 +17,12 @@ from typing import Dict, List, Tuple, Optional, Any, Set, Callable
 import numpy as np
 import cv2
 from scipy.optimize import least_squares
+from scipy.sparse import lil_matrix
 
 from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer, CovisibilityGraphError
 from src.calibration.verification.ba_report import compute_3d_uncertainties, export_diagnostic_report
 from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
+from src.workspace.coordinate_manager import rot_mat_to_rpy_deg
 
 from src.utils.logger import get_logger
 
@@ -28,6 +30,13 @@ log = get_logger(__name__)
 
 # 两阶段 BA 最小二乘统一收敛容差 (ftol/xtol/gtol 三项同值)
 _BA_CONVERGE_TOL = 1e-5
+
+# 粗差识别与清洗参数
+_OUTLIER_SIGMA_FACTOR = 2.8      # MAD 鲁棒离群统计倍数
+_OUTLIER_MIN_THRESH_PX = 4.0     # 离群残差最小绝对门限 (px)
+_OUTLIER_WEIGHT_SUPPRESS = 0.01  # 离群项权重强力压制因子
+_STAGE1_CAUCHY_SCALE = 1.5       # 阶段一全局粗差清洗 Cauchy 尺度因子
+_STAGE2_CAUCHY_SCALE = 1.0       # 阶段二微容差精修 Cauchy 尺度因子
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -122,8 +131,8 @@ class BundleAdjustmentOptimizer:
             raise CovisibilityGraphError(report["message"])
 
         all_detected_tags = set(report["all_tags"])
-        if report["critical_bridges"]:
-            log.info(f"[NOTE] 提示：发现 {len(report['critical_bridges'])} 对标靶仅由单张图共视支撑 (关键桥梁): {report['critical_bridges']}")
+        if report.get("weak_covisibility_pairs"):
+            log.info(f"[NOTE] 提示：发现 {len(report['weak_covisibility_pairs'])} 对标靶仅由单张图共视支撑 (弱共视边): {report['weak_covisibility_pairs']}")
 
         # 2. 生成高质量初值 (多标靶联合超定 PnP 初值传递，杜绝单链累积误差与翻转)
         if origin_tag_id in all_detected_tags:
@@ -241,7 +250,7 @@ class BundleAdjustmentOptimizer:
                     if t_id in tags_pose:
                         w = weights_dict.get((f, t_id), 1.0)
                         if active_outliers and (f, t_id) in active_outliers:
-                            w *= 0.01  # 离群项强力压制
+                            w *= _OUTLIER_WEIGHT_SUPPRESS  # 离群项强力压制
 
                         T_w_t = tags_pose[t_id]
                         T_c_t = T_c_w @ T_w_t
@@ -252,15 +261,6 @@ class BundleAdjustmentOptimizer:
                         proj_pts = proj_pts.reshape((4, 2))
                         diff = (proj_pts - corners_img).flatten()
                         residuals.extend(diff * np.sqrt(max(1e-4, w)))
-
-            # 若配置了物理标靶间距先验约束，作为硬约束惩罚项联合求解
-            if baseline_pair is not None:
-                id_a, id_b, real_dist_mm = baseline_pair
-                if id_a in tags_pose and id_b in tags_pose:
-                    t_a = tags_pose[id_a][:3, 3]
-                    t_b = tags_pose[id_b][:3, 3]
-                    dist_est = float(np.linalg.norm(t_a - t_b))
-                    residuals.append((dist_est - real_dist_mm) * 5.0)
 
             return np.array(residuals, dtype=np.float64)
 
@@ -295,7 +295,6 @@ class BundleAdjustmentOptimizer:
                         self.iter_count += 1
                         # 动态自适应调整最大轮次：分母永不小于分子，若超过预设则自适应平滑扩充
                         if self.iter_count > self.max_iters:
-                            import math
                             self.max_iters = int(math.ceil(self.iter_count / 10.0) * 10)
 
                         rmse = float(np.sqrt(np.mean(res ** 2))) if len(res) > 0 else 0.0
@@ -319,6 +318,27 @@ class BundleAdjustmentOptimizer:
 
         x0 = pack_params(tag_poses_init, camera_poses_init)
 
+        # 构建稀疏雅可比拓扑结构 (利用相机-标靶观测二部图稀疏度加速有限差分评估)
+        tag_to_col = {tid: i * 6 for i, tid in enumerate(static_tags_to_opt)}
+        cam_to_col = {f: (len(static_tags_to_opt) + i) * 6 for i, f in enumerate(active_frames)}
+
+        total_res_rows = sum(len(frame_detections[f]) * 8 for f in active_frames)
+        n_params = (len(static_tags_to_opt) + len(active_frames)) * 6
+        jac_sparsity = lil_matrix((total_res_rows, n_params), dtype=int)
+
+        curr_row = 0
+        for f in active_frames:
+            cam_col = cam_to_col[f]
+            for t_id in frame_detections[f].keys():
+                row_slice = slice(curr_row, curr_row + 8)
+                jac_sparsity[row_slice, cam_col:cam_col + 6] = 1
+                if t_id in tag_to_col:
+                    tag_col = tag_to_col[t_id]
+                    jac_sparsity[row_slice, tag_col:tag_col + 6] = 1
+                curr_row += 8
+
+        jac_sparsity = jac_sparsity.tocsr()
+
         stage1_est_max = 60
         if callback:
             callback({
@@ -331,13 +351,15 @@ class BundleAdjustmentOptimizer:
                 "call_count": 0
             })
 
-        log.info("[*] 正在执行 Phase 1 阶段一：基于 Cauchy 鲁棒核的粗差清洗与全局收敛...")
+        log.info("[*] 正在执行 Phase 1 阶段一：基于 Cauchy 鲁棒核的粗差清洗与全局收敛 (稀疏雅可比加速)...")
         monitor1 = _OptimizationMonitor(stage=1, stage_name="粗差清洗收敛", max_iters=stage1_est_max, cb=callback)
         res_stage1 = least_squares(
             monitor1.wrap_residuals(residuals_func, obs_weights, None), x0,
+            jac_sparsity=jac_sparsity,
+            tr_solver='lsmr',
             method='trf',
             loss='cauchy',
-            f_scale=1.5,
+            f_scale=_STAGE1_CAUCHY_SCALE,
             x_scale='jac',
             ftol=_BA_CONVERGE_TOL,
             xtol=_BA_CONVERGE_TOL,
@@ -377,7 +399,7 @@ class BundleAdjustmentOptimizer:
         med_e = float(np.median(raw_errors))
         mad_e = float(np.median(np.abs(np.array(raw_errors) - med_e)))
         sigma_robust = max(0.5, 1.4826 * mad_e)
-        outlier_thresh = max(4.0, med_e + 2.8 * sigma_robust)
+        outlier_thresh = max(_OUTLIER_MIN_THRESH_PX, med_e + _OUTLIER_SIGMA_FACTOR * sigma_robust)
         outliers_detected = set()
         for f, t_id, e in obs_map:
             if e > outlier_thresh or obs_weights.get((f, t_id), 1.0) <= 0.05:
@@ -401,13 +423,15 @@ class BundleAdjustmentOptimizer:
                 "call_count": 0
             })
 
-        log.info("[*] 正在执行 Phase 1 阶段二：微容差 (ftol=1e-5) 极致深层平差收敛...")
+        log.info("[*] 正在执行 Phase 1 阶段二：微容差 (ftol=1e-5) 极致深层平差收敛 (稀疏雅可比加速)...")
         monitor2 = _OptimizationMonitor(stage=2, stage_name="微容差深度平差", max_iters=max_iters_p2, cb=callback)
         res_stage2 = least_squares(
             monitor2.wrap_residuals(residuals_func, obs_weights, outliers_detected), res_stage1.x,
+            jac_sparsity=jac_sparsity,
+            tr_solver='lsmr',
             method='trf',
             loss='cauchy',
-            f_scale=1.0,
+            f_scale=_STAGE2_CAUCHY_SCALE,
             x_scale='jac',
             ftol=_BA_CONVERGE_TOL,
             xtol=_BA_CONVERGE_TOL,
@@ -458,20 +482,15 @@ class BundleAdjustmentOptimizer:
         rmse_px = float(np.sqrt(np.mean(np.array(clean_residuals) ** 2)))
         log.info(f"[OK] 两阶段 BA 极限优化完成！有效观测像面 RMSE: {rmse_px:.3f} 像素 (迭代次数: {res_stage2.nfev})")
 
-        # 5. 计算 3D 标靶空间坐标一阶协方差置信区间 (Uncertainty Estimation)
-        tag_uncertainties = self.compute_3d_uncertainties(
-            res_stage2.jac, static_tags_to_opt, base_static_id, rmse_px
-        )
-
-        # 6. 双标靶中心基线测距尺度修正 (Metric Baseline Gauge)
+        # 5. 双标靶中心基线测距尺度修正 (Metric Baseline Gauge)
         scale_factor = 1.0
         real_marker_size = self.marker_size_mm
         baseline_info = None
 
         if baseline_pair is not None:
             id_a, id_b, real_dist_mm = baseline_pair
-            optimized_tags_pose, scale_factor, real_marker_size = self.apply_baseline_scale(
-                optimized_tags_pose, id_a, id_b, real_dist_mm
+            optimized_tags_pose, scale_factor, real_marker_size, optimized_cams_pose = self.apply_baseline_scale(
+                optimized_tags_pose, id_a, id_b, real_dist_mm, cams_pose=optimized_cams_pose
             )
             baseline_info = {
                 "tag_a": int(id_a),
@@ -479,28 +498,28 @@ class BundleAdjustmentOptimizer:
                 "measured_dist_mm": float(real_dist_mm),
                 "scale_factor": round(float(scale_factor), 6)
             }
-            self.marker_size_mm = real_marker_size
+            # 安全准则: 仅将 real_marker_size 作为本次解算产物，不回写 self.marker_size_mm 防止累乘
 
-        # 7. 坐标系解耦逻辑:
+        # 6. 坐标系解耦逻辑:
         #    - 若未指定 anchor_tags: 纯自由平差 (阶段一), 输出纯视觉相对几何地图 (以 base_static_id 为相对原点)
         #    - 若指定了 anchor_tags: 世界绝对锚定 (阶段二), 求解 3D 相似变换变换至世界系
         if anchor_tags:
-            aligner = WorldDatumAligner(marker_size_mm=self.marker_size_mm)
+            aligner = WorldDatumAligner(marker_size_mm=real_marker_size)
             final_tags_map = aligner.anchor_to_absolute_world(
                 optimized_tags_pose, anchor_tags,
                 origin_tag_id=origin_tag_id, x_align_tag_id=x_align_tag_id,
                 strict=True
             )
-            self.marker_size_mm = aligner.marker_size_mm
+            real_marker_size = aligner.marker_size_mm
         else:
             # 阶段一: 纯自由平差相对地图
             tags_dict = {}
             for tid, T in optimized_tags_pose.items():
                 pos = T[:3, 3]
-                roll, pitch, yaw = self._rotation_to_rpy_deg(T[:3, :3])
+                rpy = rot_mat_to_rpy_deg(T[:3, :3])
                 tags_dict[tid] = {
                     "position_mm": [round(float(v), 2) for v in pos],
-                    "rpy_deg": [round(float(math.degrees(v)), 2) for v in [roll, pitch, yaw]],
+                    "rpy_deg": [round(float(v), 2) for v in rpy],
                     "transform_matrix": [[round(float(val), 5) for val in row] for row in T],
                     "is_origin": bool(tid == base_static_id),
                     "is_dynamic_yaw": bool(tid == base_static_id)
@@ -519,8 +538,23 @@ class BundleAdjustmentOptimizer:
             for tid, T in optimized_tags_pose.items()
         }
 
+        # 7. 计算 3D 标靶空间坐标一阶协方差置信区间 (Uncertainty Estimation)
+        # 根据一阶误差传播定律 (Sim(3))，将平差协方差按最终尺度缩放与世界系姿态旋转变换
+        total_scale = scale_factor
+        R_world = np.eye(3, dtype=np.float64)
+        if anchor_tags and "world_anchor" in final_tags_map:
+            wa = final_tags_map["world_anchor"]
+            total_scale *= float(wa.get("scale_factor", 1.0))
+            if "R_matrix" in wa:
+                R_world = np.array(wa["R_matrix"], dtype=np.float64)
+
+        tag_uncertainties = self.compute_3d_uncertainties(
+            res_stage2.jac, static_tags_to_opt, base_static_id, rmse_px,
+            similarity_transform=(total_scale, R_world)
+        )
+
         final_tags_map["rmse_reprojection_px"] = rmse_px
-        final_tags_map["marker_size_mm"] = round(float(self.marker_size_mm), 3)
+        final_tags_map["marker_size_mm"] = round(float(real_marker_size), 3)
         final_tags_map["tag_family"] = "DICT_APRILTAG_16h5"
         final_tags_map["calibrated_images_count"] = len(active_frames)
         final_tags_map["cleaned_outliers_count"] = len(outliers_detected)
@@ -549,9 +583,10 @@ class BundleAdjustmentOptimizer:
 
         return final_tags_map
 
-    def compute_3d_uncertainties(self, jacobian, static_tags, base_id, sigma_res_px) -> Dict[int, Dict[str, float]]:
+    def compute_3d_uncertainties(self, jacobian, static_tags, base_id, sigma_res_px,
+                                 similarity_transform: Optional[Tuple[float, np.ndarray]] = None) -> Dict[int, Dict[str, float]]:
         """标靶 3D 置信区间计算（委托 ba_report 纯函数实现）"""
-        return compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px)
+        return compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px, similarity_transform)
 
     def export_diagnostic_report(self,
                                  final_tags_map: Dict[str, Any],
@@ -576,17 +611,22 @@ class BundleAdjustmentOptimizer:
                              tag_poses: Dict[int, np.ndarray],
                              tag_id_a: int, 
                              tag_id_b: int, 
-                             real_distance_mm: float) -> Tuple[Dict[int, np.ndarray], float, float]:
+                             real_distance_mm: float,
+                             cams_pose: Optional[Dict[int, np.ndarray]] = None) -> Any:
         """
         利用两个标靶中心物理测量距离锁定绝对尺度 (Metric Baseline Gauge)
+        保证 Sim(3) 相似变换闭环：对 Tag 平移与相机机位平移同步等比缩放，重投影几何严格保持不变。
         :param tag_poses: 各标靶 4x4 位姿矩阵字典
         :param tag_id_a: 标靶 A 的 ID
         :param tag_id_b: 标靶 B 的 ID
         :param real_distance_mm: 现场实际测量的中心物理直线距离 (mm)
-        :return: (scaled_tag_poses, scale_factor, real_marker_size_mm)
+        :param cams_pose: 可选的各帧相机位姿矩阵字典
+        :return: (scaled_tag_poses, scale_factor, real_marker_size_mm[, scaled_cams])
         """
         if tag_id_a not in tag_poses or tag_id_b not in tag_poses:
             log.warning(f"[WARN] 尺度标定失败：标靶 {tag_id_a} 或 {tag_id_b} 未在重构地图中！保持名义尺度。")
+            if cams_pose is not None:
+                return tag_poses, 1.0, self.marker_size_mm, cams_pose
             return tag_poses, 1.0, self.marker_size_mm
 
         p_a = tag_poses[tag_id_a][:3, 3]
@@ -595,6 +635,8 @@ class BundleAdjustmentOptimizer:
 
         if nominal_dist < 1e-4:
             log.warning(f"[WARN] 标靶 {tag_id_a} 与 {tag_id_b} 距离过近，无法用作尺度基线！")
+            if cams_pose is not None:
+                return tag_poses, 1.0, self.marker_size_mm, cams_pose
             return tag_poses, 1.0, self.marker_size_mm
 
         scale_factor = float(real_distance_mm) / nominal_dist
@@ -614,22 +656,15 @@ class BundleAdjustmentOptimizer:
             T_scaled[:3, 3] = T[:3, 3] * scale_factor
             scaled_poses[t_id] = T_scaled
 
-        return scaled_poses, scale_factor, real_marker_size
+        if cams_pose is not None:
+            scaled_cams = {}
+            for f_idx, T_c in cams_pose.items():
+                T_c_scaled = T_c.copy()
+                T_c_scaled[:3, 3] = T_c[:3, 3] * scale_factor
+                scaled_cams[f_idx] = T_c_scaled
+            return scaled_poses, scale_factor, real_marker_size, scaled_cams
 
-    @staticmethod
-    def _rotation_to_rpy_deg(R: np.ndarray) -> Tuple[float, float, float]:
-        """3x3 旋转矩阵 -> (roll, pitch, yaw) 弧度 (含万向锁奇异保护)"""
-        sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-        singular = sy < 1e-6
-        if not singular:
-            roll = math.atan2(R[2, 1], R[2, 2])
-            pitch = math.atan2(-R[2, 0], sy)
-            yaw = math.atan2(R[1, 0], R[0, 0])
-        else:
-            roll = math.atan2(-R[1, 2], R[1, 1])
-            pitch = math.atan2(-R[2, 0], sy)
-            yaw = 0.0
-        return roll, pitch, yaw
+        return scaled_poses, scale_factor, real_marker_size
 
 
 

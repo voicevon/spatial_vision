@@ -72,7 +72,7 @@ class MappingDataManager(MappingDataActionsMixin):
         self.topology_status: Dict[str, Any] = {
             "is_valid": True,
             "components_count": 1,
-            "critical_bridges": [],
+            "weak_covisibility_pairs": [],
             "unconnected_tags": [],
             "connected_tags_count": 0,
             "message": "就绪"
@@ -428,7 +428,7 @@ class MappingDataManager(MappingDataActionsMixin):
                 self.topology_status = {
                     "is_valid": bool(topo.get("is_valid", False)),
                     "components_count": len(topo.get("components", [])),
-                    "critical_bridges": topo.get("critical_bridges", []),
+                    "weak_covisibility_pairs": topo.get("weak_covisibility_pairs", []),
                     "unconnected_tags": topo.get("unconnected_tags", []),
                     "connected_tags_count": len(topo.get("connected_tags", [])),
                     "message": str(topo.get("message", "拓扑分析完成"))
@@ -437,7 +437,7 @@ class MappingDataManager(MappingDataActionsMixin):
                 self.topology_status = {
                     "is_valid": True,
                     "components_count": 1,
-                    "critical_bridges": [],
+                    "weak_covisibility_pairs": [],
                     "unconnected_tags": [],
                     "connected_tags_count": 0,
                     "message": f"拓扑分析异常: {e}"
@@ -446,7 +446,7 @@ class MappingDataManager(MappingDataActionsMixin):
             self.topology_status = {
                 "is_valid": False,
                 "components_count": 0,
-                "critical_bridges": [],
+                "weak_covisibility_pairs": [],
                 "unconnected_tags": [],
                 "connected_tags_count": 0,
                 "message": "暂无参与解算的有效采图帧"

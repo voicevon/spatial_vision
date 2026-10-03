@@ -148,7 +148,7 @@ def test_covisibility_guard():
     report = CovisibilityGraphAnalyzer.analyze(healthy_detections, origin_tag_id=0, x_align_tag_id=1)
     assert report["is_valid"] is True
     assert set(report["all_tags"]) == {0, 1, 2}
-    assert len(report["critical_bridges"]) == 2  # 0-1 和 1-2 都只有单帧支撑
+    assert len(report["weak_covisibility_pairs"]) == 2  # 0-1 和 1-2 都只有单帧支撑
     print("[PASS] 正常连通拓扑图校验通过")
 
     # 2. 断网断裂图: Frame1 (0, 1), Frame2 (2, 3) -> 孤立成两个子网络 {0, 1} 和 {2, 3}

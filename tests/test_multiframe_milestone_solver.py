@@ -29,11 +29,7 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             type="fixed_transform",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": {
-                    "11": [0.0, 0.0, 0.0],
-                    "14": [490.0, 0.0, 0.0],
-                    "19": [245.0, 50.0, 0.0],
-                }
+                "reference_tag_ids": [11, 14, 19]
             }
         )
         self.coord_mgr.add_frame(self.frame_sub_1)
@@ -46,11 +42,7 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             type="fixed_transform",
             calibration_spec={
                 "method": "anchor_tags_registration",
-                "reference_tags": {
-                    "30": [0.0, 0.0, 0.0],
-                    "31": [300.0, 0.0, 0.0],
-                    "32": [0.0, 200.0, 0.0],
-                }
+                "reference_tag_ids": [30, 31, 32]
             }
         )
         self.coord_mgr.add_frame(self.frame_sub_2)
@@ -78,10 +70,16 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             14: np.array([589.5, 200.0, 300.0]),  # 间距 489.5 mm (误差 -0.5 mm)
             19: np.array([345.0, 250.2, 300.1]),
         }
+        anchor_sub_1 = {
+            11: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            14: {"xyz_mm": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            19: {"xyz_mm": [245.0, 50.0, 0.0], "frame_id": "frame_sub_1"},
+        }
         rep_good = check_sub_frame_local_rigidity(
             frame=self.frame_sub_1,
             relative_tags=rel_tags_good,
             dist_tol_mm=3.0,
+            fallback_anchor_tags=anchor_sub_1,
         )
         self.assertTrue(rep_good.local_rigidity_passed)
         self.assertEqual(len(rep_good.local_conflict_pairs), 0)
@@ -97,6 +95,7 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             frame=self.frame_sub_1,
             relative_tags=rel_tags_bad,
             dist_tol_mm=3.0,
+            fallback_anchor_tags=anchor_sub_1,
         )
         self.assertFalse(rep_bad.local_rigidity_passed)
         self.assertGreater(len(rep_bad.local_conflict_pairs), 0)
@@ -120,12 +119,12 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
         }
         # 工位锚点: 0, 1, 2 为 world，11, 14, 19 为 frame_sub_1
         anchor_tags = {
-            0: {"coords": [0.0, 0.0, 0.0], "frame_id": "world"},
-            1: {"coords": [0.0, 520.0, 0.0], "frame_id": "world"},
-            2: {"coords": [300.0, 0.0, 0.0], "frame_id": "world"},
-            11: {"coords": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
-            14: {"coords": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
-            19: {"coords": [245.0, 50.0, 0.0], "frame_id": "frame_sub_1"},
+            0: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "world"},
+            1: {"xyz_mm": [0.0, 520.0, 0.0], "frame_id": "world"},
+            2: {"xyz_mm": [300.0, 0.0, 0.0], "frame_id": "world"},
+            11: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            14: {"xyz_mm": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            19: {"xyz_mm": [245.0, 50.0, 0.0], "frame_id": "frame_sub_1"},
         }
 
         # 仅保留 frame_sub_1
@@ -183,9 +182,15 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             }
         }
         anchor_tags = {
-            0: {"coords": [0.0, 0.0, 0.0], "frame_id": "world"},
-            1: {"coords": [0.0, 520.0, 0.0], "frame_id": "world"},
-            2: {"coords": [300.0, 0.0, 0.0], "frame_id": "world"},
+            0: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "world"},
+            1: {"xyz_mm": [0.0, 520.0, 0.0], "frame_id": "world"},
+            2: {"xyz_mm": [300.0, 0.0, 0.0], "frame_id": "world"},
+            11: {"xyz_mm": [50.0, 100.0, 0.0], "frame_id": "frame_sub_1"},
+            14: {"xyz_mm": [540.0, 100.0, 0.0], "frame_id": "frame_sub_1"},
+            19: {"xyz_mm": [295.0, 150.0, 0.0], "frame_id": "frame_sub_1"},
+            30: {"xyz_mm": [0.0, 800.0, 0.0], "frame_id": "frame_sub_2"},
+            31: {"xyz_mm": [300.0, 800.0, 0.0], "frame_id": "frame_sub_2"},
+            32: {"xyz_mm": [0.0, 1000.0, 0.0], "frame_id": "frame_sub_2"},
         }
 
         solver = MultiFrameMilestoneSolver(marker_size_mm=80.0)
@@ -287,11 +292,11 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
 
         # 世界锚点真值与子系名义真值 (严格物理毫米)
         anchor_tags = {
-            0: {"coords": [0.0, 0.0, 0.0], "frame_id": "world"},
-            1: {"coords": [0.0, 500.0, 0.0], "frame_id": "world"},
-            2: {"coords": [300.0, 0.0, 0.0], "frame_id": "world"},
-            11: {"coords": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
-            14: {"coords": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            0: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "world"},
+            1: {"xyz_mm": [0.0, 500.0, 0.0], "frame_id": "world"},
+            2: {"xyz_mm": [300.0, 0.0, 0.0], "frame_id": "world"},
+            11: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
+            14: {"xyz_mm": [490.0, 0.0, 0.0], "frame_id": "frame_sub_1"},
         }
 
         coord_mgr = CoordinateTreeManager(workspace_id="test_scale_norm")

@@ -141,7 +141,18 @@ class MappingBARunner:
         【阶段一核心】执行纯视觉自由平差求解 (Free BA):
         仅基于相机重投影误差优化，100% 独立，不依赖任何世界锚点真值，输出相对底图并持久化。
         """
-        frame_detections, valid_frame_names, _ = self.manifest_repo.load_manifest(self.manifest_path)
+        # 加载清单并强制应用工位物理白名单过滤 (Clean Snapshot 守门)
+        allowed_tags = None
+        if self.workspace and getattr(self.workspace, "workspace_dir", None):
+            try:
+                from src.workspace.workspace_manager import load_workspace_tag_whitelist
+                allowed_tags = load_workspace_tag_whitelist(self.workspace.workspace_dir)
+            except Exception:
+                pass
+
+        frame_detections, valid_frame_names, _ = self.manifest_repo.load_manifest(
+            self.manifest_path, allowed_tag_ids=allowed_tags
+        )
         if len(frame_detections) < 2:
             return False, None, "有效图像帧不足 2 帧，无法执行 BA 平差"
 

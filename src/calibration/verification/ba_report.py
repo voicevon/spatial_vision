@@ -23,11 +23,15 @@ log = get_logger(__name__)
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
-def compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px) -> Dict[int, Dict[str, float]]:
+def compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px,
+                             similarity_transform: Optional[Tuple[float, np.ndarray]] = None) -> Dict[int, Dict[str, float]]:
     """
-    基于平差最优解雅可比矩阵 J 计算参数协方差：
-    Cov = inv(J^T J) * sigma_res^2
-    提取每个标靶 3D 位置分量 (tv_x, tv_y, tv_z) 的 3-sigma 空间置信区间 (单位: mm)
+    基于平差最优解雅可比矩阵 J 计算参数协方差，并依据一阶误差传播定律传播至世界坐标系：
+    1. 局部估计量协方差: Cov = pinv(J^T J + lambda I) * sigma_res^2
+    2. 相似变换误差传播 (Sim(3)):
+       设标靶在世界系下坐标 P_w = s * R * P_local + t
+       则平移分量的协方差为: Cov_w = (s * R) @ Cov_local @ (s * R)^T = s^2 * R @ Cov_local @ R^T
+    3. 提取各轴及 3D 综合 3-sigma 空间置信区间 (单位: mm)
     """
     uncertainties = {base_id: {"sigma_x_mm": 0.0, "sigma_y_mm": 0.0, "sigma_z_mm": 0.0, "sigma_3d_mm": 0.0}}
     if jacobian is None:
@@ -40,11 +44,25 @@ def compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px) -> Di
         JTJ_reg = JTJ + np.eye(JTJ.shape[0]) * 1e-6
         cov = np.linalg.pinv(JTJ_reg) * (sigma_res_px ** 2)
 
+        scale_factor = 1.0
+        R_world = np.eye(3, dtype=np.float64)
+        if similarity_transform is not None:
+            s, R = similarity_transform
+            if s > 0:
+                scale_factor = float(s)
+            if R is not None and getattr(R, "shape", None) == (3, 3):
+                R_world = np.array(R, dtype=np.float64)
+
+        s2 = scale_factor ** 2
+
         for idx, tid in enumerate(static_tags):
             t_offset = idx * 6 + 3
-            var_x = max(0.0, float(cov[t_offset, t_offset]))
-            var_y = max(0.0, float(cov[t_offset + 1, t_offset + 1]))
-            var_z = max(0.0, float(cov[t_offset + 2, t_offset + 2]))
+            cov_xyz_local = cov[t_offset:t_offset + 3, t_offset:t_offset + 3]
+            cov_xyz_world = s2 * (R_world @ cov_xyz_local @ R_world.T)
+
+            var_x = max(0.0, float(cov_xyz_world[0, 0]))
+            var_y = max(0.0, float(cov_xyz_world[1, 1]))
+            var_z = max(0.0, float(cov_xyz_world[2, 2]))
             sx = round(float(np.sqrt(var_x) * 3.0), 3)
             sy = round(float(np.sqrt(var_y) * 3.0), 3)
             sz = round(float(np.sqrt(var_z) * 3.0), 3)

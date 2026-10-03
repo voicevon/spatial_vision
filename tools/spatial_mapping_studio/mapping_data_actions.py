@@ -111,6 +111,9 @@ class MappingDataActionsMixin:
         if not self.image_files:
             return 0, 0
 
+        # 彻底清空过时的下游底图与世界地图缓存 (Clean Snapshot 原则)
+        self.reset_map()
+
         total_frames = len(self.image_files)
         total_tags = 0
 

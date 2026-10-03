@@ -20,11 +20,19 @@
 import math
 from typing import Any, Dict, List, Optional, Tuple, Set
 
+import cv2
 import numpy as np
+from scipy.optimize import least_squares
 
 from src.utils.logger import get_logger
+from src.workspace.coordinate_manager import rot_mat_to_rpy_deg
 
 log = get_logger(__name__)
+
+# 锚点几何一致性校验与严重冲突告警门限
+ANCHOR_CONFLICT_DIFF_WARN_MM = 20.0       # 绝对测距偏差告警门限 (mm)
+ANCHOR_CONFLICT_REL_ERROR_WARN = 0.20     # 相对测距偏差告警门限 (20%)
+ANCHOR_COLLINEAR_RATIO_THRESH = 0.05      # 锚点点云共线退化判定奇异值比门限 (s1/s0)
 
 
 def format_conflict_pairs_report(conflict_pairs: List[Dict[str, Any]]) -> str:
@@ -70,27 +78,11 @@ class WorldDatumAligner:
         self.marker_size_mm: float = float(marker_size_mm)
 
     @staticmethod
-    def _rotation_to_rpy_deg(R: np.ndarray) -> Tuple[float, float, float]:
-        """3x3 旋转矩阵 -> (roll, pitch, yaw) 弧度 (含万向锁奇异保护)"""
-        sy = math.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-        singular = sy < 1e-6
-        if not singular:
-            roll = math.atan2(R[2, 1], R[2, 2])
-            pitch = math.atan2(-R[2, 0], sy)
-            yaw = math.atan2(R[1, 0], R[0, 0])
-        else:
-            roll = math.atan2(-R[1, 2], R[1, 1])
-            pitch = math.atan2(-R[2, 0], sy)
-            yaw = 0.0
-        return roll, pitch, yaw
-
-    @staticmethod
     def normalize_anchor_tags(anchor_input: Any) -> Optional[Dict[int, Dict[str, Any]]]:
         """
-        锚点配置格式归一化 (兼容两种输入):
-        - 新格式: {tag_id: {"xyz_mm": [x,y,z], "known": [b,b,b]}} (known 缺省视为三轴全知)
-        - 旧格式: {"origin_tag_id": i, "origin_xyz_mm": [...], "align_tag_id": j, "align_xyz_mm": [...]}
-        :return: 统一新格式字典; 无有效锚点返回 None
+        锚点配置格式标准化 (严格遵循单一真理源 SSOT 规范):
+        - 格式: {tag_id: {"xyz_mm": [x, y, z], "known": [b, b, b]}} (known 缺省视为三轴全知)
+        :return: 归一化锚点字典; 无有效锚点返回 None
         """
         if not anchor_input or not isinstance(anchor_input, dict):
             return None
@@ -128,7 +120,7 @@ class WorldDatumAligner:
 
         for k, v in anchor_input.items():
             if isinstance(v, dict):
-                xyz = v.get("xyz_mm", v.get("coords", v.get("position_mm")))
+                xyz = v.get("xyz_mm")
                 _add(k, xyz, v.get("known"), v.get("frame_id"))
         return out or None
 
@@ -300,56 +292,65 @@ class WorldDatumAligner:
             src_test = np.array([p_ba[tid] for tid in full_3d_tids])
             src_c = src_test - np.mean(src_test, axis=0)
             _, sv_src, _ = np.linalg.svd(src_c)
-            # 有效空间秩 >= 2 (非单一退化直线)
-            if len(sv_src) >= 2 and sv_src[1] > 1e-2:
+            # 有效空间秩 >= 2 (非单一退化直线，采用相对比值与绝对容差双重约束)
+            if len(sv_src) >= 2 and (sv_src[1] > 20.0 or (sv_src[0] > 1e-4 and sv_src[1] / sv_src[0] > ANCHOR_COLLINEAR_RATIO_THRESH)):
                 use_umeyama = True
 
         if use_umeyama:
             src = np.array([p_ba[tid] for tid in full_3d_tids])
             dst = np.array([usable[tid]["xyz_mm"] for tid in full_3d_tids])
-            scale, R, t = cls.umeyama_alignment(src, dst)
+            scale_init, R_init, t_init = cls.umeyama_alignment(src, dst)
             mode = "full"
-            yaw = math.atan2(R[1, 0], R[0, 0])
             yaw_pairs_count = len(full_3d_tids) * (len(full_3d_tids) - 1) // 2
             solver_type = "umeyama_3d"
         else:
-            # 降级分支: 优先利用多锚点空间共面先验进行水平法向调平 (planar_leveled)，若约束不足退化为纯 2D 偏航 (planar_2d)
+            # 降级分支: 优先利用多锚点空间法向调平 (planar_leveled)，若约束不足退化为纯 2D 偏航 (planar_2d)
             z_tids = [tid for tid in tids if usable[tid]["known"][2]]
             use_leveling = False
             R_level = np.eye(3, dtype=np.float64)
 
             if len(z_tids) >= 3:
-                # 检查这些已知 Z 标靶是否处于同一水平面上 (极差在合理几何容差内 <= 2.0mm)
-                z_targets = [usable[tid]["xyz_mm"][2] for tid in z_tids]
-                if (max(z_targets) - min(z_targets)) <= 2.0:
-                    z_pts = np.array([p_ba[tid] for tid in z_tids])
-                    z_c = z_pts - np.mean(z_pts, axis=0)
-                    _, sv_z, vh_z = np.linalg.svd(z_c)
-                    # 空间平面非共线退化 (第二奇异值明显大于 0)
-                    if len(sv_z) >= 2 and sv_z[1] > 1e-2:
-                        normal = vh_z[2]
-                        if normal[2] < 0:
-                            normal = -normal
-                        z_axis = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-                        v_rot = np.cross(normal, z_axis)
-                        s_rot = float(np.linalg.norm(v_rot))
-                        c_rot = float(np.dot(normal, z_axis))
-                        if s_rot > 1e-6:
-                            vx = np.array([
-                                [0.0, -v_rot[2], v_rot[1]],
-                                [v_rot[2], 0.0, -v_rot[0]],
-                                [-v_rot[1], v_rot[0], 0.0]
-                            ], dtype=np.float64)
-                            R_level = np.eye(3, dtype=np.float64) + vx + (vx @ vx) * ((1.0 - c_rot) / (s_rot ** 2))
-                        use_leveling = True
-                        log.info(
-                            f"[ANCHOR] 激活水平面法向调平先验 (Planar Leveling, {len(z_tids)} 枚共面锚点): "
-                            f"校正法向倾角 {math.degrees(math.acos(np.clip(normal[2], -1.0, 1.0))):.2f}°"
-                        )
+                # 检查这些已知 Z 标靶在空间上的散布 (必须满足二维非共线，以唯一确定法向)
+                z_pts = np.array([p_ba[tid] for tid in z_tids])
+                z_c = z_pts - np.mean(z_pts, axis=0)
+                _, sv_z, vh_z = np.linalg.svd(z_c)
+                if len(sv_z) >= 2 and (sv_z[1] > 20.0 or (sv_z[0] > 1e-4 and sv_z[1] / sv_z[0] > ANCHOR_COLLINEAR_RATIO_THRESH)):
+                    z_targets = np.array([usable[tid]["xyz_mm"][2] for tid in z_tids], dtype=np.float64)
+                    # 通用调平法向拟合：支持等高平面以及不同设计高度的台面
+                    if (np.max(z_targets) - np.min(z_targets)) <= 2.0:
+                        normal = vh_z[2].copy()
+                    else:
+                        # 不同高度锚点：求解中心化平面高程投影
+                        target_c = (z_targets - np.mean(z_targets)) / max(1e-4, scale_median)
+                        n_est, _, _, _ = np.linalg.lstsq(z_c, target_c, rcond=None)
+                        norm_val = np.linalg.norm(n_est)
+                        normal = n_est / norm_val if norm_val > 1e-6 else np.array([0.0, 0.0, 1.0])
 
-            # 偏航角计算: 在调平系 (或原始平面) 下基于共同已知 XY 的锚点对进行解算
+                    if normal[2] < 0:
+                        normal = -normal
+                    z_axis = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+                    v_rot = np.cross(normal, z_axis)
+                    s_rot = float(np.linalg.norm(v_rot))
+                    c_rot = float(np.dot(normal, z_axis))
+                    if s_rot > 1e-6:
+                        vx = np.array([
+                            [0.0, -v_rot[2], v_rot[1]],
+                            [v_rot[2], 0.0, -v_rot[0]],
+                            [-v_rot[1], v_rot[0], 0.0]
+                        ], dtype=np.float64)
+                        R_level = np.eye(3, dtype=np.float64) + vx + (vx @ vx) * ((1.0 - c_rot) / (s_rot ** 2))
+                    use_leveling = True
+                    tilt_deg = math.degrees(math.acos(np.clip(normal[2], -1.0, 1.0)))
+                    log.info(
+                        f"[ANCHOR] 激活水平面法向调平先验 (Planar Leveling, {len(z_tids)} 枚已知 Z 锚点): "
+                        f"校正法向倾角 {tilt_deg:.2f}°"
+                    )
+
+            # 偏航角计算: 在调平系下基于共同已知 XY 的锚点对进行加权闭式解算
             p_for_yaw = {tid: R_level @ p_ba[tid] for tid in tids}
-            yaw_obs: List[float] = []
+            sum_cross = 0.0
+            sum_dot = 0.0
+            yaw_obs_count = 0
             for i in range(len(tids)):
                 for j in range(i + 1, len(tids)):
                     ia, ib = tids[i], tids[j]
@@ -358,29 +359,66 @@ class WorldDatumAligner:
                         wdx, wdy = a["xyz_mm"][0] - b["xyz_mm"][0], a["xyz_mm"][1] - b["xyz_mm"][1]
                         bdx, bdy = p_for_yaw[ia][0] - p_for_yaw[ib][0], p_for_yaw[ia][1] - p_for_yaw[ib][1]
                         if math.hypot(wdx, wdy) >= 1e-6 and math.hypot(bdx, bdy) >= 1e-6:
-                            yaw_obs.append(math.atan2(wdy, wdx) - math.atan2(bdy, bdx))
+                            sum_cross += (bdx * wdy - bdy * wdx)
+                            sum_dot += (bdx * wdx + bdy * wdy)
+                            yaw_obs_count += 1
 
-            if not yaw_obs:
+            if yaw_obs_count == 0:
                 return "none", {"reason": "无任何共同已知 XY 的锚点对, 偏航不可解", "conflict_pairs": conflict_pairs}
 
-            scale = scale_median
-            yaw = math.atan2(sum(math.sin(v) for v in yaw_obs), sum(math.cos(v) for v in yaw_obs))
+            scale_init = scale_median
+            yaw = math.atan2(sum_cross, sum_dot)
             cos_y, sin_y = math.cos(yaw), math.sin(yaw)
             R_yaw = np.array([[cos_y, -sin_y, 0.0], [sin_y, cos_y, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
-            R = R_yaw @ R_level
+            R_init = R_yaw @ R_level
 
-            # ③ 平移: 逐轴对已知锚点残差取均值 (缺失轴为 None)
-            t_axes: List[Optional[float]] = []
+            # 平移初值: 逐轴对已知锚点残差取均值
+            t_axes_init: List[Optional[float]] = []
             for axis in range(3):
-                vals = [a["xyz_mm"][axis] - scale * float((R @ p_ba[tid])[axis])
+                vals = [a["xyz_mm"][axis] - scale_init * float((R_init @ p_ba[tid])[axis])
                         for tid, a in usable.items() if a["known"][axis]]
-                t_axes.append(float(np.mean(vals)) if vals else None)
-            if t_axes[0] is None or t_axes[1] is None:
+                t_axes_init.append(float(np.mean(vals)) if vals else None)
+            if t_axes_init[0] is None or t_axes_init[1] is None:
                 return "none", {"reason": "X/Y 平移约束不足 (需至少一枚已知 X 与一枚已知 Y 的锚点)"}
-            t = np.array([v if v is not None else 0.0 for v in t_axes], dtype=np.float64)
-            mode = "full" if t_axes[2] is not None else "partial"
-            yaw_pairs_count = len(yaw_obs)
+            t_init = np.array([v if v is not None else 0.0 for v in t_axes_init], dtype=np.float64)
+            mode = "full" if t_axes_init[2] is not None else "partial"
+            yaw_pairs_count = yaw_obs_count
             solver_type = "planar_leveled" if use_leveling else "planar_2d"
+
+        # 联合 7-DoF 非线性最小二乘精修 (Unified 7-DoF Masked LSQ)
+        # 将尺度 s, 旋转 R, 平移 t 在已知轴掩码下联合优化，彻底消除 Z 轴斜坡误差与各步割裂误差
+        try:
+            rvec_init, _ = cv2.Rodrigues(R_init)
+            x0 = np.hstack([rvec_init.flatten(), t_init.flatten(), np.log(max(1e-4, scale_init))])
+
+            def _unified_residuals(params: np.ndarray) -> np.ndarray:
+                rv = params[:3]
+                tv = params[3:6]
+                s_val = math.exp(params[6])
+                R_mat, _ = cv2.Rodrigues(rv)
+                res = []
+                for tid, a in usable.items():
+                    p_w_est = s_val * (R_mat @ p_ba[tid]) + tv
+                    for k in range(3):
+                        if a["known"][k]:
+                            res.append(p_w_est[k] - a["xyz_mm"][k])
+                # 若无充分 Z 约束，加入极弱水平先验正则项防止 roll/pitch 漂移
+                res.append(0.005 * rv[0])
+                res.append(0.005 * rv[1])
+                return np.array(res, dtype=np.float64)
+
+            opt_res = least_squares(_unified_residuals, x0, method="trf", ftol=1e-5, xtol=1e-5, max_nfev=50)
+            if opt_res.success:
+                rvec_opt = opt_res.x[:3]
+                t = opt_res.x[3:6]
+                scale = float(math.exp(opt_res.x[6]))
+                R, _ = cv2.Rodrigues(rvec_opt)
+                yaw = math.atan2(R[1, 0], R[0, 0])
+            else:
+                scale, R, t = scale_init, R_init, t_init
+        except Exception as e:
+            log.warning(f"[ANCHOR] 7-DoF 联合最小二乘精修未收敛，保留闭式初值: {e}")
+            scale, R, t = scale_init, R_init, t_init
 
         # ④ 残差: 各锚点已知轴的变换后偏差 (锚定质量指标与质检单)
         per_tag: Dict[str, List[float]] = {}
@@ -500,24 +538,23 @@ class WorldDatumAligner:
                     world_anchors[tid] = a
                 else:
                     log.info(f"[WORLD_ALIGN] 标靶 Tag #{tid} 按 ID 区间规约归属于子坐标系 (Tag >= 10)，已隔离不参与阶段二世界基准系对齐")
-        active_anchors = world_anchors if world_anchors else anchor_tags
 
-        # 预先检查尺度与几何形变冲突 (提前为用户挖掘测距异常线索，绝不让终端 warning 沉没)
-        pre_conflict_diag = ""
-        try:
-            _, solve_chk = self.solve_similarity_from_anchors(tag_poses, active_anchors)
-            conflicts = solve_chk.get("conflict_pairs", [])
-            if conflicts:
-                pre_conflict_diag = format_conflict_pairs_report(conflicts)
-        except Exception:
-            pass
+        # P0-4 修正: 严禁在 world_anchors 为空时静默 fallback 回退到 anchor_tags，必须显式抛错拦截
+        if not world_anchors:
+            if strict:
+                raise ValueError(
+                    "anchor_to_absolute_world: 未找到任何归属于世界基准系 (world) 的有效锚点 (Tag 0~9 或 frame_id='world')，"
+                    "严禁将子坐标系局部标靶作为世界真值 (FR-9.6 禁止兜底)"
+                )
+            return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, "无有效世界锚点")
+
+        active_anchors = world_anchors
 
         dof = self.evaluate_anchor_dof(active_anchors)
         if dof["mode"] == "none":
             if strict:
-                conflict_sec = f"\n\n{pre_conflict_diag}" if pre_conflict_diag else ""
                 raise ValueError(
-                    f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}{conflict_sec}"
+                    f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}"
                     " — 请增配已知世界坐标的 tag 或放宽当前部分已知标记 (FR-9.6 禁止兜底)"
                 )
             return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, dof["reason"])
@@ -537,7 +574,7 @@ class WorldDatumAligner:
         if solve.get("conflict_pairs"):
             fatal_conflicts = [
                 c for c in solve["conflict_pairs"]
-                if c.get("diff_mm", 0.0) > 20.0 and c.get("rel_error", 0.0) > 0.20
+                if c.get("diff_mm", 0.0) > ANCHOR_CONFLICT_DIFF_WARN_MM and c.get("rel_error", 0.0) > ANCHOR_CONFLICT_REL_ERROR_WARN
             ]
             if fatal_conflicts:
                 conflict_diag = format_conflict_pairs_report(fatal_conflicts)
@@ -563,12 +600,13 @@ class WorldDatumAligner:
                 "scale_factor": round(float(scale), 6),
                 "yaw_deg": round(float(math.degrees(solve["yaw_rad"])), 3),
                 "t_xyz_mm": [round(float(v), 3) for v in t_vec],
+                "R_matrix": [[round(float(val), 6) for val in row] for row in R],
                 "scale_pair_count": int(solve["scale_pair_count"]),
                 "yaw_pair_count": int(solve["yaw_pair_count"]),
                 "anchor_residual_mm": res,
                 "anchor_tags": {str(tid): {"xyz_mm": [round(float(v), 3) for v in a["xyz_mm"]],
                                            "known": [bool(v) for v in a["known"]]}
-                                for tid, a in sorted(anchor_tags.items())},
+                                 for tid, a in sorted(anchor_tags.items())},
                 "conflict_pairs": conflict_pairs,
                 "real_marker_size_mm": round(float(self.marker_size_mm), 3),
                 "alignment_report": solve.get("alignment_report", {})
@@ -587,11 +625,11 @@ class WorldDatumAligner:
         for t_id, T_w_t in tag_poses.items():
             pos_aligned = scale * (R @ T_w_t[:3, 3]) + t_vec
             R_aligned = R @ T_w_t[:3, :3]
-            roll, pitch, yaw = self._rotation_to_rpy_deg(R_aligned)
+            rpy = rot_mat_to_rpy_deg(R_aligned)
 
             aligned_map["tags"][t_id] = {
                 "position_mm": [round(float(v), 2) for v in pos_aligned],
-                "rpy_deg": [round(float(math.degrees(v)), 2) for v in [roll, pitch, yaw]],
+                "rpy_deg": [round(float(v), 2) for v in rpy],
                 "transform_matrix": [[round(float(val), 5) for val in row] for row in np.vstack([np.hstack([R_aligned, pos_aligned.reshape(3, 1)]), [0, 0, 0, 1]])],
                 "is_origin": bool(t_id == origin_tag_id),
                 "is_dynamic_yaw": bool(t_id == origin_tag_id)
@@ -726,11 +764,11 @@ class WorldDatumAligner:
             pos_rel = T_w_t[:3, 3] - p_origin
             pos_aligned = R_align @ pos_rel
             R_aligned = R_align @ T_w_t[:3, :3]
-            roll, pitch, yaw = self._rotation_to_rpy_deg(R_aligned)
+            rpy = rot_mat_to_rpy_deg(R_aligned)
 
             aligned_map["tags"][t_id] = {
                 "position_mm": [round(float(v), 2) for v in pos_aligned],
-                "rpy_deg": [round(float(math.degrees(v)), 2) for v in [roll, pitch, yaw]],
+                "rpy_deg": [round(float(v), 2) for v in rpy],
                 "transform_matrix": [[round(float(val), 5) for val in row] for row in np.vstack([np.hstack([R_aligned, pos_aligned.reshape(3, 1)]), [0, 0, 0, 1]])],
                 "is_origin": bool(t_id == origin_tag_id),
                 "is_dynamic_yaw": bool(t_id == origin_tag_id)

@@ -303,6 +303,11 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         except Exception:
             pass
 
+    @property
+    def image_files(self) -> List[str]:
+        """代理获取当前工位所有采图路径列表"""
+        return self.data_mgr.image_files if getattr(self, "data_mgr", None) else []
+
     # ------------------------------ 下拉选项持久化 ------------------------------
     def _load_dropdown_state(self):
         """从 settings_file (config/gui_settings.json) 恢复建图工作站下拉选择偏好"""

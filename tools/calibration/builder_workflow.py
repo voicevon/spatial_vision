@@ -45,7 +45,7 @@ def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], b
             covis_report = CovisibilityGraphAnalyzer.analyze(frame_detections, valid_frames, args.origin_id, args.x_axis_id)
         except Exception as e:
             log.warning(f"读取或解析观测清单异常: {e}")
-            covis_report = {"is_valid": False, "message": str(e), "all_tags": [], "critical_bridges": []}
+            covis_report = {"is_valid": False, "message": str(e), "all_tags": [], "weak_covisibility_pairs": []}
             stats = {"total_images": 0, "total_observations": 0, "total_kept": 0, "total_excluded": 0, "excluded_items": []}
 
         # 终端横幅
@@ -63,8 +63,8 @@ def interactive_workflow(args, builder: TagMapBuilder, image_paths: List[str], b
             status_tag = f"\033[91m[ 拓扑断网告警 (FAIL) ]\033[0m"
             print(f" 拓扑状态: {status_tag} {covis_report['message']}")
 
-        if covis_report.get("critical_bridges"):
-            print(f" 关键桥梁: 发现 {len(covis_report['critical_bridges'])} 对标靶仅由单图连接: {covis_report['critical_bridges']} (注意不要剔除桥梁帧)")
+        if covis_report.get("weak_covisibility_pairs"):
+            print(f" 弱共视边: 发现 {len(covis_report['weak_covisibility_pairs'])} 对标靶仅由单图连接: {covis_report['weak_covisibility_pairs']} (建议保留该帧观测)")
 
         print("-" * 76)
         print(" 【第一阶段：数据审核与拓扑评估】")

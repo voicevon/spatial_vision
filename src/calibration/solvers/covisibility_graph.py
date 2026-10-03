@@ -49,7 +49,7 @@ class CovisibilityGraphAnalyzer:
                 "unconnected_tags": [],
                 "adj_list": {},
                 "edge_counts": {},
-                "critical_bridges": [],
+                "weak_covisibility_pairs": [],
                 "valid_frames_count": 0,
                 "components": [],
                 "message": "有效标靶集合为空，无法建图！"
@@ -68,8 +68,8 @@ class CovisibilityGraphAnalyzer:
                     adj_list[v].add(u)
                     edge_counts[(u, v)] = edge_counts.get((u, v), 0) + 1
 
-        # 识别关键单一支撑桥梁 (只有 1 帧同时观测到该标靶对)
-        critical_bridges = [(u, v) for (u, v), count in edge_counts.items() if count == 1]
+        # 识别脆弱单一支撑共视对 (只有 1 帧同时观测到该标靶对)
+        weak_covisibility_pairs = [(u, v) for (u, v), count in edge_counts.items() if count == 1]
 
         # 寻找连通分量 (BFS)
         remaining = set(all_tags)
@@ -120,7 +120,7 @@ class CovisibilityGraphAnalyzer:
             "components": components,
             "adj_list": {k: sorted(list(v)) for k, v in adj_list.items()},
             "edge_counts": {f"{u}-{v}": c for (u, v), c in edge_counts.items()},
-            "critical_bridges": critical_bridges,
+            "weak_covisibility_pairs": weak_covisibility_pairs,
             "valid_frames_count": len(frame_detections),
             "message": msg
         }
@@ -142,9 +142,9 @@ class CovisibilityGraphAnalyzer:
             status_str = "正常连通" if is_conn else "【断网孤立】"
             log.info(f"   - Tag #{tid:02d}: 相邻标靶 {neighbors} (度数: {len(neighbors)}) -> {status_str}")
 
-        log.info("\n [共视桥梁与重叠帧数 (Edge Co-visibility Count)]")
+        log.info("\n [共视拓扑与重叠帧数 (Edge Co-visibility Count)]")
         for edge_str, count in covis_report.get("edge_counts", {}).items():
-            bridge_warn = " \033[93m[单图支撑关键桥梁 - 切勿剔除]\033[0m" if count == 1 else ""
+            bridge_warn = " \033[93m[单图弱共视边 - 建议保留]\033[0m" if count == 1 else ""
             log.info(f"   - 标靶对 ({edge_str}): 在 {count} 帧图像中同时出现{bridge_warn}")
 
         if stats.get("excluded_items"):

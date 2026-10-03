@@ -5,9 +5,9 @@
   "updated_at": "2026-09-18 07:25:11",
   "gui_launcher": {
     "scale_pct": 100,
-    "canvas_w": 1920,
+    "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:36:53"
+    "updated_at": "2026-10-03 16:50:19"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -34,7 +34,7 @@
     "scale_pct": 120,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:34:10",
+    "updated_at": "2026-10-03 16:19:54",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
@@ -158,7 +158,7 @@
   },
   "spatial_mapping_studio": {
     "dropdown_state": {
-      "workspace_id": "20260916_145246_Home_real",
+      "workspace_id": "20260918_220646_Only15",
       "filter_mode": "all",
       "sort_mode": "name_asc",
       "ba_view_mode": "3d",
@@ -167,7 +167,7 @@
       "plane_z": 200.0
     },
     "viewer_state": {
-      "workspace_id": "20260916_145246_Home_real",
+      "workspace_id": "20260918_220646_Only15",
       "filter_mode": "all",
       "sort_mode": "name_asc",
       "ba_view_mode": "3d",
@@ -175,6 +175,6 @@
       "show_xy_plane": true,
       "plane_z": 200.0
     },
-    "updated_at": "2026-10-01 21:35:27"
+    "updated_at": "2026-10-03 16:50:05"
   }
 }
