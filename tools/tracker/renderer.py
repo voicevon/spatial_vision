@@ -836,11 +836,11 @@ class TrackerRenderer:
         y += 26
         r_txt = f"  R: {tr.measured_r:+6.1f}°" if getattr(tr, "measured_r", None) is not None else "  R:    -- "
         draw_text(canvas, f"实测 {fmt_point(tr.measured)}{r_txt}",
-                  (x1 + 14, y), 17, COL_GREEN if tr.measured is not None else COL_GRAY, True)
+                  (x1 + 14, y), 17, COL_BLUE if tr.measured is not None else COL_GRAY, True)
         y += 26
         theo_txt = f"理论 {fmt_point(tr.theoretical)}" if tr.theoretical is not None \
             else "理论      (地图中无该 Tag)"
-        draw_text(canvas, theo_txt, (x1 + 14, y), 17, COL_YELLOW)
+        draw_text(canvas, theo_txt, (x1 + 14, y), 17, COL_GREEN)
         y += 26
         if tr.measured is not None and tr.theoretical is not None:
             dev = tr.measured - tr.theoretical

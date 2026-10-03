@@ -151,7 +151,7 @@ def _blit_mask(img: np.ndarray, text: str, origin: Tuple[int, int], font_size: i
     sub = img[dy0:dy1, dx0:dx1]
     m = mask[my0:my1, mx0:mx1].astype(np.float32) * (1.0 / 255.0)
     m3 = m[:, :, None]
-    col = np.array([color[2], color[1], color[0]], dtype=np.float32)  # RGB→BGR
+    col = np.array([color[0], color[1], color[2]], dtype=np.float32)  # 原生 BGR 注入 (与 OpenCV 颜色格式规范一致)
     blended = sub.astype(np.float32) * (1.0 - m3) + col * m3
     sub[:] = blended.astype(np.uint8)
 

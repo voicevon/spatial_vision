@@ -359,18 +359,18 @@ class MappingCenterViewMixin:
                     )
                     rendered_tids.add(tid)
 
-            # 4. 2D 理论重投影框与残差矢量
+            # 4. 2D 理论重投影框与残差矢量 (理论统一翡翠绿)
             if ba_mode == "2d" and len(valid_obs) > 0:
                 proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, app.pnp_solver.camera_matrix, app.pnp_solver.dist_coeffs)
                 proj_flat = proj_pts.reshape((-1, 2))
                 for i in range(len(valid_obs)):
                     p4 = proj_flat[i * 4:(i + 1) * 4].astype(np.int32)
-                    cv2.polylines(disp_frame, [p4], isClosed=True, color=(0, 210, 255), thickness=1, lineType=cv2.LINE_AA)
+                    cv2.polylines(disp_frame, [p4], isClosed=True, color=(0, 230, 80), thickness=2, lineType=cv2.LINE_AA)
 
                 if obs_mode == "2d" and hasattr(app.visualizer, "draw_reprojection_vectors"):
                     app.visualizer.draw_reprojection_vectors(disp_frame, img_flat, proj_flat, scale_factor=40.0)
 
-        # 4. 保底渲染：对所有提取到但未被 3D 棱柱覆盖的有效保留标靶，保底绘制 2D 实测角点多边形与编号标签
+        # 4. 保底渲染：对所有提取到但未被 3D 棱柱覆盖的有效保留标靶，保底绘制 2D 实测角点多边形与编号标签 (实测统一科技天蓝)
         if obs_mode != "off":
             for obs in observations:
                 if not obs.get("keep", True) or is_frame_excluded:
@@ -378,11 +378,11 @@ class MappingCenterViewMixin:
                 tid = obs["tag_id"]
                 if obs_mode == "2d" or tid not in rendered_tids:
                     pts = np.array(obs["corners"], dtype=np.int32).reshape((-1, 2))
-                    cv2.polylines(disp_frame, [pts], isClosed=True, color=(0, 230, 80), thickness=2, lineType=cv2.LINE_AA)
+                    cv2.polylines(disp_frame, [pts], isClosed=True, color=(245, 180, 30), thickness=2, lineType=cv2.LINE_AA)
                     cx, cy = int(np.mean(pts[:, 0])), int(np.mean(pts[:, 1]))
                     in_map = (app.data_mgr.get_tag_world_corners(tid) is not None)
                     tag_lbl = f"Tag #{tid}" if in_map else f"Tag #{tid} [未入图]"
-                    put_text(disp_frame, tag_lbl, (cx - 38, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 230, 80), 2, cv2.LINE_AA)
+                    put_text(disp_frame, tag_lbl, (cx - 38, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (245, 180, 30), 2, cv2.LINE_AA)
                     rendered_tids.add(tid)
 
         # 5. 若处于病因切片诊断模式，叠加视野内预测但实测漏检的标靶框 (橙黄色矩形与 Tag 标注)

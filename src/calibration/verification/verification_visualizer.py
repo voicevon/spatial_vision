@@ -87,7 +87,7 @@ class VerificationVisualizer:
             obs_c = None
             if proj_obs is not None:
                 obs_c = tuple(proj_obs["top_center"])
-                put_text(img, "实测(蓝)", (obs_c[0] + 6, obs_c[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 210, 80), 1, cv2.LINE_AA)
+                put_text(img, "实测(蓝)", (obs_c[0] + 6, obs_c[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (245, 180, 30), 1, cv2.LINE_AA)
 
             # D. 两者顶面中心空间错位拉扯连线 (橙黄连线与红绿小圆点)
             if ba_c is not None and obs_c is not None:
@@ -144,7 +144,7 @@ class VerificationVisualizer:
                                        f"{_fmt(ba_center_xyz[2])} mm", (0, 255, 100), 14))
                 if obs_center_xyz is not None and len(obs_center_xyz) >= 3:
                     info_lines.append((f"实测{_fmt(obs_center_xyz[0])}, {_fmt(obs_center_xyz[1])}, "
-                                       f"{_fmt(obs_center_xyz[2])} mm", (255, 195, 70), 14))
+                                       f"{_fmt(obs_center_xyz[2])} mm", (245, 180, 30), 14))
                 if world_rpy_deg is not None and len(world_rpy_deg) >= 3:
                     info_lines.append((f"RPY: {world_rpy_deg[0]:>7.1f}, {world_rpy_deg[1]:>7.1f}, "
                                        f"{world_rpy_deg[2]:>7.1f} deg", (150, 255, 200), 13))
@@ -234,10 +234,11 @@ class VerificationVisualizer:
                 is_good = (err_px <= 1.5)
                 is_moderate = (err_px <= 3.0)
 
-                obs_line_color = (0, 230, 80) if is_good else ((180, 180, 180) if is_moderate else (120, 120, 120))
-                cv2.polylines(disp, [obs], True, obs_line_color, 2 if is_good else 1, cv2.LINE_AA)
+                # 统一色彩规范: 2D 实测框统一为科技天蓝，理论投影框统一为翡翠绿
+                obs_line_color = (245, 180, 30)
+                cv2.polylines(disp, [obs], True, obs_line_color, 2, cv2.LINE_AA)
 
-                proj_color = (0, 255, 100) if is_good else ((0, 180, 255) if is_moderate else (0, 0, 255))
+                proj_color = (0, 230, 80)
                 cv2.polylines(disp, [proj], True, proj_color, 2, cv2.LINE_AA)
 
                 scale = 15.0
@@ -307,8 +308,8 @@ class VerificationVisualizer:
                 pt_s = (int(round(p_obs[0])), int(round(p_obs[1])))
                 pt_e = (int(round(p_obs[0] + dx)), int(round(p_obs[1] + dy)))
 
-                # 绘制实测观测角点黄色圆点
-                cv2.circle(img, pt_s, 3, (0, 255, 255), -1, cv2.LINE_AA)
+                # 绘制实测观测角点蓝色圆点 (统一色彩规范: 实测为蓝)
+                cv2.circle(img, pt_s, 3, (245, 180, 30), -1, cv2.LINE_AA)
                 # 绘制放大误差矢量箭头
                 if abs(dx) > 1e-2 or abs(dy) > 1e-2:
                     cv2.arrowedLine(img, pt_s, pt_e, color, thickness, tipLength=0.25)
