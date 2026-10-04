@@ -32,11 +32,12 @@ APP_ID = "workspace_hub"
 class HubState:
     """工作空间中枢 (Workspace Hub) 核心状态机"""
 
-    # 1. 工位宏观视图页签 (选中工位根节点时激活)
-    TAB_REPORT = "tab_report"               # 大盘看板 (体检报告/全局拓扑)
-    TAB_CALIB_IMAGES = "tab_calib_images"   # 标定相册 (工位采样相册)
-    TAB_PROD_IMAGES = "tab_prod_images"     # 生产相册 (生产基准相册)
-    WS_TAB_ORDER = (TAB_REPORT, TAB_CALIB_IMAGES, TAB_PROD_IMAGES)
+    # 1. 工位宏观视图页签 (选中工位根节点时激活: 遵循 工位 -> 内参 -> 三组图集 的树形层次)
+    TAB_REPORT = "tab_report"                       # 大盘看板 (体检报告/全局拓扑)
+    TAB_INTRINSICS_IMAGES = "tab_intrinsics_images" # 相机内参 (棋盘格/圆形网格内参标定图集)
+    TAB_CALIB_IMAGES = "tab_calib_images"           # 外参建图 (AprilTag 空间建图图集)
+    TAB_PROD_IMAGES = "tab_prod_images"             # 生产图集 (生产采样与工件质检图集)
+    WS_TAB_ORDER = (TAB_REPORT, TAB_INTRINSICS_IMAGES, TAB_CALIB_IMAGES, TAB_PROD_IMAGES)
 
     # 2. 坐标系微观视图页签 (选中坐标系子节点时激活)
     TAB_FRAME_POSE_TAGS = "tab_frame_pose_tags" # 机构位姿与 10-Slot Tag 标靶
@@ -152,12 +153,15 @@ class HubState:
             self.selected_workspace_idx = idx
             self.active_dropdown = None
             self.save_selected_workspace()
+            self.gallery.selected_intrinsics_image_idx = 0
+            self.gallery.intrinsics_grid_offset = 0
             self.gallery.selected_image_idx = 0
             self.gallery.image_grid_offset = 0
             self.gallery.selected_prod_image_idx = 0
             self.gallery.prod_grid_offset = 0
             self.geometry.roi_scroll_offset = 0
             self.geometry.load_geometry_managers()
+            self.gallery.load_intrinsics_images()
             self.gallery.load_current_workspace_images()
             self.gallery.load_prod_images()
             self.whitelist.refresh_whitelist_cache()
@@ -217,8 +221,9 @@ class HubState:
         else:
             tabs = [
                 TabItem(key=self.TAB_REPORT, label="大盘看板"),
-                TabItem(key=self.TAB_CALIB_IMAGES, label="标定相册"),
-                TabItem(key=self.TAB_PROD_IMAGES, label="生产相册", badge="★"),
+                TabItem(key=self.TAB_INTRINSICS_IMAGES, label="相机&内参"),
+                TabItem(key=self.TAB_CALIB_IMAGES, label="外参建图"),
+                TabItem(key=self.TAB_PROD_IMAGES, label="生产图集", badge="★"),
             ]
             allowed = self.WS_TAB_ORDER
             default_key = self.TAB_REPORT

@@ -573,9 +573,29 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         return self.status_toast
 
     def _load_camera_intrinsics(self) -> Tuple[np.ndarray, np.ndarray]:
-        """加载相机内参和畸变参数"""
+        """加载相机内参和畸变参数，优先工位专属内参并自动适配图像实际物理分辨率"""
+        act_shape = None
+        try:
+            if hasattr(self, "image_dir") and self.image_dir and os.path.exists(self.image_dir):
+                for fname in os.listdir(self.image_dir):
+                    if fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                        fpath = os.path.join(self.image_dir, fname)
+                        sample_img = cv2.imread(fpath)
+                        if sample_img is not None:
+                            act_shape = sample_img.shape[:2]
+                            break
+        except Exception as e:
+            log.debug(f"[Studio] 探测图像分辨率异常 (可忽略): {e}")
+
+        ws_dir = self.current_workspace.workspace_dir if getattr(self, "current_workspace", None) else None
+
         if resolve_camera_intrinsics is not None:
-            K, dist, _ = resolve_camera_intrinsics(CONFIG_PATH)
+            K, dist, meta = resolve_camera_intrinsics(
+                config_path=CONFIG_PATH,
+                actual_image_shape=act_shape,
+                workspace_dir=ws_dir
+            )
+            log.info(f"[Studio] 相机内参装配成功: 来源={meta.get('source')}, 基准分辨率={meta.get('base_resolution')}")
             return K, dist
         else:
             K = np.array([

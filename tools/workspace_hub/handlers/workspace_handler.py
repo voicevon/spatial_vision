@@ -16,7 +16,11 @@ import sys
 import subprocess
 from typing import Any
 
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text, show_info_dialog
+from src.ui.dialog_utils import (
+    prompt_confirm, prompt_input_text, show_info_dialog,
+    prompt_hardware_config, prompt_create_workspace_dialog
+)
+from src.devices.camera_service import CameraService
 from src.workspace.health_auditor import audit_workspace, audit_all_workspaces
 
 
@@ -72,21 +76,67 @@ class WorkspaceHandler:
         if new_desc is not None:
             self.state.update_current_workspace_description(new_desc.strip())
 
+    def handle_edit_hardware(self):
+        """修改当前工位绑定的相机硬件设备与物理分辨率规格 (单一真理源)"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法配置硬件！")
+            return
+
+        devs = CameraService.probe_available_devices()
+        cur_type = getattr(ws, "camera_type", "realsense") or "realsense"
+        cur_serial = getattr(ws, "camera_serial", "") or ""
+        cur_res = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
+
+        form_res = prompt_hardware_config(
+            title=f"配置工位【{ws.name}】硬件规格",
+            initial_camera_type=cur_type,
+            initial_serial=cur_serial,
+            initial_resolution=cur_res,
+            available_devices=devs
+        )
+        if not form_res:
+            self.state.set_toast("已取消修改相机硬件与分辨率。")
+            return
+
+        ok, msg = self.workspace_mgr.update_workspace_hardware(
+            workspace_id=ws.workspace_id,
+            camera_type=form_res["camera_type"],
+            camera_serial=form_res["camera_serial"],
+            camera_resolution=form_res["camera_resolution"]
+        )
+        if ok:
+            self.state.refresh_workspaces()
+            self.state.set_toast(msg)
+        else:
+            self.state.set_toast(f"硬件配置更新失败: {msg}")
+
     def handle_create_workspace(self):
-        """新建 Workspace (支持中文名称弹窗)"""
+        """新建 Workspace (支持中文名称与相机硬件/分辨率规格配置弹窗)"""
         idx = len(self.state.workspaces) + 1
         default_alias = f"Workspace_{idx}"
 
-        chosen_name = prompt_input_text(
-            "新建 Workspace",
-            "请输入新 Workspace 名称/别名 (支持中文、英文、数字，如: 2号机架高位):",
-            initial=default_alias
+        devs = CameraService.probe_available_devices()
+        form_res = prompt_create_workspace_dialog(
+            default_alias=default_alias,
+            available_devices=devs
         )
-        if not chosen_name:
+        if not form_res:
             self.state.set_toast("已取消新建 Workspace。")
             return
 
-        new_ws = self.workspace_mgr.create_workspace(alias=chosen_name, description=f"Workspace {chosen_name}")
+        chosen_name = form_res["alias"]
+        cam_type = form_res["camera_type"]
+        cam_serial = form_res["camera_serial"]
+        cam_res = form_res["camera_resolution"]
+
+        new_ws = self.workspace_mgr.create_workspace(
+            alias=chosen_name,
+            description=f"Workspace {chosen_name}",
+            camera_type=cam_type,
+            camera_serial=cam_serial,
+            camera_resolution=cam_res
+        )
         self.state.refresh_workspaces()
         target_idx = 0
         for i, s in enumerate(self.state.workspaces):
@@ -94,7 +144,7 @@ class WorkspaceHandler:
                 target_idx = i
                 break
         self.state.select_workspace_at_index(target_idx)
-        self.state.set_toast(f"已成功新建 Workspace: 【{new_ws.name}】({new_ws.workspace_id})，按 [C] 开始采图！")
+        self.state.set_toast(f"已新建工位【{new_ws.name}】: {cam_type} @ {new_ws.resolution_str}，按 [C] 开始采图！")
 
     def handle_clone_workspace(self):
         """克隆 Workspace (支持中文名称弹窗)"""

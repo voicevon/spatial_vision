@@ -27,7 +27,8 @@ class DashboardPageRenderer:
     def render(self, canvas: np.ndarray, state: HubState, sc: Any):
         """渲染大盘看板主视图 (x: 340~960, y: 50~670)"""
         from tools.workspace_hub.hub_renderer import (
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_EDIT_DESC,
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_BTN_EDIT_HARDWARE,
+            WS_DROPDOWN_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME
         )
 
@@ -43,8 +44,8 @@ class DashboardPageRenderer:
         mpos = (state.mouse_x, state.mouse_y)
 
         # ==== 1. 板块 #1: 工位核心元数据与管理卡片 (极简高雅内嵌按钮) ====
-        c1_y = box_y + 10
-        c1_h = 168
+        c1_y = box_y + 8
+        c1_h = 180
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (25, 31, 42), -1)
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (45, 56, 78), 1)
 
@@ -53,15 +54,24 @@ class DashboardPageRenderer:
         self.r._draw_button(canvas, WS_BTN_RENAME, "重命名", mpos)
 
         # 行 2: 纯工位物理ID，右侧 [打开] 按钮 (直达文件夹)
-        draw_text(canvas, sc.workspace_id, (card_x + 16, c1_y + 39), font_size=12, color=self.r.COLOR_GRAY)
+        draw_text(canvas, sc.workspace_id, (card_x + 16, c1_y + 36), font_size=12, color=self.r.COLOR_GRAY)
         self.r._draw_button(canvas, WS_BTN_OPEN_DIR, "打开", mpos)
 
-        # 行 3: 生产工作流模式 (Smart Production) 下拉选择框
+        # 行 3: 相机硬件与分辨率单一真理源，右侧 [配置硬件] 按钮
+        cam_type_str = "RealSense D435" if getattr(sc, "camera_type", "realsense") == "realsense" else "USB 摄像头"
+        cam_sn = getattr(sc, "camera_serial", "") or ""
+        cam_dev_label = f"{cam_type_str} ({cam_sn})" if cam_sn else cam_type_str
+        res_str = getattr(sc, "resolution_str", "1920x1080") or "1920x1080"
+        hw_display = f"硬件:  {cam_dev_label} · 规格: {res_str} [锁定]"
+        draw_text(canvas, hw_display, (card_x + 16, c1_y + 62), font_size=12, color=(140, 210, 255), bold=True)
+        self.r._draw_button(canvas, WS_BTN_EDIT_HARDWARE, "配置硬件", mpos, theme_color=(0, 180, 255))
+
+        # 行 4: 生产工作流模式 (Smart Production) 下拉选择框
         prod_cfg = getattr(sc, "production", {}) or {}
         prod_name = prod_cfg.get("name", "SCARA 智能分选生产线")
         prod_mode = prod_cfg.get("mode", "scara_sorting")
         prod_pipe = prod_cfg.get("active_pipeline", "asparagus_studio")
-        draw_text(canvas, "工作流:", (card_x + 16, c1_y + 68), font_size=12, color=(0, 255, 200), bold=True)
+        draw_text(canvas, "工作流:", (card_x + 16, c1_y + 89), font_size=12, color=(0, 255, 200), bold=True)
 
         display_label = f"{prod_name}  ({prod_mode} · {prod_pipe})"
         dd_x, dd_y, dd_w, dd_h = WS_DROPDOWN_PROD_MODE
@@ -77,21 +87,21 @@ class DashboardPageRenderer:
             theme_color=(0, 220, 200),
         )
 
-        # 行 4: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
+        # 行 5: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
         desc_text = getattr(sc, "description", "") or "暂无备注"
         created_str = f"建于 {sc.created_at}" if sc.created_at else ""
-        draw_text(canvas, f"备注:  {desc_text}  {created_str}", (card_x + 16, c1_y + 95), font_size=12, color=(240, 215, 140))
+        draw_text(canvas, f"备注:  {desc_text}  {created_str}", (card_x + 16, c1_y + 116), font_size=12, color=(240, 215, 140))
         self.r._draw_button(canvas, WS_BTN_EDIT_DESC, "修改", mpos)
 
-        # 行 5: 分割线与底部纯净按钮栏
-        cv2.line(canvas, (card_x + 16, c1_y + 124), (card_x + card_w - 16, c1_y + 124), (38, 46, 62), 1)
+        # 行 6: 分割线与底部纯净按钮栏
+        cv2.line(canvas, (card_x + 16, c1_y + 140), (card_x + card_w - 16, c1_y + 140), (38, 46, 62), 1)
         self.r._draw_button(canvas, WS_BTN_SYNC_DATA, "更新元数据", mpos)
         self.r._draw_button(canvas, WS_BTN_CLONE, "克隆工位", mpos)
         self.r._draw_button(canvas, WS_BTN_DELETE, "删除", mpos, theme_color=(180, 60, 60))
         self.r._draw_button(canvas, WS_BTN_NEW_FRAME, "新建ROI坐标系", mpos, theme_color=(0, 200, 160))
 
         # ==== 2. 板块 #2: 质检放行仪表盘卡片 (通栏横幅) ====
-        c2_y = c1_y + c1_h + 8
+        c2_y = c1_y + c1_h + 6
         c2_h = 56
         if sc.ba_solved and sc.global_rmse_px > 1e-6:
             if sc.global_rmse_px < 0.8:

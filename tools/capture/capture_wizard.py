@@ -61,23 +61,24 @@ log = get_logger(__name__)
 
 
 class CaptureWizard(BaseCvApp):
-    def __init__(self, output_dir: str = None, workspace_id: str = None, purpose: str = "calibration"):
+    def __init__(self, output_dir: str = None, workspace_id: str = None, purpose: str = "calibration", workspace_mgr: WorkspaceManager = None):
         super().__init__(
             app_id=APP_ID,
             base_w=1280,
             base_h=720,
             window_name="capture_wizard",
-            window_title="图像采集 (工作空间与双用途) | flux_vision_3d",
+            window_title="图像采集向导 (三图集与多相机流) | flux_vision_3d",
             responsive=True,
         )
-        self.ws_mgr = WorkspaceManager()
+        self.ws_mgr = workspace_mgr or WorkspaceManager()
         self.workspaces = self.ws_mgr.list_workspaces()
 
-        # 采集用途: calibration (标定) | production (生产)
-        self.purpose = purpose if purpose in ("calibration", "production") else "calibration"
+        # 采集用途: intrinsics (相机内参) | calibration (外参建图) | production (生产采样)
+        self.purpose = purpose if purpose in ("intrinsics", "calibration", "production") else "calibration"
         self.purpose_options = [
-            ("calibration", "标定 (Calib)"),
-            ("production",  "生产 (Prod)"),
+            ("intrinsics",  "内参标定 (Intrinsics)"),
+            ("calibration", "外参建图 (Calibration)"),
+            ("production",  "生产采样 (Production)"),
         ]
 
         # 确定初始归档工位
@@ -105,22 +106,13 @@ class CaptureWizard(BaseCvApp):
 
         # GUI 状态
         self.renderer = CaptureRenderer(self)
-        self.active_dropdown = None        # None / WS_DROPDOWN / PURPOSE_DROPDOWN / CAMERA_TYPE_DROPDOWN / RES_DROPDOWN
+        self.active_dropdown = None        # None / WS_DROPDOWN / PURPOSE_DROPDOWN
         self.pipeline_running = False
         self.camera_type = "realsense"
-        self.camera_options = [
-            ("realsense", "RealSense D435"),
-            ("usb",       "USB 普通摄像头"),
-        ]
+        self.camera_serial = ""
         self.resolution = "1920x1080"
-        self.resolution_options = [
-            ("1920x1080", "1920 × 1080  (推荐)"),
-            ("1280x720",  "1280 × 720"),
-            ("848x480",   "848 × 480"),
-            ("640x480",   "640 × 480"),
-        ]
-        _w, _h = self.resolution.split("x")
-        self.frame_w, self.frame_h = int(_w), int(_h)
+        self.frame_w, self.frame_h = 1920, 1080
+        self._apply_workspace_hardware()
         self._load_viewer_state()
 
         # 运行时状态
@@ -148,7 +140,7 @@ class CaptureWizard(BaseCvApp):
         self.workspaces = self.ws_mgr.list_workspaces()
         opts = []
         for w in self.workspaces:
-            cnt = w.image_count if self.purpose == "calibration" else w.prod_image_count
+            cnt = w.get_image_count(self.purpose)
             opts.append((w.workspace_id, f"{w.name} ({cnt}帧)"))
         return opts
 
@@ -160,21 +152,44 @@ class CaptureWizard(BaseCvApp):
     def current_purpose_label(self):
         return dict(self.purpose_options).get(self.purpose, self.purpose)
 
+    def _apply_workspace_hardware(self):
+        """将当前工位绑定的相机硬件及分辨率作为单一真理源载入"""
+        if self.current_workspace:
+            self.camera_type = getattr(self.current_workspace, "camera_type", "realsense") or "realsense"
+            self.camera_serial = getattr(self.current_workspace, "camera_serial", "") or ""
+            self.resolution = self.current_workspace.resolution_str
+            self.frame_w, self.frame_h = self.current_workspace.resolution
+        else:
+            self.camera_type = "realsense"
+            self.camera_serial = ""
+            self.resolution = "1920x1080"
+            self.frame_w, self.frame_h = 1920, 1080
+
     def switch_workspace(self, ws_id: str):
-        """实时切换采图目标工位并持久化"""
+        """实时切换采图目标工位并热载入工位硬件参数"""
         ws = self.ws_mgr.get_workspace_by_id(ws_id)
         if not ws:
             return
+        was_running = self.pipeline_running
+        if was_running:
+            self._stop_camera()
+
         self.current_workspace = ws
         self.current_workspace_id = ws.workspace_id
         self.ws_mgr.set_current_workspace(ws.workspace_id)
+        self._apply_workspace_hardware()
         self._update_output_dir()
-        self.set_toast(f"已切换归档工位: 【{ws.name}】/【{self.current_purpose_label}】(当前 {self.image_count} 帧)")
-        log.info(f"采图向导已切换归档工位: {ws.name} ({ws.workspace_id}) [{self.purpose}] -> {self.output_dir}")
+
+        cam_desc = "RealSense D435" if self.camera_type == "realsense" else "USB 摄像头"
+        self.set_toast(f"已切换工位: 【{ws.name}】(绑定: {cam_desc} · 锁定 {self.resolution})")
+        log.info(f"采图向导已切换工位: {ws.name} ({ws.workspace_id}) [{self.purpose}] 硬件: {self.camera_type}({self.camera_serial}) 规格: {self.resolution} -> {self.output_dir}")
+
+        if was_running:
+            self._start_camera()
 
     def switch_purpose(self, purpose_key: str):
-        """实时切换采集用途 (标定 calibration / 生产 production)"""
-        if purpose_key not in ("calibration", "production"):
+        """实时切换采集用途 (内参 intrinsics / 外参建图 calibration / 生产 production)"""
+        if purpose_key not in ("intrinsics", "calibration", "production"):
             return
         if purpose_key == self.purpose:
             return
@@ -197,20 +212,14 @@ class CaptureWizard(BaseCvApp):
             with open(GUI_SETTINGS_FILE, "r", encoding="utf-8") as f:
                 root = json.load(f)
             state = (root.get(APP_ID) or {}).get("viewer_state") or {}
-            if state.get("camera_type") in ("realsense", "usb"):
-                self.camera_type = state["camera_type"]
-            if any(k == state.get("resolution") for k, _ in self.resolution_options):
-                self.resolution = state["resolution"]
-                _w, _h = self.resolution.split("x")
-                self.frame_w, self.frame_h = int(_w), int(_h)
-            if state.get("purpose") in ("calibration", "production"):
+            if state.get("purpose") in ("intrinsics", "calibration", "production"):
                 self.purpose = state["purpose"]
                 self._update_output_dir()
         except Exception as e:
             log.warning(f"恢复采图向导状态失败，使用默认配置: {e}")
 
     def _save_viewer_state(self):
-        """保存下拉选择到 config/gui_settings.json"""
+        """保存采集用途到 config/gui_settings.json"""
         try:
             root = {}
             if os.path.exists(GUI_SETTINGS_FILE):
@@ -223,8 +232,6 @@ class CaptureWizard(BaseCvApp):
                     root = {}
             node = root.setdefault(APP_ID, {})
             node["viewer_state"] = {
-                "camera_type": self.camera_type,
-                "resolution": self.resolution,
                 "purpose": self.purpose,
             }
             node["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -233,29 +240,6 @@ class CaptureWizard(BaseCvApp):
                 json.dump(root, f, indent=2, ensure_ascii=False)
         except Exception as e:
             log.warning(f"保存采图向导状态失败: {e}")
-
-    def _select_camera_type(self, cam_key):
-        if cam_key == self.camera_type:
-            return
-        if self.pipeline_running:
-            self._stop_camera()
-        self.camera_type = cam_key
-        self._save_viewer_state()
-        log.info(f"相机类型已切换为: {dict(self.camera_options).get(cam_key, cam_key)}")
-
-    def _change_resolution(self, res_key):
-        if res_key == self.resolution:
-            return
-        was_running = self.pipeline_running
-        if was_running:
-            self._stop_camera()
-        self.resolution = res_key
-        _w, _h = res_key.split("x")
-        self.frame_w, self.frame_h = int(_w), int(_h)
-        self._save_viewer_state()
-        if was_running:
-            self._start_camera()
-        log.info(f"分辨率已切换: {res_key}")
 
     def _toggle_camera(self):
         if self.pipeline_running:
@@ -273,9 +257,10 @@ class CaptureWizard(BaseCvApp):
             if self.camera_type == "realsense":
                 self._cam_srv.start_realsense(
                     w, h, fps=8 if w > 1280 else 15,
+                    serial=self.camera_serial,
                     fallbacks=((w, h, 8),))
             else:
-                self._cam_srv.start_usb(w, h)
+                self._cam_srv.start_usb(w, h, device_index=self.camera_serial or 0)
         except Exception as e:
             log.warning(f"相机开启失败: {e}")
             self.set_toast(f"相机开启失败: {e}")
@@ -283,7 +268,7 @@ class CaptureWizard(BaseCvApp):
         self.pipeline_running = True
         self.color_sensor = self._cam_srv.color_sensor
         self.actual_stream_desc = self._cam_srv.stream_desc
-        cam_desc = dict(self.camera_options).get(self.camera_type, self.camera_type)
+        cam_desc = "RealSense D435" if self.camera_type == "realsense" else "USB 摄像头"
         self.set_toast(f"相机已开启: {cam_desc} @ {self.resolution}")
         log.info(f"[OK] 相机已开启: {self.camera_type} @ {self.resolution} ({self.actual_stream_desc})")
 
@@ -298,12 +283,20 @@ class CaptureWizard(BaseCvApp):
         return None
 
     def save_image(self, raw_frame: np.ndarray) -> str:
-        """保存采图快照：无标注原始帧存至当前用途对应目录 view_XXXX.png"""
+        """保存采图快照：严格执行物理分辨率防呆校验，无标注原始帧存至对应目录"""
+        h, w = raw_frame.shape[:2]
+        if self.current_workspace:
+            ok, err = self.current_workspace.validate_image_resolution(w, h)
+            if not ok:
+                self.set_toast(err)
+                log.error(f"[CAPTURE] 拒绝保存: {err}")
+                return ""
+
         self.image_count += 1
         raw_filename = f"view_{self.image_count:04d}.png"
         raw_filepath = os.path.join(self.output_dir, raw_filename)
         cv2.imwrite(raw_filepath, raw_frame)
-        log.info(f"[CAPTURE] [{self.purpose}] 快照 #{self.image_count} 拍摄成功: {raw_filepath}")
+        log.info(f"[CAPTURE] [{self.purpose}] 快照 #{self.image_count} ({w}x{h}) 拍摄成功: {raw_filepath}")
 
         # 同步更新工位元数据
         try:
@@ -372,16 +365,11 @@ class CaptureWizard(BaseCvApp):
         elif btn_id.startswith("DD_PURPOSE_"):
             self.active_dropdown = None
             self.switch_purpose(payload)
-        elif btn_id == "TOGGLE_CAM_DD":
-            self.active_dropdown = None if self.active_dropdown == "CAMERA_TYPE_DROPDOWN" else "CAMERA_TYPE_DROPDOWN"
-        elif btn_id == "TOGGLE_RES_DD":
-            self.active_dropdown = None if self.active_dropdown == "RES_DROPDOWN" else "RES_DROPDOWN"
-        elif btn_id.startswith("DD_CAM_"):
+        elif btn_id == "LOCKED_HW_CLICK":
             self.active_dropdown = None
-            self._select_camera_type(payload)
-        elif btn_id.startswith("DD_RES_"):
-            self.active_dropdown = None
-            self._change_resolution(payload)
+            ws_name = self.current_workspace_name
+            cam_desc = "RealSense D435" if self.camera_type == "realsense" else "USB 摄像头"
+            self.set_toast(f"工位【{ws_name}】已锁定硬件: {cam_desc} · {self.resolution} (请在 Workspace Hub 配置)")
         elif btn_id == "TOGGLE_CAMERA":
             self.active_dropdown = None
             self._toggle_camera()
@@ -475,7 +463,7 @@ class CaptureWizard(BaseCvApp):
 def main():
     parser = argparse.ArgumentParser(description="多视角采图向导 (纯预览 + 保存)")
     parser.add_argument("--workspace", dest="workspace", type=str, default="", help="指定初始归档工位 ID")
-    parser.add_argument("--purpose", type=str, default="calibration", choices=["calibration", "production"], help="采集用途: calibration 标定 / production 生产")
+    parser.add_argument("--purpose", type=str, default="calibration", choices=["intrinsics", "calibration", "production"], help="采集用途: intrinsics 内参标定 / calibration 外参建图 / production 生产采样")
     parser.add_argument("--dir", "--output-dir", "--output_dir", dest="dir", type=str, default=None, help="自定义保存目录路径")
     args = parser.parse_args()
 

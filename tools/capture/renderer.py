@@ -46,8 +46,7 @@ class CaptureRenderer:
         self.mouse_pos = (-1, -1)
         self._workspace_rect = None
         self._purpose_rect = None
-        self._camera_type_rect = None
-        self._resolution_rect = None
+        self._hw_spec_rect = None
 
     # ------------------------------ 鼠标辅助 ------------------------------
     def on_mouse_move(self, x, y):
@@ -106,11 +105,11 @@ class CaptureRenderer:
         self.buttons.append(("TOGGLE_WS_DD", (ws_x1, y1, ws_x2, y2), "WS_DROPDOWN"))
         self._workspace_rect = (ws_x1, y1, ws_x2, y2)
 
-        # 1.2 用途选择下拉 (标定 / 生产)
+        # 1.2 用途选择下拉 (内参 / 外参建图 / 生产采样)
         pur_x1 = ws_x2 + gap
-        pur_w = 125
+        pur_w = 140
         pur_x2 = pur_x1 + pur_w
-        pur_label = getattr(wiz, "current_purpose_label", "标定")
+        pur_label = getattr(wiz, "current_purpose_label", "外参建图")
         self._draw_dropdown_button(canvas, (pur_x1, y1, pur_x2, y2), f"用途: {pur_label}",
                                    is_open=(wiz.active_dropdown == "PURPOSE_DROPDOWN"))
         self.buttons.append(("TOGGLE_PURPOSE_DD", (pur_x1, y1, pur_x2, y2), "PURPOSE_DROPDOWN"))
@@ -120,28 +119,24 @@ class CaptureRenderer:
         sep1_x = pur_x2 + group_gap // 2
         cv2.line(canvas, (sep1_x, y1 + 4), (sep1_x, y2 - 4), (50, 56, 68), 1)
 
-        # ==================== 第 2 大组：相机选择、分辨率 与 取流开关 ====================
-        # 2.1 相机类型下拉
-        cam_x1 = pur_x2 + group_gap
-        cam_w = 140
-        cam_x2 = cam_x1 + cam_w
-        cam_label = dict(wiz.camera_options).get(wiz.camera_type, wiz.camera_type)
-        self._draw_dropdown_button(canvas, (cam_x1, y1, cam_x2, y2), cam_label,
-                                   is_open=(wiz.active_dropdown == "CAMERA_TYPE_DROPDOWN"))
-        self.buttons.append(("TOGGLE_CAM_DD", (cam_x1, y1, cam_x2, y2), "CAMERA_TYPE_DROPDOWN"))
-        self._camera_type_rect = (cam_x1, y1, cam_x2, y2)
+        # ==================== 第 2 大组：工位硬件与规格只读卡片 + 取流开关 ====================
+        # 2.1 工位硬件设备与分辨率只读锁定卡片 (完全由 Workspace SSOT 驱动，禁止采图端动态更改)
+        cam_type_str = "RealSense D435" if getattr(wiz, "camera_type", "realsense") == "realsense" else "USB 摄像头"
+        cam_sn = getattr(wiz, "camera_serial", "") or ""
+        cam_label = f"{cam_type_str} ({cam_sn})" if cam_sn else cam_type_str
+        hw_spec_label = f"设备: {cam_label} · {wiz.resolution} [锁定]"
 
-        # 2.2 分辨率下拉
-        res_x1 = cam_x2 + gap
-        res_w = 105
-        res_x2 = res_x1 + res_w
-        self._draw_dropdown_button(canvas, (res_x1, y1, res_x2, y2), wiz.resolution,
-                                   is_open=(wiz.active_dropdown == "RES_DROPDOWN"))
-        self.buttons.append(("TOGGLE_RES_DD", (res_x1, y1, res_x2, y2), "RES_DROPDOWN"))
-        self._resolution_rect = (res_x1, y1, res_x2, y2)
+        hw_x1 = pur_x2 + group_gap
+        hw_w = 265
+        hw_x2 = hw_x1 + hw_w
+        cv2.rectangle(canvas, (hw_x1, y1), (hw_x2, y2), (22, 28, 38), -1)
+        cv2.rectangle(canvas, (hw_x1, y1), (hw_x2, y2), (45, 60, 80), 1)
+        draw_text(canvas, hw_spec_label, (hw_x1 + 12, y1 + (y2 - y1 - 14) // 2), 12, (150, 195, 240), bold=True)
+        self.buttons.append(("LOCKED_HW_CLICK", (hw_x1, y1, hw_x2, y2), None))
+        self._hw_spec_rect = (hw_x1, y1, hw_x2, y2)
 
-        # 2.3 开启/关闭取流乒乓按钮
-        sw_x1 = res_x2 + gap
+        # 2.2 开启/关闭取流乒乓按钮
+        sw_x1 = hw_x2 + gap
         sw_w = 75
         sw_x2 = sw_x1 + sw_w
         sw_hover = self._is_hover((sw_x1, y1, sw_x2, y2))
@@ -203,12 +198,6 @@ class CaptureRenderer:
         elif wiz.active_dropdown == "PURPOSE_DROPDOWN" and getattr(self, "_purpose_rect", None):
             self._render_dropdown_popup(canvas, self._purpose_rect,
                                         wiz.purpose_options, wiz.purpose, "DD_PURPOSE_")
-        elif wiz.active_dropdown == "CAMERA_TYPE_DROPDOWN" and self._camera_type_rect:
-            self._render_dropdown_popup(canvas, self._camera_type_rect,
-                                        wiz.camera_options, wiz.camera_type, "DD_CAM_")
-        elif wiz.active_dropdown == "RES_DROPDOWN" and self._resolution_rect:
-            self._render_dropdown_popup(canvas, self._resolution_rect,
-                                        wiz.resolution_options, wiz.resolution, "DD_RES_")
 
     # ------------------------------ 画布合成 ------------------------------
     def make_canvas(self):

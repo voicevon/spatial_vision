@@ -271,3 +271,224 @@ def show_info_dialog(title: str, message: str) -> None:
     print(f"[*] 内容:\n{message}")
     print(f"========================================================\n")
 
+
+def prompt_hardware_config(
+    title: str = "工位相机硬件与分辨率配置",
+    initial_camera_type: str = "realsense",
+    initial_serial: str = "",
+    initial_resolution: str = "1920x1080",
+    available_devices: Optional[dict] = None
+) -> Optional[dict]:
+    """
+    弹出结构化硬件配置窗口，配置工位绑定的相机类型、序列号及标定分辨率单一真理源。
+    返回 dict {"camera_type": str, "camera_serial": str, "camera_resolution": [w, h]}，取消返回 None
+    """
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+
+        result = {"cancelled": True, "data": None}
+
+        root = tk.Tk()
+        root.title(title)
+        root.geometry("420x310")
+        root.resizable(False, False)
+        root.attributes("-topmost", True)
+
+        # 居中显示
+        root.update_idletasks()
+        w = root.winfo_width()
+        h = root.winfo_height()
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        root.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+
+        frame = ttk.Frame(root, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # 1. 相机类型
+        ttk.Label(frame, text="相机设备类型:", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        cam_type_var = tk.StringVar(value=initial_camera_type.lower() if initial_camera_type in ("realsense", "usb") else "realsense")
+        type_frame = ttk.Frame(frame)
+        type_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        r1 = ttk.Radiobutton(type_frame, text="RealSense D435 / D400", variable=cam_type_var, value="realsense")
+        r2 = ttk.Radiobutton(type_frame, text="USB 普通/工业摄像头", variable=cam_type_var, value="usb")
+        r1.pack(side=tk.LEFT, padx=(0, 16))
+        r2.pack(side=tk.LEFT)
+
+        # 2. 相机硬件标识 (序列号或设备索引)
+        ttk.Label(frame, text="硬件序列号 / 设备号 (可留空自动识别):", font=("Segoe UI", 10, "bold")).grid(row=2, column=0, sticky="w", pady=(0, 4))
+        serial_var = tk.StringVar(value=str(initial_serial or ""))
+        serial_combo = ttk.Combobox(frame, textvariable=serial_var, width=38)
+        serial_opts = []
+        if available_devices:
+            for d in available_devices.get("realsense", []):
+                if d.get("serial"):
+                    serial_opts.append(d["serial"])
+            for d in available_devices.get("usb", []):
+                serial_opts.append(str(d.get("index", 0)))
+        if initial_serial and initial_serial not in serial_opts:
+            serial_opts.insert(0, initial_serial)
+        serial_combo["values"] = serial_opts
+        serial_combo.grid(row=3, column=0, columnspan=2, sticky="we", pady=(0, 10))
+
+        # 3. 图像物理分辨率规格 (单一真理源)
+        ttk.Label(frame, text="标定与作业物理分辨率 (单一真理源):", font=("Segoe UI", 10, "bold")).grid(row=4, column=0, sticky="w", pady=(0, 4))
+        res_var = tk.StringVar(value=initial_resolution or "1920x1080")
+        res_combo = ttk.Combobox(frame, textvariable=res_var, width=38, state="readonly")
+        res_combo["values"] = ("1920x1080", "1280x720", "640x480")
+        res_combo.grid(row=5, column=0, columnspan=2, sticky="we", pady=(0, 16))
+
+        # 底部操作栏
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=6, column=0, columnspan=2, sticky="e", pady=(8, 0))
+
+        def on_confirm():
+            ctype = cam_type_var.get()
+            sn = serial_var.get().strip()
+            res_str = res_combo.get().strip() or "1920x1080"
+            try:
+                rw, rh = [int(x) for x in res_str.split("x")]
+            except Exception:
+                rw, rh = 1920, 1080
+            result["cancelled"] = False
+            result["data"] = {
+                "camera_type": ctype,
+                "camera_serial": sn,
+                "camera_resolution": [rw, rh],
+            }
+            root.destroy()
+
+        def on_cancel():
+            root.destroy()
+
+        cancel_btn = ttk.Button(btn_frame, text="取消", command=on_cancel)
+        cancel_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        confirm_btn = ttk.Button(btn_frame, text="确认保存", command=on_confirm)
+        confirm_btn.pack(side=tk.RIGHT)
+
+        root.bind("<Return>", lambda e: on_confirm())
+        root.bind("<Escape>", lambda e: on_cancel())
+
+        root.mainloop()
+
+        return None if result["cancelled"] else result["data"]
+
+    except Exception as e:
+        log.warning(f"[prompt_hardware_config] 弹窗异常: {e}")
+        return None
+
+
+def prompt_create_workspace_dialog(
+    default_alias: str = "Workspace_1",
+    available_devices: Optional[dict] = None
+) -> Optional[dict]:
+    """
+    弹出新建工位综合配置窗口：
+    输入工位名称、选择相机硬件类型、指定序列号、选择分辨率规格。
+    返回 dict {"alias": str, "camera_type": str, "camera_serial": str, "camera_resolution": [w, h]}，取消返回 None
+    """
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+
+        result = {"cancelled": True, "data": None}
+
+        root = tk.Tk()
+        root.title("新建工位 (Workspace)")
+        root.geometry("440x360")
+        root.resizable(False, False)
+        root.attributes("-topmost", True)
+
+        # 居中显示
+        root.update_idletasks()
+        w = root.winfo_width()
+        h = root.winfo_height()
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        root.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+
+        frame = ttk.Frame(root, padding=16)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # 1. 工位别名
+        ttk.Label(frame, text="工位别名 (支持中文，如: 2号机架高位):", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        alias_var = tk.StringVar(value=default_alias)
+        alias_entry = ttk.Entry(frame, textvariable=alias_var, width=42)
+        alias_entry.grid(row=1, column=0, columnspan=2, sticky="we", pady=(0, 10))
+        alias_entry.focus_set()
+        alias_entry.select_range(0, tk.END)
+
+        # 2. 相机类型
+        ttk.Label(frame, text="相机硬件类型:", font=("Segoe UI", 10, "bold")).grid(row=2, column=0, sticky="w", pady=(0, 4))
+        cam_type_var = tk.StringVar(value="realsense")
+        type_frame = ttk.Frame(frame)
+        type_frame.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        r1 = ttk.Radiobutton(type_frame, text="RealSense D435 / D400", variable=cam_type_var, value="realsense")
+        r2 = ttk.Radiobutton(type_frame, text="USB 普通/工业摄像头", variable=cam_type_var, value="usb")
+        r1.pack(side=tk.LEFT, padx=(0, 16))
+        r2.pack(side=tk.LEFT)
+
+        # 3. 相机硬件标识 (序列号或设备索引)
+        ttk.Label(frame, text="硬件序列号 / 设备号 (可留空自动识别):", font=("Segoe UI", 10, "bold")).grid(row=4, column=0, sticky="w", pady=(0, 4))
+        serial_var = tk.StringVar(value="")
+        serial_combo = ttk.Combobox(frame, textvariable=serial_var, width=40)
+        serial_opts = []
+        if available_devices:
+            for d in available_devices.get("realsense", []):
+                if d.get("serial"):
+                    serial_opts.append(d["serial"])
+            for d in available_devices.get("usb", []):
+                serial_opts.append(str(d.get("index", 0)))
+        serial_combo["values"] = serial_opts
+        serial_combo.grid(row=5, column=0, columnspan=2, sticky="we", pady=(0, 10))
+
+        # 4. 图像物理分辨率规格 (单一真理源)
+        ttk.Label(frame, text="标定与作业物理分辨率 (单一真理源):", font=("Segoe UI", 10, "bold")).grid(row=6, column=0, sticky="w", pady=(0, 4))
+        res_var = tk.StringVar(value="1920x1080")
+        res_combo = ttk.Combobox(frame, textvariable=res_var, width=40, state="readonly")
+        res_combo["values"] = ("1920x1080", "1280x720", "640x480")
+        res_combo.grid(row=7, column=0, columnspan=2, sticky="we", pady=(0, 16))
+
+        # 底部操作栏
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=8, column=0, columnspan=2, sticky="e", pady=(8, 0))
+
+        def on_confirm():
+            name = alias_var.get().strip() or default_alias
+            ctype = cam_type_var.get()
+            sn = serial_var.get().strip()
+            res_str = res_combo.get().strip() or "1920x1080"
+            try:
+                rw, rh = [int(x) for x in res_str.split("x")]
+            except Exception:
+                rw, rh = 1920, 1080
+            result["cancelled"] = False
+            result["data"] = {
+                "alias": name,
+                "camera_type": ctype,
+                "camera_serial": sn,
+                "camera_resolution": [rw, rh],
+            }
+            root.destroy()
+
+        def on_cancel():
+            root.destroy()
+
+        cancel_btn = ttk.Button(btn_frame, text="取消", command=on_cancel)
+        cancel_btn.pack(side=tk.RIGHT, padx=(8, 0))
+        confirm_btn = ttk.Button(btn_frame, text="创建工位", command=on_confirm)
+        confirm_btn.pack(side=tk.RIGHT)
+
+        root.bind("<Return>", lambda e: on_confirm())
+        root.bind("<Escape>", lambda e: on_cancel())
+
+        root.mainloop()
+
+        return None if result["cancelled"] else result["data"]
+
+    except Exception as e:
+        log.warning(f"[prompt_create_workspace_dialog] 弹窗异常: {e}")
+        return None
+
+

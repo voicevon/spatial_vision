@@ -2,20 +2,22 @@
 """
 Workspace Hub 相册状态机 (GalleryState)
 =====================================
-管理工位标定相册与生产相册的数据流转：
-1. 标定/生产相册图片文件扫描与异步载入
-2. 网格卡片分页偏移、滚动与选中索引对齐
-3. 高性能内存 LRU 缩略图与单帧高清预览图缓存
-4. 物理照片文件删除与安全自适应定位
-5. 实时相机帧归档抓拍与白闪动效触发
-6. 沉浸式全宽大图视图模式流转
+管理工位三大专属图集与生产运行相册的数据流转：
+1. 相机内参标定图集 (intrinsics): 棋盘格/网格标定板图片，专门用于求解物理焦距与畸变
+2. 外参建图标定图集 (calibration): AprilTag 空间标靶照片，用于 BA 全局平差建图与世界对齐
+3. 生产工件采样图集 (production): 生产现场工件检测/在席质检采样照片
+4. 网格卡片分页偏移、滚动与选中索引对齐
+5. 高性能内存 LRU 缩略图与单帧高清预览图缓存
+6. 物理照片文件删除与安全自适应定位
+7. 实时相机帧归档抓拍与白闪动效触发
+8. 沉浸式全宽大图视图模式流转
 """
 
 import os
 import glob
 import time
 from collections import OrderedDict
-from typing import Any, Optional
+from typing import Any, Optional, Tuple, List
 import cv2
 import numpy as np
 
@@ -51,9 +53,9 @@ def imwrite_unicode(filepath: str, img: np.ndarray) -> bool:
 
 
 class GalleryState:
-    """标定与生产相册状态机"""
+    """三大图集与大图预览状态机"""
 
-    # 视图模式 (全宽大图沉浸预览, 仅在标定相册页签下双击卡片展开)
+    # 视图模式 (全宽大图沉浸预览, 在相册页签下双击卡片展开)
     VIEW_STANDARD = "standard"    # 标准: 左栏 + 右侧页签内容
     VIEW_EXPANDED = "expanded"    # 全宽大图: 右侧区域整体铺满单帧大图
 
@@ -65,13 +67,18 @@ class GalleryState:
     def __init__(self, parent_hub_state: Any):
         self.hub = parent_hub_state
 
-        # 标定相册状态
-        self.current_images: list[str] = []
-        self.selected_image_idx = 0
-        self.image_grid_offset = 0   # 卡片网格当前页起始索引 (按整行对齐)
+        # 1. 内参标定图集 (棋盘格/网格标定板)
+        self.intrinsics_images: List[str] = []
+        self.selected_intrinsics_image_idx = 0
+        self.intrinsics_grid_offset = 0
 
-        # 生产相册状态
-        self.prod_images: list[str] = []
+        # 2. 外参建图图集 (Tag 空间位姿标靶)
+        self.current_images: List[str] = []
+        self.selected_image_idx = 0
+        self.image_grid_offset = 0
+
+        # 3. 生产采样图集 (工件检测采样)
+        self.prod_images: List[str] = []
         self.selected_prod_image_idx = 0
         self.prod_grid_offset = 0
 
@@ -117,12 +124,69 @@ class GalleryState:
         if self.view_mode == self.VIEW_EXPANDED:
             self.set_view_mode(self.VIEW_STANDARD)
         else:
-            if self.hub.active_tab not in (self.hub.TAB_CALIB_IMAGES, self.hub.TAB_PROD_IMAGES):
+            allowed_tabs = (
+                getattr(self.hub, "TAB_INTRINSICS_IMAGES", "tab_intrinsics_images"),
+                self.hub.TAB_CALIB_IMAGES,
+                self.hub.TAB_PROD_IMAGES,
+            )
+            if self.hub.active_tab not in allowed_tabs:
                 self.hub.active_tab = self.hub.TAB_CALIB_IMAGES
             self.set_view_mode(self.VIEW_EXPANDED)
 
+    # ------------------------------ 1. 内参标定图集 ------------------------------
+    def load_intrinsics_images(self):
+        """扫描并加载当前工位 intrinsics/raw_images 目录中的所有图片"""
+        ws = self.hub.get_selected_workspace()
+        if not ws or not os.path.exists(ws.intrinsics_raw_images_dir):
+            self.intrinsics_images = []
+            self.selected_intrinsics_image_idx = 0
+            self.intrinsics_grid_offset = 0
+            return
+
+        exts = ("*.png", "*.jpg", "*.jpeg", "*.bmp")
+        imgs = []
+        for ext in exts:
+            imgs.extend(glob.glob(os.path.join(ws.intrinsics_raw_images_dir, ext)))
+        imgs.sort(key=lambda f: os.path.basename(f))
+        self.intrinsics_images = imgs
+
+        if self.intrinsics_images:
+            self.selected_intrinsics_image_idx = max(0, min(self.selected_intrinsics_image_idx, len(self.intrinsics_images) - 1))
+        else:
+            self.selected_intrinsics_image_idx = 0
+        self.intrinsics_grid_offset = self._clamp_grid_offset(self.intrinsics_grid_offset, len(imgs))
+
+    def scroll_intrinsics_grid(self, delta_rows: int):
+        """按行滚动内参卡片网格"""
+        new_offset = self.intrinsics_grid_offset + delta_rows * self.GRID_COLS
+        self.intrinsics_grid_offset = self._clamp_grid_offset(new_offset, len(self.intrinsics_images))
+
+    def select_intrinsics_image_at_index(self, idx: int):
+        """选中内参图集指定索引的照片"""
+        if 0 <= idx < len(self.intrinsics_images):
+            self.selected_intrinsics_image_idx = idx
+            self._ensure_intrinsics_visible()
+
+    def _ensure_intrinsics_visible(self):
+        """确保选中的内参图片在网格内可见"""
+        idx = self.selected_intrinsics_image_idx
+        if idx < self.intrinsics_grid_offset:
+            self.intrinsics_grid_offset = (idx // self.GRID_COLS) * self.GRID_COLS
+        elif idx >= self.intrinsics_grid_offset + self.GRID_PAGE:
+            target_row = idx // self.GRID_COLS
+            self.intrinsics_grid_offset = (target_row - self.GRID_ROWS + 1) * self.GRID_COLS
+        self.intrinsics_grid_offset = self._clamp_grid_offset(self.intrinsics_grid_offset, len(self.intrinsics_images))
+
+    def select_intrinsics_image_by_offset(self, delta: int):
+        """相对移动内参照片选择"""
+        if not self.intrinsics_images:
+            return
+        new_idx = max(0, min(len(self.intrinsics_images) - 1, self.selected_intrinsics_image_idx + delta))
+        self.select_intrinsics_image_at_index(new_idx)
+
+    # ------------------------------ 2. 外参建图图集 ------------------------------
     def load_current_workspace_images(self):
-        """扫描并加载当前选中工位 raw_images 目录中的所有图片"""
+        """扫描并加载当前选中工位 calibration/raw_images 目录中的所有图片"""
         ws = self.hub.get_selected_workspace()
         if not ws or not os.path.exists(ws.calib_raw_images_dir):
             self.current_images = []
@@ -148,18 +212,18 @@ class GalleryState:
         return (clamped // self.GRID_COLS) * self.GRID_COLS
 
     def scroll_image_grid(self, delta_rows: int):
-        """按行滚动标定卡片网格 (每次滚动 delta_rows 行 = delta_rows * 3 张)"""
+        """按行滚动外参卡片网格"""
         new_offset = self.image_grid_offset + delta_rows * self.GRID_COLS
         self.image_grid_offset = self._clamp_grid_offset(new_offset, len(self.current_images))
 
     def select_image_at_index(self, idx: int):
-        """选中标定相册指定索引的照片，并自动调整网格偏移使其可见"""
+        """选中外参相册指定索引的照片"""
         if 0 <= idx < len(self.current_images):
             self.selected_image_idx = idx
             self._ensure_image_visible()
 
     def _ensure_image_visible(self):
-        """确保当前选中的图片在标定相册网格视口内可见"""
+        """确保当前选中的图片在外参相册网格视口内可见"""
         idx = self.selected_image_idx
         if idx < self.image_grid_offset:
             self.image_grid_offset = (idx // self.GRID_COLS) * self.GRID_COLS
@@ -169,14 +233,15 @@ class GalleryState:
         self.image_grid_offset = self._clamp_grid_offset(self.image_grid_offset, len(self.current_images))
 
     def select_image_by_offset(self, delta: int):
-        """相对移动标定相册照片选择 (上一张/下一张)"""
+        """相对移动外参相册照片选择 (上一张/下一张)"""
         if not self.current_images:
             return
         new_idx = max(0, min(len(self.current_images) - 1, self.selected_image_idx + delta))
         self.select_image_at_index(new_idx)
 
+    # ------------------------------ 3. 生产采样图集 ------------------------------
     def load_prod_images(self):
-        """扫描并加载生产基准工位 raw_images 目录中的所有图片"""
+        """扫描并加载生产工位 production/raw_images 目录中的所有图片"""
         ws = self.hub.get_selected_workspace()
         if not ws:
             self.prod_images = []
@@ -207,7 +272,7 @@ class GalleryState:
         self.prod_grid_offset = self._clamp_grid_offset(new_offset, len(self.prod_images))
 
     def select_prod_image_at_index(self, idx: int):
-        """选中生产相册指定索引的照片，并自动调整网格偏移使其可见"""
+        """选中生产相册指定索引的照片"""
         if 0 <= idx < len(self.prod_images):
             self.selected_prod_image_idx = idx
             self._ensure_prod_visible()
@@ -229,15 +294,23 @@ class GalleryState:
         new_idx = max(0, min(len(self.prod_images) - 1, self.selected_prod_image_idx + delta))
         self.select_prod_image_at_index(new_idx)
 
+    # ------------------------------ 通用图集删除与查询 ------------------------------
+    def get_active_images_and_index(self) -> Tuple[List[str], int, str]:
+        """根据当前活跃页签返回对应的 (图片列表, 当前选中索引, 相册名称)"""
+        tab_intrinsics = getattr(self.hub, "TAB_INTRINSICS_IMAGES", "tab_intrinsics_images")
+        if self.hub.active_tab == tab_intrinsics:
+            return self.intrinsics_images, self.selected_intrinsics_image_idx, "内参图集"
+        elif self.hub.active_tab == self.hub.TAB_PROD_IMAGES:
+            return self.prod_images, self.selected_prod_image_idx, "生产图集"
+        else:
+            return self.current_images, self.selected_image_idx, "外参图集"
+
     def delete_selected_image(self) -> bool:
-        """删除当前选中的照片帧（根据当前激活页签自动区分标定相册/生产相册）"""
-        is_prod = (self.hub.active_tab == self.hub.TAB_PROD_IMAGES)
-        images = self.prod_images if is_prod else self.current_images
-        idx = self.selected_prod_image_idx if is_prod else self.selected_image_idx
+        """删除当前选中的照片帧（自动根据当前页签分流）"""
+        images, idx, album_name = self.get_active_images_and_index()
 
         if not images:
-            album_name = "生产相册" if is_prod else "标定相册"
-            self.hub.set_toast(f"当前工位{album_name}为空，无照片可删除。")
+            self.hub.set_toast(f"当前工位【{album_name}】为空，无照片可删除。")
             return False
 
         if idx < 0 or idx >= len(images):
@@ -258,8 +331,16 @@ class GalleryState:
             for k in keys_to_del_prev:
                 self.preview_cache.pop(k, None)
 
-            # 重新载入相册列表
-            if is_prod:
+            # 重新载入对应相册
+            tab_intrinsics = getattr(self.hub, "TAB_INTRINSICS_IMAGES", "tab_intrinsics_images")
+            if self.hub.active_tab == tab_intrinsics:
+                self.load_intrinsics_images()
+                if self.intrinsics_images:
+                    self.selected_intrinsics_image_idx = min(idx, len(self.intrinsics_images) - 1)
+                else:
+                    self.selected_intrinsics_image_idx = 0
+                self._ensure_intrinsics_visible()
+            elif self.hub.active_tab == self.hub.TAB_PROD_IMAGES:
                 self.load_prod_images()
                 if self.prod_images:
                     self.selected_prod_image_idx = min(idx, len(self.prod_images) - 1)
@@ -279,7 +360,7 @@ class GalleryState:
             if ws:
                 ws.refresh_stats()
 
-            self.hub.set_toast(f"已删除照片: {file_name}")
+            self.hub.set_toast(f"已删除【{album_name}】照片: {file_name}")
             return True
         except Exception as e:
             self.hub.set_toast(f"删除照片失败: {e}")
@@ -326,33 +407,51 @@ class GalleryState:
         self.preview_cache[key] = prev
         return prev
 
-    def save_capture_frame(self, raw_frame: np.ndarray) -> str:
-        """将当前相机帧归档至选中的工位沙盒 raw_images 目录"""
+    def save_capture_frame(self, raw_frame: np.ndarray, purpose: str = "calibration") -> str:
+        """
+        将当前相机帧归档至选中的工位沙盒指定的图集目录。
+        :param raw_frame: 图像像素数组
+        :param purpose: 'intrinsics' | 'calibration' | 'production'
+        :return: 保存的绝对路径
+        """
         ws = self.hub.get_selected_workspace()
         if not ws:
             return ""
 
-        os.makedirs(ws.calib_raw_images_dir, exist_ok=True)
-        existing = glob.glob(os.path.join(ws.calib_raw_images_dir, "view_*.png"))
+        target_dir = ws.get_raw_images_dir(purpose)
+        os.makedirs(target_dir, exist_ok=True)
+        prefix = "intr_" if purpose == "intrinsics" else ("prod_" if purpose == "production" else "view_")
+        existing = glob.glob(os.path.join(target_dir, f"{prefix}*.png"))
         max_idx = 0
         for f in existing:
             base = os.path.basename(f)
-            num_part = base.replace("view_", "").replace(".png", "")
+            num_part = base.replace(prefix, "").replace(".png", "")
             if num_part.isdigit():
                 max_idx = max(max_idx, int(num_part))
 
         new_idx = max_idx + 1
-        filename = f"view_{new_idx:04d}.png"
-        filepath = os.path.join(ws.calib_raw_images_dir, filename)
+        filename = f"{prefix}{new_idx:04d}.png"
+        filepath = os.path.join(target_dir, filename)
         imwrite_unicode(filepath, raw_frame)
 
         # 触发白闪动效
         self.flash_timer = time.time() + 0.08
 
-        # 刷新工位状态
+        # 刷新工位状态与相册加载
         ws.refresh_stats()
         ws.save_meta()
-        self.load_current_workspace_images()
-        self.selected_image_idx = len(self.current_images) - 1
-        self.hub.set_toast(f"快照保存成功: {filename} (工位累计 {ws.image_count} 帧)")
+
+        if purpose == "intrinsics":
+            self.load_intrinsics_images()
+            self.selected_intrinsics_image_idx = len(self.intrinsics_images) - 1
+            self.hub.set_toast(f"内参标定照片已保存: {filename} (图集累计 {len(self.intrinsics_images)} 帧)")
+        elif purpose == "production":
+            self.load_prod_images()
+            self.selected_prod_image_idx = len(self.prod_images) - 1
+            self.hub.set_toast(f"生产采样照片已保存: {filename} (图集累计 {len(self.prod_images)} 帧)")
+        else:
+            self.load_current_workspace_images()
+            self.selected_image_idx = len(self.current_images) - 1
+            self.hub.set_toast(f"外参建图快照已保存: {filename} (图集累计 {len(self.current_images)} 帧)")
+
         return filepath

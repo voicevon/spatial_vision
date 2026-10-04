@@ -54,10 +54,34 @@ class CameraService:
         self.color_sensor = None      # rs.sensor 彩色传感器句柄 (曝光调控)
         self.last_valid_frame = None  # 最近一帧有效图像 (瞬时失败回退用)
 
+    @staticmethod
+    def probe_available_devices() -> dict:
+        """探测当前主机连接的相机硬件列表 (RealSense 设备序列号、USB 摄像头等)"""
+        devices = {"realsense": [], "usb": []}
+        if HAVE_REALSENSE:
+            try:
+                ctx = rs.context()
+                for dev in ctx.query_devices():
+                    name = dev.get_info(rs.camera_info.name) if dev.supports(rs.camera_info.name) else "RealSense Device"
+                    serial = dev.get_info(rs.camera_info.serial_number) if dev.supports(rs.camera_info.serial_number) else ""
+                    devices["realsense"].append({"name": name, "serial": serial})
+            except Exception as e:
+                log.debug(f"[CameraService] 探测 RealSense 异常: {e}")
+        for idx in range(3):
+            try:
+                cap = cv2.VideoCapture(idx)
+                if cap.isOpened():
+                    devices["usb"].append({"name": f"USB Video Camera #{idx}", "index": idx})
+                    cap.release()
+            except Exception:
+                pass
+        return devices
+
     # ------------------------------ 启动 ------------------------------
-    def start_realsense(self, width, height, fps=30, fallbacks=()) -> bool:
+    def start_realsense(self, width, height, fps=30, serial=None, fallbacks=()) -> bool:
         """
         启动 RealSense 彩色流。
+        :param serial: 指定 RealSense 硬件序列号 (为 None 或空则使用首台可用设备)
         :param fallbacks: ((w, h, fps), ...) 逐级降级链, 主档失败后依次尝试
         """
         if not HAVE_REALSENSE:
@@ -74,12 +98,15 @@ class CameraService:
                 try:
                     pipeline = rs.pipeline()
                     cfg = rs.config()
+                    if serial and str(serial).strip():
+                        cfg.enable_device(str(serial).strip())
                     cfg.enable_stream(rs.stream.color, w, h, rs.format.bgr8, f)
                     pipeline.start(cfg)
                     self.pipeline = pipeline
                     cur = (w, h, f)
-                    self.stream_desc = f"{w}x{h} @ {f}fps"
-                    log.info(f"[Camera] RealSense 彩色流: {w}x{h} @ {f}fps")
+                    dev_sn = f" (S/N: {serial})" if serial else ""
+                    self.stream_desc = f"{w}x{h} @ {f}fps{dev_sn}"
+                    log.info(f"[Camera] RealSense 彩色流: {w}x{h} @ {f}fps{dev_sn}")
                     break
                 except Exception as e:
                     last_err = e
@@ -97,19 +124,20 @@ class CameraService:
         except Exception as e:
             raise RuntimeError(f"连接物理相机失败: {e}")
 
-    def start_usb(self, width, height, fps=30) -> bool:
+    def start_usb(self, width, height, fps=30, device_index=0) -> bool:
         """启动普通 USB 摄像头 (cv2.VideoCapture)，使用近似针孔内参 (未标定)"""
-        cap = cv2.VideoCapture(0)
+        dev_idx = int(device_index) if str(device_index).isdigit() else 0
+        cap = cv2.VideoCapture(dev_idx)
         if not cap.isOpened():
-            raise RuntimeError("无法打开 USB 摄像头 (index=0)")
+            raise RuntimeError(f"无法打开 USB 摄像头 (index={dev_idx})")
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         cap.set(cv2.CAP_PROP_FPS, fps)
         self.usb_capture = cap
         self.is_running = True
-        self.stream_desc = f"USB {width}x{height}"
+        self.stream_desc = f"USB[#{dev_idx}] {width}x{height}"
         self._push_usb_intrinsics(width, height)
-        log.warning(f"[Camera] USB 摄像头已开启 {width}x{height} (未标定内参, 世界坐标仅供流程验证)")
+        log.warning(f"[Camera] USB 摄像头已开启 (Dev #{dev_idx}) {width}x{height} (未标定内参, 世界坐标仅供流程验证)")
         return True
 
     def stop(self):
@@ -188,9 +216,22 @@ class CameraService:
             log.warning(f"[Camera] 彩色传感器探测失败: {e}")
 
     def _push_realsense_intrinsics(self, w, h):
-        """RealSense: 使用 config.yaml 标定内参 (与建图一致) 并按实际分辨率自适应缩放"""
+        """RealSense: 结合当前硬件实时 Profile 与配置文件，并按实际分辨率自适应缩放"""
+        stream_prof = None
+        try:
+            if self.pipeline:
+                prof = self.pipeline.get_active_profile()
+                if prof:
+                    stream_prof = prof.get_stream(rs.stream.color).as_video_stream_profile()
+        except Exception as e:
+            log.debug(f"[Camera] 获取 active stream profile 异常 (可忽略): {e}")
+
         if resolve_camera_intrinsics is not None:
-            K, dist, meta = resolve_camera_intrinsics(CONFIG_PATH, actual_image_shape=(h, w))
+            K, dist, meta = resolve_camera_intrinsics(
+                config_path=CONFIG_PATH,
+                actual_image_shape=(h, w),
+                stream_profile=stream_prof
+            )
             log.info(f"[Camera] 相机内参: {meta.get('source')} | {w}x{h}")
         else:
             K = np.array([[1363.68, 0, 971.19], [0, 1361.19, 566.26], [0, 0, 1]], dtype=np.float64)

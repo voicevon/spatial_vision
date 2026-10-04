@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-03 22:11:35"
+    "updated_at": "2026-10-04 18:56:19"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -34,13 +34,13 @@
     "scale_pct": 120,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-03 16:19:54",
+    "updated_at": "2026-10-04 18:57:01",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260918_220646_Only15"
+    "selected_workspace_id": "20261004_175120_workspace_2"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -52,7 +52,7 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-29 10:31:06",
+    "updated_at": "2026-10-04 17:36:07",
     "viewer_state": {
       "camera_type": "realsense",
       "resolution": "1920x1080",
@@ -148,13 +148,13 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-28 08:46:13"
+    "updated_at": "2026-10-04 17:35:49"
   },
   "isolate_wheels_production": {
     "scale_pct": 100,
     "canvas_w": 1366,
     "canvas_h": 705,
-    "updated_at": "2026-09-29 09:33:40"
+    "updated_at": "2026-10-04 17:36:01"
   },
   "spatial_mapping_studio": {
     "dropdown_state": {

@@ -107,14 +107,22 @@ def load_anchor_tags(config_path: str = SYSTEM_CONFIG_PATH) -> Dict[int, Dict[st
 def resolve_camera_intrinsics(
     config_path: str = SYSTEM_CONFIG_PATH,
     actual_image_shape: Optional[Tuple[int, int]] = None,
-    stream_profile: Optional[Any] = None
+    stream_profile: Optional[Any] = None,
+    workspace_dir: Optional[str] = None
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     自适应获取并校验相机内参 (具有防呆与分辨率自适应缩放能力)
     
+    加载优先级:
+      1. 工位专属内参 (workspace_dir 下 calibration/camera_intrinsics.yaml 或 camera_intrinsics.yaml)
+      2. 硬件在线 profile 直读 (stream_profile 句柄可用时)
+      3. 系统全局配置 (config.yaml)
+      4. 工业默认参考出厂值 (D435 1080P)
+    
     :param config_path: config.yaml 路径
     :param actual_image_shape: 实际图像尺寸 (height, width)，用于校验与自适应缩放
     :param stream_profile: pyrealsense2 的 video_stream_profile 活体句柄 (若可用)
+    :param workspace_dir: 工位沙盒根目录 (可选)
     :return: (camera_matrix 3x3, dist_coeffs 5x1, metadata_dict)
     """
     metadata = {
@@ -131,8 +139,44 @@ def resolve_camera_intrinsics(
     dist = np.zeros((5, 1), dtype=np.float64)
     ref_w, ref_h = 1920, 1080
 
-    # 1. 硬件活体在线直读 (最高优先级)
-    if stream_profile is not None:
+    # 1. 工位沙盒专属内参 (最高优先级)
+    if workspace_dir and os.path.exists(workspace_dir):
+        candidate_paths = [
+            os.path.join(workspace_dir, "calibration", "camera_intrinsics.yaml"),
+            os.path.join(workspace_dir, "camera_intrinsics.yaml")
+        ]
+        intr_path = next((p for p in candidate_paths if os.path.exists(p)), None)
+        if intr_path:
+            try:
+                ws_cfg = load_raw_config(intr_path)
+                if ws_cfg:
+                    if "camera_matrix" in ws_cfg and isinstance(ws_cfg["camera_matrix"], list):
+                        cm = np.array(ws_cfg["camera_matrix"], dtype=np.float64)
+                        if cm.shape == (3, 3):
+                            fx, fy = float(cm[0, 0]), float(cm[1, 1])
+                            cx, cy = float(cm[0, 2]), float(cm[1, 2])
+                    else:
+                        fx = float(ws_cfg.get("fx", fx))
+                        fy = float(ws_cfg.get("fy", fy))
+                        cx = float(ws_cfg.get("cx", cx))
+                        cy = float(ws_cfg.get("cy", cy))
+
+                    ref_w = int(ws_cfg.get("width", ws_cfg.get("image_width", ref_w)))
+                    ref_h = int(ws_cfg.get("height", ws_cfg.get("image_height", ref_h)))
+                    
+                    dist_raw = ws_cfg.get("dist_coeffs") or ws_cfg.get("dist") or ws_cfg.get("distortion")
+                    if dist_raw is not None and isinstance(dist_raw, (list, tuple)):
+                        dist = np.array(list(dist_raw)[:5], dtype=np.float64).reshape((5, 1))
+
+                    metadata["source"] = "workspace_intrinsics"
+                    metadata["intrinsics_file"] = intr_path
+                    metadata["base_resolution"] = (ref_h, ref_w)
+                    log.info(f"[GUARD] 命中工位专属相机内参: {intr_path} (基准: {ref_w}x{ref_h}, fx={fx:.2f})")
+            except Exception as e:
+                log.warning(f"[GUARD] 读取工位专属内参异常: {e}，回退至后续规则")
+
+    # 2. 硬件活体在线直读
+    if metadata["source"] == "default" and stream_profile is not None:
         try:
             intr = stream_profile.get_intrinsics()
             fx, fy = float(intr.fx), float(intr.fy)
@@ -142,10 +186,11 @@ def resolve_camera_intrinsics(
             ref_w, ref_h = int(intr.width), int(intr.height)
             metadata["source"] = "realsense_hardware_profile"
             metadata["base_resolution"] = (ref_h, ref_w)
+            log.info(f"[GUARD] 命中 RealSense 硬件固件 profile 内参: {ref_w}x{ref_h}, fx={fx:.2f}")
         except Exception as e:
             log.warning(f"[WARN] 从硬件 profile 读取内参失败: {e}，回退至配置文件")
 
-    # 2. 从 config.yaml 读取
+    # 3. 从 config.yaml 读取
     if metadata["source"] == "default":
         cfg = load_raw_config(config_path)
         cam_col = cfg.get("camera", {}).get("color", {})
@@ -156,6 +201,9 @@ def resolve_camera_intrinsics(
             fy = float(cam_col.get("fy", fy))
             cx = float(cam_col.get("cx", cx))
             cy = float(cam_col.get("cy", cy))
+            dist_raw = cam_col.get("dist_coeffs") or cam_col.get("dist") or cam_col.get("distortion")
+            if dist_raw is not None and isinstance(dist_raw, (list, tuple)):
+                dist = np.array(list(dist_raw)[:5], dtype=np.float64).reshape((5, 1))
             metadata["source"] = "config_yaml"
             metadata["base_resolution"] = (ref_h, ref_w)
 

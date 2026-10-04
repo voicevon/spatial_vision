@@ -58,15 +58,16 @@ HELP_MODAL_W = 860
 HELP_MODAL_H = 490
 
 # 工位大盘看板卡片内嵌按钮与下拉框几何常量 (单源标准)
-WS_BTN_RENAME = (864, 68, 74, 26)
-WS_BTN_OPEN_DIR = (864, 96, 74, 26)
-WS_DROPDOWN_PROD_MODE = (426, 124, 512, 26)
+WS_BTN_RENAME = (864, 68, 74, 24)
+WS_BTN_OPEN_DIR = (864, 94, 74, 24)
+WS_BTN_EDIT_HARDWARE = (854, 120, 84, 24)
+WS_DROPDOWN_PROD_MODE = (426, 146, 512, 24)
 WS_BTN_TOGGLE_PROD_MODE = WS_DROPDOWN_PROD_MODE
-WS_BTN_EDIT_DESC = (864, 152, 74, 26)
-WS_BTN_SYNC_DATA = (372, 192, 132, 28)
-WS_BTN_CLONE = (512, 192, 80, 28)
-WS_BTN_DELETE = (600, 192, 74, 28)
-WS_BTN_NEW_FRAME = (682, 192, 130, 28)
+WS_BTN_EDIT_DESC = (864, 174, 74, 24)
+WS_BTN_SYNC_DATA = (372, 204, 120, 26)
+WS_BTN_CLONE = (500, 204, 80, 26)
+WS_BTN_DELETE = (588, 204, 74, 26)
+WS_BTN_NEW_FRAME = (670, 204, 130, 26)
 
 
 # ==================== 白名单芯片矩阵编辑器几何常量 (渲染与命中测试单源共用) ====================
@@ -275,16 +276,17 @@ def point_in_rect(x: int, y: int, rect: tuple[int, int, int, int]) -> bool:
     return rx <= x < rx + rw and ry <= y < ry + rh
 
 
-def grid_hit_test(mx: int, my: int) -> int | None:
+def grid_hit_test(mx: int, my: int, y_offset: int = 0) -> int | None:
     """根据逻辑坐标返回命中的卡片格位索引 (0~8)；落在卡片间隙或网格外返回 None"""
-    if mx < GRID_X0 or my < GRID_Y0:
+    y0 = GRID_Y0 + y_offset
+    if mx < GRID_X0 or my < y0:
         return None
     col = (mx - GRID_X0) // (GRID_CELL_W + GRID_GAP_X)
-    row = (my - GRID_Y0) // (GRID_CELL_H + GRID_GAP_Y)
+    row = (my - y0) // (GRID_CELL_H + GRID_GAP_Y)
     if col >= GRID_COLS or row >= GRID_ROWS:
         return None
     local_x = (mx - GRID_X0) % (GRID_CELL_W + GRID_GAP_X)
-    local_y = (my - GRID_Y0) % (GRID_CELL_H + GRID_GAP_Y)
+    local_y = (my - y0) % (GRID_CELL_H + GRID_GAP_Y)
     if local_x >= GRID_CELL_W or local_y >= GRID_CELL_H:
         return None
     return row * GRID_COLS + col
@@ -387,6 +389,8 @@ class HubRenderer:
             self.frames_rois_page.render_frame_pose_tags(canvas, state, ws)
         elif state.active_tab == HubState.TAB_FRAME_ROIS:
             self.frames_rois_page.render_frame_rois(canvas, state, ws)
+        elif state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.gallery_page.render_intrinsics_images(canvas, state, ws)
         elif state.active_tab == HubState.TAB_PROD_IMAGES:
             self.gallery_page.render_prod_images(canvas, state, ws)
         else:

@@ -72,13 +72,15 @@ class WorkspaceHubApp(BaseCvApp):
         """核心渲染: 委托 HubRenderer 进行渲染"""
         return self.renderer.render(self.state)
 
-    def _launch_capture_wizard(self):
-        """启动多视角交互式采图向导 (tools/capture/capture_wizard.py)"""
+    def _launch_capture_wizard(self, purpose: str = "calibration"):
+        """启动多视角交互式采图向导 (tools/capture/capture_wizard.py)，支持三用途归档路由"""
         ws = self.state.get_selected_workspace()
-        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "tools", "capture", "capture_wizard.py")]
+        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "tools", "capture", "capture_wizard.py"), "--purpose", purpose]
         if ws:
             cmd.extend(["--workspace", ws.workspace_id])
-        self._run_subtool(cmd, "多视角交互采图向导")
+        name_map = {"intrinsics": "相机内参采图", "calibration": "外参建图采图", "production": "生产采样采图"}
+        desc = name_map.get(purpose, "多视角交互采图向导")
+        self._run_subtool(cmd, desc)
 
     def on_mouse_move(self, x: int, y: int):
         """实时跟踪鼠标坐标，支持全部按钮平滑 Hover 高亮"""
@@ -109,12 +111,17 @@ class WorkspaceHubApp(BaseCvApp):
         "btn_add_frame_roi": lambda app: app._action_add_frame_roi(),
         "btn_roi_prev": lambda app: app.state.geometry.scroll_roi_list(-1),
         "btn_roi_next": lambda app: app.state.geometry.scroll_roi_list(1),
-        "exp_prev": lambda app: app.state.gallery.select_image_by_offset(-1),
-        "exp_next": lambda app: app.state.gallery.select_image_by_offset(1),
+        "exp_prev": lambda app: app._select_image_for_active_tab(-1),
+        "exp_next": lambda app: app._select_image_for_active_tab(1),
         "album_delete": lambda app: app.state.gallery.delete_selected_image(),
         "exp_restore": lambda app: app.state.gallery.toggle_expanded_preview(),
+        "run_intrinsics_calib": lambda app: app._action_run_intrinsics_calib(),
+        "run_capture_intrinsics": lambda app: app._launch_capture_wizard("intrinsics"),
+        "run_capture_calib": lambda app: app._launch_capture_wizard("calibration"),
+        "run_capture_prod": lambda app: app._launch_capture_wizard("production"),
         "ws_rename": lambda app: app.workspace_handler.handle_rename_workspace(),
         "ws_open_dir": lambda app: app.workspace_handler.handle_open_directory(),
+        "ws_edit_hardware": lambda app: app.workspace_handler.handle_edit_hardware(),
         "ws_edit_desc": lambda app: app.workspace_handler.handle_edit_description(),
         "ws_toggle_prod_mode": lambda app: app.state.cycle_workspace_production_mode(),
         "dropdown_dismiss": lambda app: setattr(app.state, "active_dropdown", None),
@@ -260,10 +267,15 @@ class WorkspaceHubApp(BaseCvApp):
             return
 
         # 5. 相册卡片网格墙点击: 单击选中卡片
-        cell_idx = grid_hit_test(x, y)
+        y_offset = 74 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+        cell_idx = grid_hit_test(x, y, y_offset=y_offset)
         if cell_idx is not None:
             tab = self.state.active_tab
-            if tab == HubState.TAB_CALIB_IMAGES:
+            if tab == HubState.TAB_INTRINSICS_IMAGES:
+                target = self.state.gallery.intrinsics_grid_offset + cell_idx
+                if 0 <= target < len(self.state.gallery.intrinsics_images):
+                    self.state.gallery.select_intrinsics_image_at_index(target)
+            elif tab == HubState.TAB_CALIB_IMAGES:
                 target = self.state.gallery.image_grid_offset + cell_idx
                 if 0 <= target < len(self.state.gallery.current_images):
                     self.state.gallery.select_image_at_index(target)
@@ -279,15 +291,19 @@ class WorkspaceHubApp(BaseCvApp):
                 self.state.gallery.toggle_expanded_preview()
                 return
         else:
-            cell_idx = grid_hit_test(x, y)
-            if cell_idx is not None and self.state.active_tab in (HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
+            y_offset = 74 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+            cell_idx = grid_hit_test(x, y, y_offset=y_offset)
+            allowed_tabs = (HubState.TAB_INTRINSICS_IMAGES, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES)
+            if cell_idx is not None and self.state.active_tab in allowed_tabs:
                 self.state.gallery.toggle_expanded_preview()
                 return
         self.on_click(x, y)
 
     def _select_image_for_active_tab(self, delta: int):
-        """按当前激活页签切换对应的相册照片 (标定相册/生产相册; 其余页签无相册则忽略)"""
-        if self.state.active_tab == HubState.TAB_PROD_IMAGES:
+        """按当前激活页签切换对应的相册照片 (三大图集通用; 其余页签无相册则忽略)"""
+        if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.state.gallery.select_intrinsics_image_by_offset(delta)
+        elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.select_prod_image_by_offset(delta)
         elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED or self.state.active_tab == HubState.TAB_CALIB_IMAGES:
             self.state.gallery.select_image_by_offset(delta)
@@ -296,10 +312,31 @@ class WorkspaceHubApp(BaseCvApp):
         """按当前激活页签滚动卡片网格 / ROI 列表 (滚轮驱动)"""
         if self.state.active_tab == HubState.TAB_FRAME_ROIS:
             self.state.geometry.scroll_roi_list(delta_rows)
+        elif self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.state.gallery.scroll_intrinsics_grid(delta_rows)
         elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.scroll_prod_grid(delta_rows)
         else:
             self.state.gallery.scroll_image_grid(delta_rows)
+
+    def _action_run_intrinsics_calib(self):
+        """响应点击【标定内参】动作：从当前工位内参图集一键求解物理焦距与畸变并写穿至工位沙盒"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("请先选择工位！")
+            return
+        img_count = len(self.state.gallery.intrinsics_images)
+        if img_count < 3:
+            self.state.set_toast(f"内参标定至少需要3张棋盘格照片，当前仅有 {img_count} 张！")
+            return
+
+        self.state.set_toast("正在解算单目相机内参与畸变矩阵，请稍候...")
+        from src.calibration.solvers.camera_intrinsics_calibrator import calibrate_workspace_intrinsics
+        res = calibrate_workspace_intrinsics(ws, pattern_size=(9, 6), square_size_mm=25.0, save_to_workspace=True)
+        if res.success:
+            self.state.set_toast(f"标定成功！fx={res.fx:.1f}, fy={res.fy:.1f}, RMSE={res.rmse:.3f}px (已写入工位沙盒)")
+        else:
+            self.state.set_toast(f"内参标定失败: {res.message}")
 
     def _run_subtool(self, cmd: list, desc: str):
         """统一子工具拉起执行器：销毁主窗、运行子工具、恢复环境与刷新状态"""
