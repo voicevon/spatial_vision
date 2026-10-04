@@ -26,18 +26,71 @@ class GalleryPageRenderer:
         self.r = parent_renderer
 
     def render_intrinsics_images(self, canvas: np.ndarray, state: HubState, ws: Any):
-        """页签: 相机内参标定图集与工位内参参数看板 (x: 340~960, y: 50~670)"""
+        """页签: 【相机&内参】工位相机硬件原位配置、内参参数看板与标定图集 (x: 340~960, y: 50~670)"""
+        from tools.workspace_hub.hub_renderer import (
+            INTR_BTN_REFRESH_DEV, INTR_BTN_EDIT_CONFIG, INTR_BTN_CAPTURE, INTR_BTN_CALIB
+        )
+
         box_x, box_y, box_w, box_h = 340, 50, self.r.canvas_w - 340, 620
         cv2.rectangle(canvas, (box_x, box_y), (box_x + box_w, box_y + box_h), self.r.COLOR_PANEL, -1)
         mpos = (state.mouse_x, state.mouse_y)
 
-        # 1. 顶部工位专属相机内参看板条 (y: 56~122)
-        bar_x = box_x + 12
-        bar_y = box_y + 8
-        bar_w = box_w - 24
-        bar_h = 68
-        cv2.rectangle(canvas, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (22, 27, 36), -1)
-        cv2.rectangle(canvas, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (38, 48, 64), 1)
+        # 1. 顶部工位专属相机硬件与物理规格卡片 (固定双行, y: 56~132, h=76, 界面零晃动)
+        hw_bar_x = box_x + 12
+        hw_bar_y = box_y + 6
+        hw_bar_w = box_w - 24
+        hw_bar_h = 76
+        cv2.rectangle(canvas, (hw_bar_x, hw_bar_y), (hw_bar_x + hw_bar_w, hw_bar_y + hw_bar_h), (24, 30, 40), -1)
+        cv2.rectangle(canvas, (hw_bar_x, hw_bar_y), (hw_bar_x + hw_bar_w, hw_bar_y + hw_bar_h), (45, 58, 78), 1)
+
+        cam_type = getattr(ws, "camera_type", "realsense") or "realsense"
+        cam_serial = getattr(ws, "camera_serial", "") or ""
+        res_str = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
+
+        # 判断工位硬件是否已因存在历史图像而锁定单一真理源
+        total_imgs = (
+            ws.get_image_count("intrinsics")
+            + ws.get_image_count("calibration")
+            + ws.get_image_count("production")
+        ) if ws else 0
+        is_locked = (total_imgs > 0)
+
+        # ---------------- 行 1: 相机设备与序列号 (相机占一行) ----------------
+        draw_text(canvas, "相机设备:", (hw_bar_x + 14, hw_bar_y + 11), font_size=12, color=(0, 240, 220), bold=True)
+        cam_name = "RealSense D435" if cam_type == "realsense" else "USB 摄像头"
+        # 相机型号微卡片徽章
+        cv2.rectangle(canvas, (hw_bar_x + 82, hw_bar_y + 7), (hw_bar_x + 226, hw_bar_y + 31), (20, 45, 40), -1)
+        cv2.rectangle(canvas, (hw_bar_x + 82, hw_bar_y + 7), (hw_bar_x + 226, hw_bar_y + 31), (0, 220, 160), 1)
+        draw_text(canvas, f"● {cam_name}", (hw_bar_x + 90, hw_bar_y + 11), font_size=11, color=(0, 255, 180), bold=True)
+
+        sn_txt = f"S/N: {cam_serial}" if cam_serial else "S/N: 默认首台"
+        draw_text(canvas, sn_txt, (hw_bar_x + 240, hw_bar_y + 11), font_size=11, color=(140, 200, 240))
+        # 右侧刷新设备按钮
+        self.r._draw_button(canvas, INTR_BTN_REFRESH_DEV, "刷新设备", mpos, theme_color=(0, 180, 240))
+
+        # ---------------- 行 2: 物理分辨率规格与锁定状态 (规格占另外一行) ----------------
+        draw_text(canvas, "物理规格:", (hw_bar_x + 14, hw_bar_y + 44), font_size=12, color=(0, 240, 220), bold=True)
+        res_tag = f"{res_str} [高精]" if res_str == "1920x1080" else res_str
+        cv2.rectangle(canvas, (hw_bar_x + 82, hw_bar_y + 40), (hw_bar_x + 226, hw_bar_y + 64), (18, 38, 55), -1)
+        cv2.rectangle(canvas, (hw_bar_x + 82, hw_bar_y + 40), (hw_bar_x + 226, hw_bar_y + 64), (0, 180, 240), 1)
+        draw_text(canvas, f"● {res_tag}", (hw_bar_x + 90, hw_bar_y + 44), font_size=11, color=(0, 220, 255), bold=True)
+
+        if is_locked:
+            draw_text(canvas, f"● 单一真理源已锁定 (已有 {total_imgs} 帧照片保护)", (hw_bar_x + 240, hw_bar_y + 44), font_size=11, color=(0, 255, 160))
+            # 已锁定状态下按钮为只读保护色
+            self.r._draw_button(canvas, INTR_BTN_EDIT_CONFIG, "已锁定", mpos, theme_color=(75, 90, 110))
+        else:
+            draw_text(canvas, "○ 待锁定 (空白工位，可自由配置)", (hw_bar_x + 240, hw_bar_y + 44), font_size=11, color=(0, 210, 255))
+            # 未锁定时允许修改配置
+            self.r._draw_button(canvas, INTR_BTN_EDIT_CONFIG, "修改配置", mpos, theme_color=(0, 220, 160))
+
+        # 2. 板块 B: 工位专属相机内参指标与求解卡片 (固定 y: 138~198, h=60)
+        intr_bar_x = hw_bar_x
+        intr_bar_y = hw_bar_y + hw_bar_h + 6
+        intr_bar_w = hw_bar_w
+        intr_bar_h = 60
+        cv2.rectangle(canvas, (intr_bar_x, intr_bar_y), (intr_bar_x + intr_bar_w, intr_bar_y + intr_bar_h), (20, 25, 34), -1)
+        cv2.rectangle(canvas, (intr_bar_x, intr_bar_y), (intr_bar_x + intr_bar_w, intr_bar_y + intr_bar_h), (38, 48, 64), 1)
 
         intr_data = ws.load_camera_intrinsics() if ws else None
         has_custom_intr = bool(intr_data and intr_data.get("calibrated", False))
@@ -45,13 +98,12 @@ class GalleryPageRenderer:
         # 状态标牌
         status_bg = (18, 55, 36) if has_custom_intr else (55, 42, 18)
         status_border = (0, 230, 80) if has_custom_intr else (0, 180, 240)
-        cv2.rectangle(canvas, (bar_x + 10, bar_y + 10), (bar_x + 115, bar_y + 34), status_bg, -1)
-        cv2.rectangle(canvas, (bar_x + 10, bar_y + 10), (bar_x + 115, bar_y + 34), status_border, 1)
-        status_txt = "已工位标定" if has_custom_intr else "硬件缺省/名义"
+        cv2.rectangle(canvas, (intr_bar_x + 10, intr_bar_y + 10), (intr_bar_x + 105, intr_bar_y + 34), status_bg, -1)
+        cv2.rectangle(canvas, (intr_bar_x + 10, intr_bar_y + 10), (intr_bar_x + 105, intr_bar_y + 34), status_border, 1)
+        status_txt = "已工位标定" if has_custom_intr else "硬件名义"
         status_col = (0, 255, 180) if has_custom_intr else (0, 200, 240)
-        draw_text(canvas, status_txt, (bar_x + 16, bar_y + 15), font_size=12, color=status_col, bold=True)
+        draw_text(canvas, status_txt, (intr_bar_x + 16, intr_bar_y + 14), font_size=12, color=status_col, bold=True)
 
-        # 参数文本渲染
         if intr_data:
             fx = intr_data.get("fx", 0.0)
             fy = intr_data.get("fy", 0.0)
@@ -60,23 +112,21 @@ class GalleryPageRenderer:
             w = intr_data.get("width", 0)
             h = intr_data.get("height", 0)
             rmse = intr_data.get("rmse", 0.0)
-            param_str = f"fx: {fx:.1f}  fy: {fy:.1f}  cx: {cx:.1f}  cy: {cy:.1f} | 规格: {w}x{h}"
+            param_str = f"fx:{fx:.1f} fy:{fy:.1f} cx:{cx:.1f} cy:{cy:.1f} | {w}x{h}"
             if rmse > 0:
-                param_str += f" | RMSE: {rmse:.3f} px"
+                param_str += f" | RMSE:{rmse:.3f}px"
         else:
-            param_str = "当前工位尚未写入独立标定内参，系统正回退使用硬件名义内参"
+            param_str = "未写穿工位独立内参，正回退使用硬件名义内参"
 
-        draw_text(canvas, param_str, (bar_x + 125, bar_y + 15), font_size=12, color=(200, 215, 230))
-        tip_str = f"工位图集照片 ({len(state.gallery.intrinsics_images)} 张) | 建议采集 15~25 张不同角度距离的棋盘格以求解高精度物理焦距"
-        draw_text(canvas, tip_str, (bar_x + 12, bar_y + 44), font_size=11, color=(140, 155, 175))
+        draw_text(canvas, param_str, (intr_bar_x + 115, intr_bar_y + 14), font_size=12, color=(200, 215, 230))
+        tip_str = f"标定图集 ({len(state.gallery.intrinsics_images)} 帧) | 建议采集 15~25 张不同角度棋盘格"
+        draw_text(canvas, tip_str, (intr_bar_x + 12, intr_bar_y + 40), font_size=11, color=(140, 155, 175))
 
-        # 右侧操作按钮组: [+ 采集相片] [求解内参]
-        btn_capture_rect = (bar_x + bar_w - 230, bar_y + 16, 105, 36)
-        btn_calib_rect = (bar_x + bar_w - 115, bar_y + 16, 105, 36)
-        self.r._draw_button(canvas, btn_capture_rect, "+ 采集相片", mpos, theme_color=(0, 220, 160))
-        self.r._draw_button(canvas, btn_calib_rect, "求解内参", mpos, theme_color=(0, 200, 240))
+        # 右侧操作按钮: [+ 采集相片] [求解内参]
+        self.r._draw_button(canvas, INTR_BTN_CAPTURE, "+ 采集相片", mpos, theme_color=(0, 220, 160))
+        self.r._draw_button(canvas, INTR_BTN_CALIB, "求解内参", mpos, theme_color=(0, 200, 240))
 
-        # 2. 下方相册网格卡片墙 (从 y=134 开始)
+        # 3. 下方相册网格卡片墙 (固定 y_offset=158 零晃动)
         self.render_gallery_page(
             canvas, state, "",
             state.gallery.intrinsics_images,
@@ -84,7 +134,7 @@ class GalleryPageRenderer:
             state.gallery.intrinsics_grid_offset,
             empty_hint="当前工位尚未采集棋盘格内参标定图片！",
             is_calib=True,
-            y_offset=74,
+            y_offset=158,
             purpose="intrinsics",
         )
 

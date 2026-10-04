@@ -271,16 +271,20 @@ class TestWorkspaceHub(unittest.TestCase):
         app.win_mgr.canvas_w = 960
         app.win_mgr.canvas_h = 720
 
-        # 点击 Tab 0: Dashboard (x: 348~454, 测试点 400, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 400, 25, 0, None)
+        # 点击 Tab 0: Dashboard (x: 348~428, 测试点 390, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 390, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_REPORT)
 
-        # 点击 Tab 1: 标定相册 (x: 464~570, 测试点 510, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 510, 25, 0, None)
+        # 点击 Tab 1: 相机&内参 (x: 438~524, 测试点 480, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 480, 25, 0, None)
+        self.assertEqual(app.state.active_tab, HubState.TAB_INTRINSICS_IMAGES)
+
+        # 点击 Tab 2: 外参建图 (x: 534~614, 测试点 570, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 570, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_CALIB_IMAGES)
 
-        # 点击 Tab 2: 生产相册 (x: 580~700, 测试点 630, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
+        # 点击 Tab 3: 生产相册 (x: 624~728, 测试点 670, 25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
         self.assertEqual(app.state.active_tab, HubState.TAB_PROD_IMAGES)
 
         # 点击 Header 页签后仍处于标准页签看板 (非全宽大图)
@@ -429,14 +433,18 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(state.gallery.image_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
 
         # 5. 测试点击 Header 页签 Tab 切换动态区内容 (左栏保持稳定)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
 
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 400, 25, 0, None)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 390, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_REPORT)
 
-        # Tab 1: 标定相册 (x=510, y=25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 510, 25, 0, None)
+        # Tab 1: 相机&内参 (x=480, y=25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 480, 25, 0, None)
+        self.assertEqual(state.active_tab, HubState.TAB_INTRINSICS_IMAGES)
+
+        # Tab 2: 标定外参建图 (x=570, y=25)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 570, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_CALIB_IMAGES)
 
         # 6. 验证在相册页签下触发真实页面渲染，防止 GRID 属性缺失引发 AttributeError
@@ -445,7 +453,7 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(canvas.shape, (720, 960, 3))
 
         # 切换生产相册并渲染
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 630, 25, 0, None)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
         canvas_prod = app.render()
         self.assertIsNotNone(canvas_prod)

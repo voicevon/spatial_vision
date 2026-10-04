@@ -320,16 +320,31 @@ def prompt_hardware_config(
         ttk.Label(frame, text="硬件序列号 / 设备号 (可留空自动识别):", font=("Segoe UI", 10, "bold")).grid(row=2, column=0, sticky="w", pady=(0, 4))
         serial_var = tk.StringVar(value=str(initial_serial or ""))
         serial_combo = ttk.Combobox(frame, textvariable=serial_var, width=38)
-        serial_opts = []
-        if available_devices:
-            for d in available_devices.get("realsense", []):
-                if d.get("serial"):
-                    serial_opts.append(d["serial"])
-            for d in available_devices.get("usb", []):
-                serial_opts.append(str(d.get("index", 0)))
-        if initial_serial and initial_serial not in serial_opts:
-            serial_opts.insert(0, initial_serial)
-        serial_combo["values"] = serial_opts
+
+        def update_serial_options(*args):
+            ctype = cam_type_var.get()
+            opts = []
+            if available_devices:
+                if ctype == "realsense":
+                    for d in available_devices.get("realsense", []):
+                        if d.get("serial"):
+                            opts.append(d["serial"])
+                else:
+                    for d in available_devices.get("usb", []):
+                        opts.append(str(d.get("index", 0)))
+            serial_combo["values"] = opts
+            cur_s = serial_var.get()
+            if not cur_s and opts:
+                serial_var.set(opts[0])
+
+        cam_type_var.trace_add("write", update_serial_options)
+        update_serial_options()
+        if initial_serial and initial_serial not in serial_combo["values"]:
+            vals = list(serial_combo["values"])
+            vals.insert(0, initial_serial)
+            serial_combo["values"] = vals
+            serial_var.set(initial_serial)
+
         serial_combo.grid(row=3, column=0, columnspan=2, sticky="we", pady=(0, 10))
 
         # 3. 图像物理分辨率规格 (单一真理源)

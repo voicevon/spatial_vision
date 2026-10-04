@@ -201,7 +201,7 @@ class TestIntrinsicsCalibratorAndGallery(unittest.TestCase):
             shutil.rmtree(temp_root, ignore_errors=True)
 
     def test_hub_hit_tester_and_intrinsics_calib_button(self):
-        """测试命中检测：内参标定按钮与带偏移量的卡片点击"""
+        """测试命中检测：相机&内参只读状态与原位编辑模式交互"""
         temp_root = tempfile.mkdtemp(prefix="test_hit_")
         try:
             mgr = WorkspaceManager(workspaces_dir=temp_root)
@@ -213,16 +213,18 @@ class TestIntrinsicsCalibratorAndGallery(unittest.TestCase):
             renderer = HubRenderer()
             hit_tester = HubHitTester(renderer)
 
-            # 1. 点击 [标定内参] 按钮 (x: 830~950, y: 74~110)
-            action = hit_tester.hit_test(850, 85, hub_state)
-            self.assertEqual(action, "run_intrinsics_calib")
+            # 1. 顶部固定双行控制卡片按钮命中 (零晃动)
+            self.assertEqual(hit_tester.hit_test(890, 75, hub_state), "intr_refresh_devices")
+            self.assertEqual(hit_tester.hit_test(890, 110, hub_state), "intr_edit_config")
 
-            # 2. grid_hit_test 带 y_offset 验证
+            # 2. 板块B：采图与标定内参按钮测试
+            self.assertEqual(hit_tester.hit_test(750, 165, hub_state), "run_capture_intrinsics")
+            self.assertEqual(hit_tester.hit_test(850, 165, hub_state), "run_intrinsics_calib")
+
+            # 3. grid_hit_test 带固定 y_offset=158 验证 (高度恒定零晃动)
             self.assertEqual(grid_hit_test(360, 90, y_offset=0), 0)
-            # 当 y_offset=74 时，y=90 落在顶部看板区，不在卡片网格内
-            self.assertIsNone(grid_hit_test(360, 90, y_offset=74))
-            # 当 y_offset=74 时，y=170 准确命中第 0 个卡片
-            self.assertEqual(grid_hit_test(360, 170, y_offset=74), 0)
+            self.assertIsNone(grid_hit_test(360, 140, y_offset=158))
+            self.assertIsNotNone(grid_hit_test(360, 250, y_offset=158))
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 

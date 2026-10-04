@@ -33,6 +33,7 @@ from tools.workspace_hub.hub_renderer import (
     point_in_rect
 )
 from src.utils.logger import get_logger
+from src.devices.camera_service import CameraService
 
 log = get_logger(__name__)
 
@@ -119,9 +120,10 @@ class WorkspaceHubApp(BaseCvApp):
         "run_capture_intrinsics": lambda app: app._launch_capture_wizard("intrinsics"),
         "run_capture_calib": lambda app: app._launch_capture_wizard("calibration"),
         "run_capture_prod": lambda app: app._launch_capture_wizard("production"),
+        "intr_refresh_devices": lambda app: app._action_refresh_hardware_devices(),
+        "intr_edit_config": lambda app: app._action_edit_hardware_config(),
         "ws_rename": lambda app: app.workspace_handler.handle_rename_workspace(),
         "ws_open_dir": lambda app: app.workspace_handler.handle_open_directory(),
-        "ws_edit_hardware": lambda app: app.workspace_handler.handle_edit_hardware(),
         "ws_edit_desc": lambda app: app.workspace_handler.handle_edit_description(),
         "ws_toggle_prod_mode": lambda app: app.state.cycle_workspace_production_mode(),
         "dropdown_dismiss": lambda app: setattr(app.state, "active_dropdown", None),
@@ -338,6 +340,80 @@ class WorkspaceHubApp(BaseCvApp):
         else:
             self.state.set_toast(f"内参标定失败: {res.message}")
 
+    def _action_refresh_hardware_devices(self):
+        """原位重新扫描物理设备，热更新当前工位绑定的设备序列号"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法刷新设备！")
+            return
+        try:
+            devs = CameraService.probe_available_devices()
+            rs_list = devs.get("realsense", [])
+            usb_list = devs.get("usb", [])
+            cur_type = getattr(ws, "camera_type", "realsense") or "realsense"
+            new_serial = getattr(ws, "camera_serial", "") or ""
+
+            if cur_type == "realsense":
+                new_serial = rs_list[0]["serial"] if rs_list else ""
+            else:
+                new_serial = str(usb_list[0]["index"]) if usb_list else "0"
+
+            self.workspace_mgr.update_workspace_hardware(
+                workspace_id=ws.workspace_id,
+                camera_type=cur_type,
+                camera_serial=new_serial,
+                camera_resolution=ws.camera_resolution
+            )
+            self.state.refresh_workspaces()
+            self.state.set_toast(f"已刷新物理设备: 发现 {len(rs_list)} 台 RealSense, {len(usb_list)} 台 USB 相机")
+        except Exception as e:
+            self.state.set_toast(f"刷新设备异常: {e}")
+
+    def _action_edit_hardware_config(self):
+        """响应点击【修改配置】：若工位存在历史图像则锁定禁止修改；空白工位弹出配置窗"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法配置硬件！")
+            return
+
+        total_imgs = (
+            ws.get_image_count("intrinsics")
+            + ws.get_image_count("calibration")
+            + ws.get_image_count("production")
+        )
+        if total_imgs > 0:
+            self.state.set_toast(f"工位【{ws.name}】已锁定硬件配置 (已有 {total_imgs} 帧照片保护)，禁止修改！")
+            return
+
+        devs = CameraService.probe_available_devices()
+        cur_type = getattr(ws, "camera_type", "realsense") or "realsense"
+        cur_serial = getattr(ws, "camera_serial", "") or ""
+        cur_res = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
+
+        from src.ui.dialog_utils import prompt_hardware_config
+        form_res = prompt_hardware_config(
+            title=f"配置工位【{ws.name}】硬件规格",
+            initial_camera_type=cur_type,
+            initial_serial=cur_serial,
+            initial_resolution=cur_res,
+            available_devices=devs
+        )
+        if not form_res:
+            self.state.set_toast("已取消修改相机硬件与分辨率。")
+            return
+
+        ok, msg = self.workspace_mgr.update_workspace_hardware(
+            workspace_id=ws.workspace_id,
+            camera_type=form_res["camera_type"],
+            camera_serial=form_res["camera_serial"],
+            camera_resolution=form_res["camera_resolution"]
+        )
+        if ok:
+            self.state.refresh_workspaces()
+            self.state.set_toast(f"工位【{ws.name}】硬件配置已更新: {form_res['camera_type']} @ {ws.resolution_str}")
+        else:
+            self.state.set_toast(f"硬件配置更新失败: {msg}")
+
     def _run_subtool(self, cmd: list, desc: str):
         """统一子工具拉起执行器：销毁主窗、运行子工具、恢复环境与刷新状态"""
         self.state.set_toast(f"正在唤起 {desc}...")
@@ -364,6 +440,7 @@ class WorkspaceHubApp(BaseCvApp):
         ws = self.state.get_selected_workspace()
         if not ws:
             return
+        self.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
         cmd = [sys.executable, "-m", "tools.spatial_mapping_studio",
                "--workspace", ws.workspace_id,
                "--images", ws.calib_raw_images_dir,

@@ -153,6 +153,9 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         if marker_size_mm is None:
             ws_dir = self.current_workspace.workspace_dir if self.current_workspace else None
             loaded = load_workspace_marker_size_mm(ws_dir) if ws_dir else None
+            if loaded is None and self.workspace_mgr and self.current_workspace:
+                self.workspace_mgr.ensure_tag_whitelist(self.current_workspace.workspace_id)
+                loaded = load_workspace_marker_size_mm(ws_dir)
             if loaded is None:
                 raise ValueError(
                     "未指定标靶物理边长 (marker_size_mm), 且当前工位 tag_whitelist.yaml.tag_default_size_mm 缺失或非法. "

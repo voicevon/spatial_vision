@@ -112,6 +112,29 @@ class TestWorkspaceHardwareBinding(unittest.TestCase):
         self.assertEqual(wiz.resolution, "1920x1080")
         self.assertEqual((wiz.frame_w, wiz.frame_h), (1920, 1080))
 
+    def test_hub_hardware_edit_lock_defense(self):
+        """测试在已有照片时锁定硬件修改，未锁定空白工位允许修改"""
+        from tools.workspace_hub.app import WorkspaceHubApp
+        import numpy as np
+        import cv2
+
+        ws = self.mgr.create_workspace(alias="锁定测试工位")
+        app = WorkspaceHubApp(workspace_mgr=self.mgr)
+        app.state.select_tree_workspace(0)
+        cur_ws = app.state.get_selected_workspace()
+        self.assertIsNotNone(cur_ws)
+
+        # 1. 模拟向工位写入一张测试照片，使其处于锁定状态
+        test_img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        img_p = os.path.join(cur_ws.intrinsics_raw_images_dir, "test_lock.png")
+        cv2.imwrite(img_p, test_img)
+        self.assertGreater(cur_ws.get_image_count("intrinsics"), 0)
+
+        # 尝试触发修改硬件，应被防御拦截
+        app._action_edit_hardware_config()
+        self.assertIn("已锁定硬件配置", app.state.toast_msg)
+        self.assertIn("禁止修改", app.state.toast_msg)
+
 
 if __name__ == "__main__":
     unittest.main()

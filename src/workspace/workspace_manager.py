@@ -258,6 +258,28 @@ class Workspace:
         os.makedirs(self.calib_visualized_dir, exist_ok=True)
         os.makedirs(self.prod_raw_images_dir, exist_ok=True)
 
+        # 确保工位核心资产文件就绪 (单一真理源自愈)
+        if not os.path.exists(self.whitelist_path):
+            try:
+                with open(self.whitelist_path, "w", encoding="utf-8") as f:
+                    yaml.dump({
+                        "workspace_id": self.workspace_id,
+                        "workspace_name": self.name,
+                        "tag_default_size_mm": 40.0,
+                        "tags": {},
+                        "notes": "工位物理标靶单一真理源 (Tag 准入与世界锚点原子化统一定义): tags 字典留空 = 探索模式放行所有检测标靶；非空时仅放行字典内标靶",
+                    }, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            except Exception as e:
+                log.warning(f"创建默认 tag_whitelist.yaml 失败: {e}")
+
+        if not os.path.exists(self.spatial_scene_path):
+            try:
+                from src.workspace.coordinate_manager import CoordinateTreeManager
+                coord_mgr = CoordinateTreeManager(workspace_id=self.workspace_id, spatial_scene_path=self.spatial_scene_path)
+                coord_mgr.save()
+            except Exception as e:
+                log.warning(f"创建默认 spatial_scene.yaml 失败: {e}")
+
     def refresh_stats(self):
         """快速刷新物理磁盘状态并持久化至元数据缓存"""
         self.ensure_directories()

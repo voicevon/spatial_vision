@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 18:56:19"
+    "updated_at": "2026-10-04 20:44:52"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -31,10 +31,10 @@
     "updated_at": "2026-09-28 15:46:32"
   },
   "workspace_hub": {
-    "scale_pct": 120,
+    "scale_pct": 110,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 18:57:01",
+    "updated_at": "2026-10-04 20:31:53",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
@@ -52,11 +52,9 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 17:36:07",
+    "updated_at": "2026-10-04 20:32:36",
     "viewer_state": {
-      "camera_type": "realsense",
-      "resolution": "1920x1080",
-      "purpose": "production"
+      "purpose": "intrinsics"
     }
   },
   "asparagus_offline": {
@@ -148,17 +146,17 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 17:35:49"
+    "updated_at": "2026-10-04 20:44:46"
   },
   "isolate_wheels_production": {
     "scale_pct": 100,
-    "canvas_w": 1366,
-    "canvas_h": 705,
-    "updated_at": "2026-10-04 17:36:01"
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-10-04 20:45:22"
   },
   "spatial_mapping_studio": {
     "dropdown_state": {
-      "workspace_id": "20260918_220646_Only15",
+      "workspace_id": "20260916_145246_Home_real",
       "filter_mode": "all",
       "sort_mode": "name_asc",
       "ba_view_mode": "3d",
@@ -167,7 +165,7 @@
       "plane_z": 200.0
     },
     "viewer_state": {
-      "workspace_id": "20260918_220646_Only15",
+      "workspace_id": "20260916_145246_Home_real",
       "filter_mode": "all",
       "sort_mode": "name_asc",
       "ba_view_mode": "3d",
@@ -175,6 +173,6 @@
       "show_xy_plane": true,
       "plane_z": 200.0
     },
-    "updated_at": "2026-10-03 22:11:28"
+    "updated_at": "2026-10-04 20:44:25"
   }
 }
