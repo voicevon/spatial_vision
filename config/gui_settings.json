@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 20:44:52"
+    "updated_at": "2026-10-05 20:27:58"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -173,6 +173,6 @@
       "show_xy_plane": true,
       "plane_z": 200.0
     },
-    "updated_at": "2026-10-04 20:44:25"
+    "updated_at": "2026-10-05 20:34:56"
   }
 }

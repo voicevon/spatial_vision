@@ -14,6 +14,7 @@ Workspace Hub 相册状态机 (GalleryState)
 """
 
 import os
+import re
 import glob
 import time
 from collections import OrderedDict
@@ -22,34 +23,12 @@ import cv2
 import numpy as np
 
 from src.utils.logger import get_logger
+from src.utils.image_io import imread_unicode, imwrite_unicode
 
 log = get_logger(__name__)
 
 
-def imread_unicode(filepath: str, flags: int = cv2.IMREAD_COLOR) -> np.ndarray | None:
-    """兼容 Windows 中文/特殊字符物理路径的鲁棒图像读取 (np.fromfile + cv2.imdecode)"""
-    if not os.path.exists(filepath):
-        return None
-    try:
-        data = np.fromfile(filepath, dtype=np.uint8)
-        if data is None or len(data) == 0:
-            return None
-        return cv2.imdecode(data, flags)
-    except Exception:
-        return None
 
-
-def imwrite_unicode(filepath: str, img: np.ndarray) -> bool:
-    """兼容 Windows 中文/特殊字符物理路径的鲁棒图像写入 (cv2.imencode + tofile)"""
-    try:
-        ext = os.path.splitext(filepath)[1]
-        ok, buf = cv2.imencode(ext, img)
-        if ok and buf is not None:
-            buf.tofile(filepath)
-            return True
-        return False
-    except Exception:
-        return False
 
 
 class GalleryState:
@@ -425,9 +404,12 @@ class GalleryState:
         max_idx = 0
         for f in existing:
             base = os.path.basename(f)
-            num_part = base.replace(prefix, "").replace(".png", "")
-            if num_part.isdigit():
-                max_idx = max(max_idx, int(num_part))
+            m = re.match(rf"^{prefix}(\d+)\.png$", base)
+            if m:
+                try:
+                    max_idx = max(max_idx, int(m.group(1)))
+                except ValueError:
+                    pass
 
         new_idx = max_idx + 1
         filename = f"{prefix}{new_idx:04d}.png"

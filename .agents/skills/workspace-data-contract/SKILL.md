@@ -11,18 +11,18 @@ description: Reference guide and data contract for spatial_vision workspace dire
 
 ```text
 data/workspaces/<workspace_id>/
-├── workspace.yaml              # 工位元数据 (ID, 名称, 创建时间, 锁定相机类型与分辨率)
+├── workspace_meta.yaml         # 工位元数据 (ID, 名称, 创建时间, 锁定相机类型与分辨率)
 ├── tag_whitelist.yaml          # 【标靶准入与世界锚点唯一真理源】
 ├── spatial_scene.yaml          # 【空间场景多坐标系树与 ROI 物件真理源】
 ├── intrinsics/                 # 【图集一：相机内参专区】
-│   ├── raw_images/             # 内参标定原始采图 (view_XXXX.png)
+│   ├── raw_images/             # 内参标定原始采图 (intr_XXXX.png)
 │   └── camera_intrinsics.yaml  # 工位内参报告 (fx, fy, cx, cy, k1, k2, p1, p2, k3)
 ├── calibration/                # 【图集二：外参建图专区】
-│   ├── raw_images/             # 多视角外参采图 (view_XXXX.png)
+│   ├── raw_images/             # 多视角外参采图 (calib_XXXX.png)
 │   ├── visualized/             # BA 平差与重投影可视化结果
 │   └── tags_map.yaml           # 解算产物: 标靶 3D 姿态与世界坐标地图
 └── production/                 # 【图集三：生产业务专区】
-    └── raw_images/             # 现场采图样本
+    └── raw_images/             # 现场采图样本 (prod_XXXX.png)
 ```
 
 ## 2. 标靶准入与世界锚点契约 (`tag_whitelist.yaml`)
@@ -56,5 +56,9 @@ tags:
 
 ## 4. 图像命名与防覆盖规范
 
-- 所有图集下的相机原始帧一律采用 `view_XXXX.png`（4 位补零，从 1 起始）；
-- 采图向导与业务存储必须通过解析目录已有最大序列号自增，严禁直接使用 `len(glob)` 导致跳号删帧后覆盖已有图片。
+三大图集遵循语义化文件命名前缀（4 位补零，从 1 起始）：
+- **相机内参标定图集** (`intrinsics/raw_images/`): `intr_XXXX.png`
+- **外参空间建图图集** (`calibration/raw_images/`): `calib_XXXX.png`
+- **生产现场采样图集** (`production/raw_images/`): `prod_XXXX.png`
+
+采图向导 (`capture_wizard.py`) 与 Hub 原地采图必须通过解析对应用途已有最大序列号自增，严禁直接使用 `len(glob)` 导致跳号删帧后覆盖已有图片。

@@ -79,7 +79,7 @@ def check_env_status(force_refresh: bool = False) -> dict:
 
     # 采图数据集统计 (以当前工位为主)
     if current_ws:
-        status['calib_image_count'] = current_ws.image_count
+        status['calib_image_count'] = current_ws.extrinsic_calib_image_count
         status['prod_image_count'] = current_ws.prod_image_count
         status['has_tag_map'] = current_ws.ba_solved
         status['has_manifest'] = os.path.exists(current_ws.calib_manifest_path)

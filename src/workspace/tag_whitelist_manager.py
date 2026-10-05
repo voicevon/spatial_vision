@@ -113,7 +113,7 @@ def load_workspace_tag_config(workspace_dir: str) -> Dict[str, Any]:
                 if not isinstance(v, dict):
                     v = {}
                 clean_item = {}
-                raw_xyz = v.get("xyz_mm") or v.get("coords") or v.get("position_mm")
+                raw_xyz = v.get("xyz_mm")
                 if raw_xyz is not None and isinstance(raw_xyz, (list, tuple)):
                     xyz_f = []
                     for val in raw_xyz[:3]:

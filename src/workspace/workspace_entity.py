@@ -40,7 +40,7 @@ class Workspace:
     camera_resolution: List[int] = field(default_factory=lambda: [1920, 1080])  # 工位锁定的标准相机物理分辨率 [宽, 高]
 
     # 状态与指标
-    image_count: int = 0                   # 外参建图图片数
+    extrinsic_calib_image_count: int = 0   # 外参建图图片数
     prod_image_count: int = 0              # 生产采图数
     intrinsics_image_count: int = 0        # 相机内参标定图片数
     active_image_count: int = 0            # 标定有效帧数
@@ -208,24 +208,19 @@ class Workspace:
         return os.path.join(self.workspace_dir, "production")
 
     @property
-    def prod_dir(self) -> str:
-        """【图集三】生产业务专区根目录 (production_dir 别名)"""
-        return self.production_dir
-
-    @property
     def prod_raw_images_dir(self) -> str:
         """【图集三】生产现场原始采样图像存储目录"""
-        return os.path.join(self.prod_dir, "raw_images")
+        return os.path.join(self.production_dir, "raw_images")
 
     @property
     def prod_reports_dir(self) -> str:
         """生产执行质检单与在线盲测报告目录"""
-        return os.path.join(self.prod_dir, "reports")
+        return os.path.join(self.production_dir, "reports")
 
     @property
     def prod_results_dir(self) -> str:
         """生产分拣位姿、点云或中间诊断数据目录"""
-        return os.path.join(self.prod_dir, "results")
+        return os.path.join(self.production_dir, "results")
 
     # ------------------------------ 多用途通用辅助 ------------------------------
     def get_raw_images_dir(self, purpose: str = "calibration") -> str:
@@ -288,7 +283,7 @@ class Workspace:
         calib_files = []
         for ext in img_exts:
             calib_files.extend(glob.glob(os.path.join(self.calib_raw_images_dir, ext)))
-        self.image_count = len(calib_files)
+        self.extrinsic_calib_image_count = len(calib_files)
 
         # 2. 生产采样图片数
         prod_files = []
@@ -311,7 +306,7 @@ class Workspace:
                 active_count = 0
                 seen_tags = set()
                 for img in images_dict.values():
-                    tags_list = img.get("observations") or img.get("tags") or []
+                    tags_list = img.get("observations") or []
                     if tags_list:
                         active_count += 1
                         for t in tags_list:
@@ -338,7 +333,6 @@ class Workspace:
                 rmse = (
                     map_data.get("rmse_reprojection_px")
                     or meta.get("rmse_reprojection_px")
-                    or meta.get("rmse_reproj_px")
                     or 0.0
                 )
                 self.ba_solved = bool(len(tags_dict) > 0)
@@ -366,7 +360,7 @@ class Workspace:
             "camera_serial": self.camera_serial,
             "camera_resolution": list(self.resolution),
             "status": {
-                "image_count": self.image_count,
+                "extrinsic_calib_image_count": self.extrinsic_calib_image_count,
                 "prod_image_count": self.prod_image_count,
                 "intrinsics_image_count": self.intrinsics_image_count,
                 "active_image_count": self.active_image_count,
@@ -414,7 +408,7 @@ class Workspace:
         production = meta.get("production", {})
 
         status = meta.get("status", {})
-        image_count = status.get("image_count", 0)
+        extrinsic_calib_image_count = status.get("extrinsic_calib_image_count", 0)
         prod_image_count = status.get("prod_image_count", 0)
         intrinsics_image_count = status.get("intrinsics_image_count", 0)
         active_image_count = status.get("active_image_count", 0)
@@ -434,7 +428,7 @@ class Workspace:
             camera_type=camera_type,
             camera_serial=camera_serial,
             camera_resolution=camera_resolution,
-            image_count=image_count,
+            extrinsic_calib_image_count=extrinsic_calib_image_count,
             prod_image_count=prod_image_count,
             intrinsics_image_count=intrinsics_image_count,
             active_image_count=active_image_count,

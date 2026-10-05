@@ -77,19 +77,19 @@ class TestWorkspaceHub(unittest.TestCase):
         """测试 HubState 原地连拍保存与归档"""
         state = HubState(self.workspace_mgr)
         cur_ws = state.get_selected_workspace()
-        self.assertEqual(cur_ws.image_count, 0)
+        self.assertEqual(cur_ws.extrinsic_calib_image_count, 0)
 
         # 模拟生成并抓拍一帧
         test_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         saved_file = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file))
-        self.assertEqual(cur_ws.image_count, 1)
+        self.assertEqual(cur_ws.extrinsic_calib_image_count, 1)
         self.assertEqual(len(state.gallery.current_images), 1)
 
         # 再次抓拍第二帧
         saved_file2 = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file2))
-        self.assertEqual(cur_ws.image_count, 2)
+        self.assertEqual(cur_ws.extrinsic_calib_image_count, 2)
         self.assertEqual(len(state.gallery.current_images), 2)
 
     def test_hub_renderer_canvas(self):
@@ -419,7 +419,7 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertTrue(ok)
         self.assertFalse(os.path.exists(deleted_file), "被删除的照片文件应已从磁盘移除")
         self.assertEqual(len(state.gallery.current_images), initial_count - 1)
-        self.assertEqual(ws.image_count, initial_count - 1)
+        self.assertEqual(ws.extrinsic_calib_image_count, initial_count - 1)
 
         # 3. 键盘 [Del] 对应的状态层删除逻辑
         del_target = state.gallery.current_images[0]
@@ -703,16 +703,16 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertIsNotNone(ws)
 
         # 模拟数据矛盾场景：元数据记录标定 22 帧，但物理目录为空 (0 帧)
-        ws.image_count = 22
+        ws.extrinsic_calib_image_count = 22
         ws.save_meta()
-        self.assertEqual(ws.image_count, 22)
+        self.assertEqual(ws.extrinsic_calib_image_count, 22)
 
         # 触发 [更新元数据] 按钮 (卡片1底栏左侧, x=430, y=205)
         app.state.active_tab = HubState.TAB_REPORT
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 430, 205, 0, None)
 
         # 验证自动核验自愈：已同步至物理真实照片数，且元数据已更新
-        self.assertEqual(ws.image_count, ws.get_image_count("calibration"))
+        self.assertEqual(ws.extrinsic_calib_image_count, ws.get_image_count("calibration"))
         self.assertIn("已", app.state.toast_msg)
 
     def test_prod_images_loading_and_gallery_separation(self):

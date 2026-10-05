@@ -147,7 +147,21 @@ class WorkspaceHubApp(BaseCvApp):
         "roi_scrollbar_click": lambda app, h: app.state.geometry.jump_roi_scroll_by_y(h[1]),
         "frame_roi_edit": lambda app, h: app.state.geometry.open_roi_modal(h[1]),
         "frame_roi_delete": lambda app, h: app._action_delete_roi(h[1]),
+        "grid_item": lambda app, h: app._action_select_grid_item(h[1]),
     }
+
+    def _action_select_grid_item(self, target_idx: int):
+        """响应相册网格卡片点击：选中对应照片"""
+        tab = self.state.active_tab
+        if tab == HubState.TAB_INTRINSICS_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.intrinsics_images):
+                self.state.gallery.select_intrinsics_image_at_index(target_idx)
+        elif tab == HubState.TAB_PROD_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.prod_images):
+                self.state.gallery.select_prod_image_at_index(target_idx)
+        elif tab == HubState.TAB_CALIB_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.current_images):
+                self.state.gallery.select_image_at_index(target_idx)
 
     def _action_dropdown_toggle(self, dd_type: str):
         """响应下拉框的展开/收起切换"""
@@ -268,8 +282,8 @@ class WorkspaceHubApp(BaseCvApp):
             self._PARAMETRIC_DISPATCH[hit[0]](self, hit)
             return
 
-        # 5. 相册卡片网格墙点击: 单击选中卡片
-        y_offset = 74 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+        # 5. 相册卡片网格墙点击: 单击选中卡片 (兜底)
+        y_offset = 158 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
         cell_idx = grid_hit_test(x, y, y_offset=y_offset)
         if cell_idx is not None:
             tab = self.state.active_tab
@@ -293,7 +307,7 @@ class WorkspaceHubApp(BaseCvApp):
                 self.state.gallery.toggle_expanded_preview()
                 return
         else:
-            y_offset = 74 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+            y_offset = 158 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
             cell_idx = grid_hit_test(x, y, y_offset=y_offset)
             allowed_tabs = (HubState.TAB_INTRINSICS_IMAGES, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES)
             if cell_idx is not None and self.state.active_tab in allowed_tabs:

@@ -124,19 +124,19 @@ class DashboardPageRenderer:
         draw_text(canvas, "样本采样与观测有效性 (Observations)", (card_x + 16, c3_y + 11), font_size=14, color=self.r.COLOR_WHITE, bold=True)
         cv2.line(canvas, (card_x + 16, c3_y + 36), (card_x + card_w - 16, c3_y + 36), self.r.COLOR_BORDER, 1)
 
-        disk_calib = sc.get_image_count("calibration") if hasattr(sc, "get_image_count") else sc.image_count
+        disk_calib = sc.get_image_count("calibration") if hasattr(sc, "get_image_count") else sc.extrinsic_calib_image_count
         disk_prod = sc.get_image_count("production") if hasattr(sc, "get_image_count") else sc.prod_image_count
-        is_consistent = (sc.image_count == disk_calib and sc.prod_image_count == disk_prod)
-        valid_ratio = (sc.active_image_count / max(1, sc.image_count)) * 100.0 if sc.image_count > 0 else 0.0
+        is_consistent = (sc.extrinsic_calib_image_count == disk_calib and sc.prod_image_count == disk_prod)
+        valid_ratio = (sc.active_image_count / max(1, sc.extrinsic_calib_image_count)) * 100.0 if sc.extrinsic_calib_image_count > 0 else 0.0
 
         if not is_consistent:
-            draw_text(canvas, f"• 刷新元数据 : ⚠ 存在偏差 (记录标定 {sc.image_count} 帧, 物理实际 {disk_calib} 帧)",
+            draw_text(canvas, f"• 刷新元数据 : ⚠ 存在偏差 (记录标定 {sc.extrinsic_calib_image_count} 帧, 物理实际 {disk_calib} 帧)",
                       (card_x + 18, c3_y + 44), font_size=12, color=self.r.COLOR_GOLD, bold=True)
         else:
             draw_text(canvas, f"• 刷新元数据 : ● 物理磁盘与元数据 100% 同步一致",
                       (card_x + 18, c3_y + 44), font_size=12, color=(0, 255, 180))
 
-        draw_text(canvas, f"• 场景物理原始照片 : 记录 {sc.image_count} 帧 | 物理实际 {disk_calib} 帧", (card_x + 18, c3_y + 69), font_size=12, color=self.r.COLOR_GRAY)
+        draw_text(canvas, f"• 场景物理原始照片 : 记录 {sc.extrinsic_calib_image_count} 帧 | 物理实际 {disk_calib} 帧", (card_x + 18, c3_y + 69), font_size=12, color=self.r.COLOR_GRAY)
         draw_text(canvas, f"• 参与平差有效样本 : {sc.active_image_count} 帧 (放行率 {valid_ratio:.1f}%)",
                   (card_x + 18, c3_y + 94), font_size=12, color=(0, 240, 180) if valid_ratio > 80 else self.r.COLOR_GOLD)
         draw_text(canvas, f"• 场景覆盖标靶标签 : {len(sc.valid_tag_ids)} 个唯一 AprilTag", (card_x + 18, c3_y + 119), font_size=12, color=self.r.COLOR_CYAN)
@@ -152,7 +152,7 @@ class DashboardPageRenderer:
         cv2.line(canvas, (card_x + 16, c4_y + 36), (card_x + card_w - 16, c4_y + 36), self.r.COLOR_BORDER, 1)
 
         span_mm = getattr(sc, "spatial_span_mm", 685.0 if sc.ba_solved else 0.0)
-        loop_cnt = getattr(sc, "loop_closures", max(15, sc.image_count * 3) if sc.ba_solved else 0)
+        loop_cnt = getattr(sc, "loop_closures", max(15, sc.extrinsic_calib_image_count * 3) if sc.ba_solved else 0)
         draw_text(canvas, f"• 空间基线物理最大跨度 : {span_mm:.1f} mm (立体视野覆盖)", (card_x + 18, c4_y + 44), font_size=12, color=self.r.COLOR_GRAY)
         draw_text(canvas, f"• 空间闭环刚性几何约束 : {loop_cnt} 条跨视角闭环", (card_x + 18, c4_y + 68), font_size=12, color=(0, 240, 180) if loop_cnt >= 10 else self.r.COLOR_GOLD)
 

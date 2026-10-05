@@ -406,7 +406,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             return []
         opts = []
         for s in self.workspace_mgr.list_workspaces():
-            opts.append((s.workspace_id, f"{s.name} ({s.image_count}帧)"))
+            opts.append((s.workspace_id, f"{s.name} ({s.extrinsic_calib_image_count}帧)"))
         return opts
 
     @property

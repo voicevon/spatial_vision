@@ -132,6 +132,8 @@ def calibrate_camera_from_images(
     cx = float(mtx[0, 2])
     cy = float(mtx[1, 2])
     dist_list = [float(x) for x in dist.ravel()[:5]]
+    while len(dist_list) < 5:
+        dist_list.append(0.0)
 
     return IntrinsicsCalibrationResult(
         success=True,

@@ -45,7 +45,7 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
     # ---------------- 1. 物理照片与元数据一致性核验 ----------------
     disk_calib = ws.get_image_count("calibration")
     disk_prod = ws.get_image_count("production")
-    recorded_calib = ws.image_count
+    recorded_calib = ws.extrinsic_calib_image_count
     recorded_prod = ws.prod_image_count
 
     img_synced = (disk_calib == recorded_calib and disk_prod == recorded_prod)

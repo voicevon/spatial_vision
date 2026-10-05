@@ -1269,7 +1269,7 @@ class GuiLauncherApp:
             curr_y += max(3, int(5 * s))
 
             cv2.circle(canvas, (bullet_icon_x, curr_y + max(5, int(7 * s))), max(2, int(3 * s)), (180, 160, 100), -1)
-            curr_y = draw_multiline_text(canvas, f"工位标定样本: 已采集 {act_ws.image_count} 帧原始图集",
+            curr_y = draw_multiline_text(canvas, f"工位标定样本: 已采集 {act_ws.extrinsic_calib_image_count} 帧原始图集",
                                          (bullet_text_x, curr_y), max_width=bullet_w,
                                          font_size=max(9, int(12 * s)), color=(190, 205, 220), line_spacing=max(2, int(4 * s)))
             curr_y += max(3, int(5 * s))

@@ -41,6 +41,7 @@ from src.workspace.workspace_manager import WorkspaceManager, Workspace
 from src.devices.camera_service import CameraService
 from src.ui.text_rendering import draw_text
 from src.utils.logger import get_logger
+from src.utils.image_io import imwrite_unicode
 from src.ui.base_cv_app import BaseCvApp
 from tools.capture.renderer import (
     CaptureRenderer, COLOR_ACCENT, COLOR_TEXT_SUB, COL_YELLOW)
@@ -129,15 +130,25 @@ class CaptureWizard(BaseCvApp):
         os.makedirs(self.output_dir, exist_ok=True)
         self.image_count = self._scan_max_image_index()
 
+    @property
+    def image_prefix(self) -> str:
+        """根据当前采集用途确定文件命名前缀 (intr_ / calib_ / prod_)"""
+        if self.purpose == "intrinsics":
+            return "intr_"
+        elif self.purpose == "production":
+            return "prod_"
+        return "calib_"
+
     def _scan_max_image_index(self) -> int:
-        """扫描输出目录下已有的 view_XXXX.png 最大序号，保证自增不重复且防止跳号覆盖"""
+        """扫描输出目录下已有的对应前缀照片最大序号，保证自增不重复且防止跳号覆盖"""
         if not os.path.isdir(self.output_dir):
             return 0
-        existing = glob.glob(os.path.join(self.output_dir, "view_*.png"))
+        pfx = self.image_prefix
+        existing = glob.glob(os.path.join(self.output_dir, f"{pfx}*.png"))
         max_idx = 0
         for fpath in existing:
             base = os.path.basename(fpath)
-            m = re.match(r"^view_(\d+)\.png$", base)
+            m = re.match(rf"^{pfx}(\d+)\.png$", base)
             if m:
                 try:
                     max_idx = max(max_idx, int(m.group(1)))
@@ -300,9 +311,13 @@ class CaptureWizard(BaseCvApp):
                 return ""
 
         self.image_count += 1
-        raw_filename = f"view_{self.image_count:04d}.png"
+        raw_filename = f"{self.image_prefix}{self.image_count:04d}.png"
         raw_filepath = os.path.join(self.output_dir, raw_filename)
-        cv2.imwrite(raw_filepath, raw_frame)
+        ok = imwrite_unicode(raw_filepath, raw_frame)
+        if not ok:
+            self.set_toast(f"快照保存失败: {raw_filename}")
+            log.error(f"[CAPTURE] 快照写入磁盘失败: {raw_filepath}")
+            return ""
         log.info(f"[CAPTURE] [{self.purpose}] 快照 #{self.image_count} ({w}x{h}) 拍摄成功: {raw_filepath}")
 
         # 同步更新工位元数据

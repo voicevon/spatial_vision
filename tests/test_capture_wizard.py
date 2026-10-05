@@ -142,7 +142,7 @@ class TestCaptureWizard(unittest.TestCase):
 
         self.assertEqual(wiz.image_count, 1)
         self.assertTrue(os.path.exists(path))
-        self.assertTrue(os.path.basename(path).startswith("view_0001"))
+        self.assertTrue(os.path.basename(path).startswith("calib_0001"))
 
         # 2. 规格失配 (720P: 1280x720) 试图写入 1080P 工位 -> 防呆拒绝保存
         frame_mismatch = np.full((720, 1280, 3), 60, dtype=np.uint8)
@@ -187,22 +187,22 @@ class TestCaptureWizard(unittest.TestCase):
     def test_non_continuous_image_index_avoid_overwrite(self):
         """测试目录存在跳号帧时，自动识别最大序号并顺延，绝不覆盖已有文件"""
         wiz = make_wizard()
-        # 预先制造跳号文件: view_0001.png, view_0004.png (总数2张, 但最大号为4)
+        # 预先制造跳号文件: calib_0001.png, calib_0004.png (总数2张, 但最大号为4)
         dummy = np.zeros((1080, 1920, 3), dtype=np.uint8)
         import cv2
-        cv2.imwrite(os.path.join(wiz.output_dir, "view_0001.png"), dummy)
-        cv2.imwrite(os.path.join(wiz.output_dir, "view_0004.png"), dummy)
+        cv2.imwrite(os.path.join(wiz.output_dir, "calib_0001.png"), dummy)
+        cv2.imwrite(os.path.join(wiz.output_dir, "calib_0004.png"), dummy)
 
         # 触发重新扫描
         wiz._update_output_dir()
         self.assertEqual(wiz.image_count, 4)
 
-        # 拍摄新照片，应当自增至 view_0005.png 而非覆盖已有的 view_0003 或 view_0004
+        # 拍摄新照片，应当自增至 calib_0005.png 而非覆盖已有的 calib_0003 或 calib_0004
         new_path = wiz.save_image(dummy)
         self.assertEqual(wiz.image_count, 5)
-        self.assertTrue(os.path.basename(new_path).startswith("view_0005"))
-        self.assertTrue(os.path.exists(os.path.join(wiz.output_dir, "view_0004.png")))
-        self.assertTrue(os.path.exists(os.path.join(wiz.output_dir, "view_0005.png")))
+        self.assertTrue(os.path.basename(new_path).startswith("calib_0005"))
+        self.assertTrue(os.path.exists(os.path.join(wiz.output_dir, "calib_0004.png")))
+        self.assertTrue(os.path.exists(os.path.join(wiz.output_dir, "calib_0005.png")))
 
     def test_hardware_exposure_delegation(self):
         """测试曝光调控与自动曝光委托至 CameraService 且安全设置 Toast"""

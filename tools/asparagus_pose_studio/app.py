@@ -176,7 +176,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
         opts = []
         for s in self.workspace_mgr.list_workspaces():
             status = f"RMSE: {s.global_rmse_px:.2f}px" if s.ba_solved else "未平差"
-            opts.append((s.workspace_id, f"{s.name} ({s.image_count}帧, {status})"))
+            opts.append((s.workspace_id, f"{s.name} ({s.extrinsic_calib_image_count}帧, {status})"))
         return opts
 
     @property

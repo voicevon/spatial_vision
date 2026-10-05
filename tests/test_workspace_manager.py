@@ -160,7 +160,7 @@ class TestWorkspaceManager(unittest.TestCase):
 
         # 刷新统计
         ws.refresh_stats()
-        self.assertEqual(ws.image_count, 2)
+        self.assertEqual(ws.extrinsic_calib_image_count, 2)
         self.assertEqual(ws.prod_image_count, 1)
 
 
