@@ -14,6 +14,7 @@ tools/capture/capture_wizard)：
 
 import os
 import math
+from typing import Tuple, Optional
 
 import numpy as np
 import cv2
@@ -179,7 +180,33 @@ class CameraService:
             pass
         return self.last_valid_frame
 
-    def toggle_auto_exposure(self):
+    def adjust_exposure(self, delta_us: float) -> Tuple[bool, str]:
+        """
+        微调物理相机手动曝光值 (微秒级)。
+        若当前处于自动曝光，会自动切为手动曝光。
+        返回: (成功标识, 提示信息)
+        """
+        if self.color_sensor is None:
+            return False, "当前未检测到 RealSense 物理彩色传感器"
+        if not HAVE_REALSENSE:
+            return False, "pyrealsense2 驱动未安装"
+        try:
+            if self.color_sensor.supports(rs.option.enable_auto_exposure):
+                is_auto = self.color_sensor.get_option(rs.option.enable_auto_exposure)
+                if is_auto > 0.5:
+                    self.color_sensor.set_option(rs.option.enable_auto_exposure, 0)
+
+            if self.color_sensor.supports(rs.option.exposure):
+                cur_exp = self.color_sensor.get_option(rs.option.exposure)
+                new_exp = max(10.0, min(1000.0, cur_exp + delta_us))
+                self.color_sensor.set_option(rs.option.exposure, new_exp)
+                return True, f"硬件手动曝光: {int(new_exp)} (按 [ 压暗 / ] 提亮)"
+            return False, "当前传感器不支持曝光调节"
+        except Exception as e:
+            log.warning(f"[Camera] 调节硬件曝光失败: {e}")
+            return False, f"调曝光失败: {e}"
+
+    def toggle_auto_exposure(self) -> Optional[str]:
         """乒乓切换自动曝光; 返回描述文本, 无彩色传感器或不支持返回 None"""
         if self.color_sensor is None:
             return None

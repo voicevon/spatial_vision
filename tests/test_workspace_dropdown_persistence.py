@@ -8,6 +8,9 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.workspace.workspace_manager import WorkspaceManager
+import tools.capture.capture_wizard as capture_wizard_mod
+import tools.spatial_mapping_studio.app as mapping_studio_mod
+import tools.asparagus_pose_studio.data_io as asparagus_io_mod
 from tools.capture.capture_wizard import CaptureWizard
 from tools.spatial_mapping_studio.app import SpatialMappingStudioApp
 from tools.asparagus_pose_studio import AsparagusPoseStudioApp
@@ -17,6 +20,12 @@ class TestWorkspaceDropdownPersistence(unittest.TestCase):
         # 当前工位为类级运行时状态, 用例间显式重置防串扰
         WorkspaceManager._current_ws_id = None
         self.test_dir = tempfile.mkdtemp(prefix='test_ws_persist_')
+        # 隔离 GUI 偏好文件: 绝不触碰真实 config/gui_settings.json
+        tmp_settings = os.path.join(self.test_dir, 'gui_settings.json')
+        for mod in (capture_wizard_mod, mapping_studio_mod, asparagus_io_mod):
+            p = patch.object(mod, 'GUI_SETTINGS_FILE', tmp_settings)
+            p.start()
+            self.addCleanup(p.stop)
         self.workspaces_dir = os.path.join(self.test_dir, 'workspaces')
         os.makedirs(self.workspaces_dir, exist_ok=True)
         self.config_path = os.path.join(self.test_dir, 'config.yaml')

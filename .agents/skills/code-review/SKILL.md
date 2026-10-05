@@ -22,13 +22,9 @@ Use this skill whenever the user asks for a code review, checks staged/uncommitt
 
 Evaluate code against the following dimensions:
 
-### A. Architectural Integrity & Project Rules (Strict)
-- **Zero Backward Compatibility**:
-  - Verify that no deprecated fields, legacy fallback switches, or compatibility shims are being added or retained.
-  - Verify that data models adhere strictly to the Single Source of Truth (SSOT).
-- **Temporary File Isolation**:
-  - Verify that debug scripts, scratch notebooks, and temporary image/data outputs strictly reside under the project root's `temp/` folder.
-  - Verify that production pipelines and unit tests NEVER depend on files inside `temp/`.
+### A. 项目架构准则审查 (严格对齐 AGENTS.md)
+- **零向后兼容 (Zero Backward Compatibility)**：核查是否引入任何废弃字段分支、fallback 回滚逻辑或内存别名胶水；必须单一真理源 (SSOT)。
+- **临时文件收敛隔离 (Temp File Isolation)**：核查排查脚本、实验图象、分析导出是否严格且仅存放在 `temp/`；业务与测试代码严禁依赖 `temp/`。
 
 ### B. Correctness & Edge Cases
 - **Logic & Flow**: Check for off-by-one errors, inverted conditions, unreachable code, unhandled edge cases (empty lists/dicts, `None` values, zero division).
@@ -52,15 +48,10 @@ Evaluate code against the following dimensions:
 - **Type Annotations**: Comprehensive typing for function signatures and public APIs.
 - **Test Coverage**: Ensure novel features, edge cases, and bug fixes are accompanied by unit tests.
 
-### E. 命名审查原则 (Naming Principles - 严格遵循)
-- **严禁擅自直接修改命名**：
-  - 针对**文件名、类名、函数名、变量名**，若审查中认为命名不合理或有优化空间，**严禁在代码中直接重命名或强行替换**。
-- **必须提供 3~5 个候选名称供用户决策**：
-  - 必须以“建议与候选方案”的形式提出，原则上为每个待优化项推荐 **3 个乃至 5 个备选名称**。
-  - 需附带简要的语义分析或推荐理由。
-- **交互式选择题确认机制 (Interactive Multiple-Choice Prompting)**：
-  - 命名优化的确认步骤**必须使用交互式选择题（调用 `ask_question` 工具）**呈现给用户。
-  - 将每个待优化项作为一道选择题，清晰列出 3~5 个候选选项供用户点选确认，严禁要求用户手动打字输入或擅自代用户做决定。用户选择后方可执行重命名。
+### E. 命名审查原则 (严格对齐 AGENTS.md)
+- **严禁擅自修改**：任何文件名、类名、函数名、变量名优化，严禁直接在代码中重命名或代用户做主；
+- **提供 3~5 候选**：针对待优化命名，必须列出 3 至 5 个备选方案并附带推荐理由与侧重点；
+- **交互式点选确认**：必须使用 `ask_question` 工具以单选/多选交互式选择题呈现，经用户明确点选确认后方可实施修改。
 
 ## 3. Output Format
 

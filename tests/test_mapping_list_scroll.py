@@ -81,6 +81,7 @@ class TestMappingListScroll(unittest.TestCase):
             win_w=1920,
             win_h=1080,
             manifest_path=self.manifest_path,
+            settings_file=os.path.join(self.temp_dir, "gui_settings.json"),
         )
 
     def test_list_boxes_initialization(self):

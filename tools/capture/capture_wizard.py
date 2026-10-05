@@ -19,6 +19,7 @@
 
 import os
 import sys
+import re
 import json
 import glob
 import time
@@ -51,11 +52,6 @@ try:
     from tools.window_helper import force_window_focus
 except ImportError:
     force_window_focus = None
-
-try:
-    import pyrealsense2 as rs
-except ImportError:
-    rs = None
 
 log = get_logger(__name__)
 
@@ -131,8 +127,23 @@ class CaptureWizard(BaseCvApp):
             self.output_dir = os.path.join(PROJECT_ROOT, "data", "workspaces", "default", self.purpose, "raw_images")
 
         os.makedirs(self.output_dir, exist_ok=True)
+        self.image_count = self._scan_max_image_index()
+
+    def _scan_max_image_index(self) -> int:
+        """扫描输出目录下已有的 view_XXXX.png 最大序号，保证自增不重复且防止跳号覆盖"""
+        if not os.path.isdir(self.output_dir):
+            return 0
         existing = glob.glob(os.path.join(self.output_dir, "view_*.png"))
-        self.image_count = len(existing)
+        max_idx = 0
+        for fpath in existing:
+            base = os.path.basename(fpath)
+            m = re.match(r"^view_(\d+)\.png$", base)
+            if m:
+                try:
+                    max_idx = max(max_idx, int(m.group(1)))
+                except ValueError:
+                    pass
+        return max_idx
 
     @property
     def workspace_options(self):
@@ -198,10 +209,6 @@ class CaptureWizard(BaseCvApp):
         self._update_output_dir()
         self.set_toast(f"已切换采集用途: 【{self.current_purpose_label}】(当前 {self.image_count} 帧)")
         log.info(f"采图向导已切换采集用途: {self.purpose} -> {self.output_dir}")
-
-    def set_toast(self, msg: str):
-        self.status_toast = msg
-        self.status_toast_time = time.time()
 
     # ------------------------------ 状态持久化 ------------------------------
     def _load_viewer_state(self):
@@ -310,36 +317,17 @@ class CaptureWizard(BaseCvApp):
         return raw_filepath
 
     def adjust_hardware_exposure(self, delta_us: float):
-        if self.color_sensor is None:
-            self.set_toast("当前未检测到 RealSense 物理彩色传感器")
-            return
-        try:
-            if self.color_sensor.supports(rs.option.enable_auto_exposure):
-                is_auto = self.color_sensor.get_option(rs.option.enable_auto_exposure)
-                if is_auto > 0.5:
-                    self.color_sensor.set_option(rs.option.enable_auto_exposure, 0)
-            
-            if self.color_sensor.supports(rs.option.exposure):
-                cur_exp = self.color_sensor.get_option(rs.option.exposure)
-                new_exp = max(10.0, min(1000.0, cur_exp + delta_us))
-                self.color_sensor.set_option(rs.option.exposure, new_exp)
-                self.set_toast(f"硬件手动曝光: {int(new_exp)} (按 [ 压暗 / ] 提亮)")
-        except Exception as e:
-            self.set_toast(f"调曝光失败: {e}")
+        """微调物理相机手动曝光值 (按 [ 压暗 / ] 提亮)"""
+        ok, msg = self._cam_srv.adjust_exposure(delta_us)
+        self.set_toast(msg)
 
     def toggle_auto_exposure(self):
-        if self.color_sensor is None:
-            self.set_toast("当前非物理相机")
-            return
-        try:
-            if self.color_sensor.supports(rs.option.enable_auto_exposure):
-                cur = self.color_sensor.get_option(rs.option.enable_auto_exposure)
-                new_state = 0 if cur > 0.5 else 1
-                self.color_sensor.set_option(rs.option.enable_auto_exposure, new_state)
-                desc = "已开启【自动曝光 Auto】" if new_state == 1 else "已关闭【手动曝光模式】"
-                self.set_toast(desc)
-        except Exception as e:
-            self.set_toast(f"切换自动曝光失败: {e}")
+        """切换相机自动曝光/手动曝光模式 (按 E)"""
+        desc = self._cam_srv.toggle_auto_exposure()
+        if desc:
+            self.set_toast(desc)
+        else:
+            self.set_toast("当前相机不支持自动曝光切换或未开启")
 
     # ==================== BaseCvApp 钩子实现 ====================
     def set_toast(self, msg: str, duration: float = 3.5):

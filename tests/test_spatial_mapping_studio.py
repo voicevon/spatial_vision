@@ -97,7 +97,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             marker_size_mm=50.0,
             win_w=1920,
             win_h=1080,
-            manifest_path=self.manifest_path
+            manifest_path=self.manifest_path,
+            settings_file=os.path.join(self.temp_dir, "gui_settings.json"),
         )
 
     def tearDown(self):
