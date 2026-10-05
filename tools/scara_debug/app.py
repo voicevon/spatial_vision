@@ -49,7 +49,7 @@ from tools.scara_debug.renderer import ScaraDebugRenderer, LOGIC_W, LOGIC_H  # n
 log = get_logger(__name__)
 
 
-from src.ui.dialog_utils import prompt_input_text
+from src.ui.dialog_utils import show_text_input_dialog
 
 
 class PresetManager:
@@ -154,7 +154,7 @@ class ScaraDebugApp(BaseCvApp):
     def connect(self) -> None:
         port = self.selected_port
         if not port:
-            port = prompt_input_text("手动连接", "请输入串口名 (如 COM11):")
+            port = show_text_input_dialog("手动连接", "请输入串口名 (如 COM11):")
             if not port:
                 return
         self.add_log(f"[连接] 正在连接 {port} @ {self._config.default_baudrate}...")
@@ -231,7 +231,7 @@ class ScaraDebugApp(BaseCvApp):
         if not self._require_conn():
             return
         if z_mm is None:
-            raw = prompt_input_text("指定 Z 高度", "请输入目标 Z 轴高度 (0~100 mm):")
+            raw = show_text_input_dialog("指定 Z 高度", "请输入目标 Z 轴高度 (0~100 mm):")
             if not raw:
                 return
             try:
@@ -270,7 +270,7 @@ class ScaraDebugApp(BaseCvApp):
     def do_goto(self) -> None:
         if not self._require_conn():
             return
-        raw = prompt_input_text(
+        raw = show_text_input_dialog(
             "直达目标坐标",
             "输入目标 (如 X100 Y300 Z50 R0 F9000)\n省略的轴保持当前值:")
         if not raw:
@@ -333,7 +333,7 @@ class ScaraDebugApp(BaseCvApp):
     def do_gcode(self) -> None:
         if not self._require_conn():
             return
-        cmd = prompt_input_text("G-code 透传", "输入透传指令 (如 M119 / G28 / M114):")
+        cmd = show_text_input_dialog("G-code 透传", "输入透传指令 (如 M119 / G28 / M114):")
         if not cmd:
             return
         self.add_log(f"> {cmd}")

@@ -420,7 +420,7 @@ class GalleryState:
 
         target_dir = ws.get_raw_images_dir(purpose)
         os.makedirs(target_dir, exist_ok=True)
-        prefix = "intr_" if purpose == "intrinsics" else ("prod_" if purpose == "production" else "view_")
+        prefix = "intr_" if purpose == "intrinsics" else ("prod_" if purpose == "production" else "calib_")
         existing = glob.glob(os.path.join(target_dir, f"{prefix}*.png"))
         max_idx = 0
         for f in existing:

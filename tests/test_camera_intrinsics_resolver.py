@@ -59,10 +59,10 @@ class TestCameraIntrinsicsResolver(unittest.TestCase):
         self.assertAlmostEqual(K[0, 2], 965.12 * expected_scale, places=2)
 
     def test_workspace_custom_intrinsics_priority(self):
-        """测试工位沙盒 calibration/camera_intrinsics.yaml 专属内参优先加载"""
-        calib_dir = os.path.join(self.tmp_dir, "calibration")
-        os.makedirs(calib_dir, exist_ok=True)
-        intr_file = os.path.join(calib_dir, "camera_intrinsics.yaml")
+        """测试工位沙盒 intrinsics/camera_intrinsics.yaml 专属内参优先加载"""
+        intr_dir = os.path.join(self.tmp_dir, "intrinsics")
+        os.makedirs(intr_dir, exist_ok=True)
+        intr_file = os.path.join(intr_dir, "camera_intrinsics.yaml")
         
         ws_intr_data = {
             "width": 1920,

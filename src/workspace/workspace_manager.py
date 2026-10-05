@@ -120,17 +120,8 @@ class Workspace:
 
     @property
     def camera_intrinsics_path(self) -> str:
-        """【工位专属】相机内参文件路径 (优先存在 intrinsics/camera_intrinsics.yaml，兼容历史路径)"""
-        p_intr = os.path.join(self.intrinsics_dir, "camera_intrinsics.yaml")
-        if os.path.exists(p_intr):
-            return p_intr
-        p_calib = os.path.join(self.calibration_dir, "camera_intrinsics.yaml")
-        if os.path.exists(p_calib):
-            return p_calib
-        p_root = os.path.join(self.workspace_dir, "camera_intrinsics.yaml")
-        if os.path.exists(p_root):
-            return p_root
-        return p_intr
+        """【工位专属】相机内参文件路径 (单一真理源: intrinsics/camera_intrinsics.yaml)"""
+        return os.path.join(self.intrinsics_dir, "camera_intrinsics.yaml")
 
     def load_camera_intrinsics(self) -> Optional[Dict[str, Any]]:
         """加载本工位专属相机内参配置字典，不存在则返回 None"""
@@ -717,14 +708,14 @@ class WorkspaceManager:
         self._cached_workspaces[ws_id] = ws
         return ws
 
-    def update_workspace_hardware(
+    def bind_workspace_camera(
         self,
         workspace_id: str,
         camera_type: str = "realsense",
         camera_serial: str = "",
         camera_resolution: Optional[List[int]] = None
     ) -> Tuple[bool, str]:
-        """更新工位绑定的相机硬件类型、序列号及标定分辨率单一真理源"""
+        """将物理相机硬件类型、序列号及标定基准分辨率原子写穿绑定至工位沙盒"""
         ws = self.get_workspace_by_id(workspace_id)
         if not ws:
             return False, f"未找到工位: {workspace_id}"

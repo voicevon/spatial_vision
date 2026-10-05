@@ -7,7 +7,7 @@
 1. Workspace 模型默认包含 camera_type, camera_serial, camera_resolution
 2. 工位 workspace_meta.yaml 准确持久化与加载硬件规格
 3. WorkspaceManager.create_workspace 支持指定相机类型与规格
-4. WorkspaceManager.update_workspace_hardware 具备原子写穿更新能力
+4. WorkspaceManager.bind_workspace_camera 具备原子写穿更新能力
 5. CaptureWizard 载入工位时完全受工位硬件参数驱动
 """
 
@@ -70,7 +70,7 @@ class TestWorkspaceHardwareBinding(unittest.TestCase):
         self.assertEqual(ws.resolution_str, "1280x720")
 
         # 更新硬件为 RealSense 1080P
-        ok, msg = self.mgr.update_workspace_hardware(
+        ok, msg = self.mgr.bind_workspace_camera(
             workspace_id=ws.workspace_id,
             camera_type="realsense",
             camera_serial="233522070123",

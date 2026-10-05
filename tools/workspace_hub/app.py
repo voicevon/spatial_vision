@@ -38,7 +38,7 @@ from src.devices.camera_service import CameraService
 log = get_logger(__name__)
 
 
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import show_confirm_dialog
 
 
 class WorkspaceHubApp(BaseCvApp):
@@ -190,7 +190,7 @@ class WorkspaceHubApp(BaseCvApp):
             f"⚠️ 此操作不可撤销，请确认是否立即执行删除？"
         )
 
-        if prompt_confirm("确认删除子机构坐标系", confirm_msg):
+        if show_confirm_dialog("确认删除子机构坐标系", confirm_msg):
             self.state.geometry.delete_frame_cascade(fid)
 
     def _action_edit_frame_pose(self):
@@ -205,7 +205,7 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.geometry.roi_modal_data["frame_id"] = cur_frame.frame_id
 
     def _action_delete_roi(self, roi_id: str):
-        if prompt_confirm("确认删除 3D ROI", f"确定要删除 3D ROI 空间物件 [{roi_id}] 吗？"):
+        if show_confirm_dialog("确认删除 3D ROI", f"确定要删除 3D ROI 空间物件 [{roi_id}] 吗？"):
             self.state.geometry.delete_roi(roi_id)
             self.state.set_toast(f"已删除 ROI: {roi_id}")
 
@@ -358,7 +358,7 @@ class WorkspaceHubApp(BaseCvApp):
             else:
                 new_serial = str(usb_list[0]["index"]) if usb_list else "0"
 
-            self.workspace_mgr.update_workspace_hardware(
+            self.workspace_mgr.bind_workspace_camera(
                 workspace_id=ws.workspace_id,
                 camera_type=cur_type,
                 camera_serial=new_serial,
@@ -402,7 +402,7 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.set_toast("已取消修改相机硬件与分辨率。")
             return
 
-        ok, msg = self.workspace_mgr.update_workspace_hardware(
+        ok, msg = self.workspace_mgr.bind_workspace_camera(
             workspace_id=ws.workspace_id,
             camera_type=form_res["camera_type"],
             camera_serial=form_res["camera_serial"],

@@ -22,9 +22,8 @@ from src.ui.gui_theme import GuiTheme
 from src.ui.text_rendering import draw_text, get_cached_font, measure_text, put_text
 from src.ui.dialog_utils import (
     show_error_dialog,
-    show_critical_message,
-    prompt_confirm,
-    prompt_input_text,
+    show_confirm_dialog,
+    show_text_input_dialog,
 )
 
 

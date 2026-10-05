@@ -16,10 +16,8 @@ from unittest.mock import patch, MagicMock
 
 from src.ui.dialog_utils import (
     show_error_dialog,
-    show_critical_message,
-    prompt_error,
-    prompt_confirm,
-    prompt_input_text,
+    show_confirm_dialog,
+    show_text_input_dialog,
 )
 
 
@@ -43,11 +41,6 @@ class TestDialogUtils(unittest.TestCase):
                 # 必须包含 MB_ICONERROR (0x00000010)
                 self.assertTrue(bool(flags & 0x00000010), "必须包含 MB_ICONERROR 标志")
 
-    def test_show_critical_message_alias(self):
-        """测试别名一致性"""
-        self.assertIs(show_critical_message, show_error_dialog)
-        self.assertIs(prompt_error, show_error_dialog)
-
     def test_show_error_dialog_linux(self):
         """测试 Linux 平台下优先调用 zenity --error"""
         with patch("sys.platform", "linux"):
@@ -64,10 +57,12 @@ class TestDialogUtils(unittest.TestCase):
         """测试从 gui_components 正常导出对话框组件"""
         from src.ui.gui_components import (
             show_error_dialog as comp_show_error,
-            show_critical_message as comp_show_crit,
+            show_confirm_dialog as comp_show_confirm,
+            show_text_input_dialog as comp_show_text_input,
         )
         self.assertIs(comp_show_error, show_error_dialog)
-        self.assertIs(comp_show_crit, show_critical_message)
+        self.assertIs(comp_show_confirm, show_confirm_dialog)
+        self.assertIs(comp_show_text_input, show_text_input_dialog)
 
 
 if __name__ == "__main__":

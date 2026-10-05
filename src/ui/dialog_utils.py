@@ -4,11 +4,11 @@
 提供系统原生、轻量级、兼顾中文输入法与跨平台（Windows / Linux / macOS）的对话框接口。
 
 特性：
-1. 确认框 (prompt_confirm)：
+1. 确认框 (show_confirm_dialog)：
    - Windows 下优先使用 ctypes.windll.user32.MessageBoxW 原生内核调用（微秒级响应、零外部依赖、零幽灵窗口）
    - Linux 下优先使用 zenity / kdialog 系统原生弹窗
    - 无图形环境自动降级为控制台标准确认
-2. 文本输入框 (prompt_input_text)：
+2. 文本输入框 (show_text_input_dialog)：
    - Linux 下优先使用 zenity --entry（原生支持系统 Fcitx/IBus 中文输入法）
    - Windows / 跨平台图形环境下统一受控托管中文输入，业务代码完全解耦
    - 异常或无图形环境自动降级为控制台 input()
@@ -24,7 +24,7 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def prompt_confirm(title: str, message: str) -> bool:
+def show_confirm_dialog(title: str, message: str) -> bool:
     """
     弹出跨平台原生确认对话框 (Yes / No)。
 
@@ -84,17 +84,16 @@ def prompt_confirm(title: str, message: str) -> bool:
         return True
 
 
-def prompt_input_text(title: str, prompt_text: str, initial: str = "", default: str = "") -> str:
+def show_text_input_dialog(title: str, prompt_text: str, initial: str = "") -> str:
     """
     弹出跨平台原生单行文本输入对话框，完美支持中文拼音/五笔输入法。
 
     :param title: 弹窗标题
     :param prompt_text: 提示文字
     :param initial: 初始文本
-    :param default: 初始文本 (别名兼容)
     :return: 用户输入的字符串（自动去除首尾空白）；取消或关闭返回空字符串 ""
     """
-    init_val = default if default else initial
+    init_val = initial
 
     # 1. Linux 环境下优先调用系统原生 zenity（原生挂载系统 Fcitx/IBus 中文输入法）
     if sys.platform.startswith("linux") and shutil.which("zenity"):
@@ -198,11 +197,6 @@ def show_error_dialog(title: str, message: str) -> None:
     print(f"[*] 标题: {title}")
     print(f"[*] 内容:\n{message}")
     print(f"========================================================\n")
-
-
-# 别名兼容
-show_critical_message = show_error_dialog
-prompt_error = show_error_dialog
 
 
 def show_info_dialog(title: str, message: str) -> None:

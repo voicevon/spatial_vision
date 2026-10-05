@@ -17,7 +17,7 @@ import subprocess
 from typing import Any
 
 from src.ui.dialog_utils import (
-    prompt_confirm, prompt_input_text, show_info_dialog,
+    show_confirm_dialog, show_text_input_dialog, show_info_dialog,
     prompt_create_workspace_dialog
 )
 from src.devices.camera_service import CameraService
@@ -53,7 +53,7 @@ class WorkspaceHandler:
         if not ws:
             return
 
-        new_name = prompt_input_text(
+        new_name = show_text_input_dialog(
             "修改 Workspace 名称",
             f"请输入 Workspace【{ws.name}】的新显示名称\n(支持中文、英文、数字，如: 1号机台主标定):",
             initial=ws.name
@@ -68,7 +68,7 @@ class WorkspaceHandler:
             return
 
         cur_desc = getattr(ws, "description", "") or ""
-        new_desc = prompt_input_text(
+        new_desc = show_text_input_dialog(
             "修改工位备注",
             f"请输入工位【{ws.name}】的备注信息 (单行文本):",
             initial=cur_desc
@@ -119,7 +119,7 @@ class WorkspaceHandler:
             return
 
         default_clone_name = f"{ws.name}_对照组"
-        chosen_name = prompt_input_text(
+        chosen_name = show_text_input_dialog(
             "克隆 Workspace",
             f"请输入克隆后的新 Workspace 名称 (基于原 Workspace【{ws.name}】):",
             initial=default_clone_name
@@ -152,7 +152,7 @@ class WorkspaceHandler:
             self.state.set_toast("至少需保留一个工位，禁止删除唯一工位！")
             return
 
-        confirmed = prompt_confirm(
+        confirmed = show_confirm_dialog(
             "确认删除 Workspace",
             f"确定要永久删除工位【{ws.name}】吗？\n\n物理ID: {ws.workspace_id}\n此操作将删除该工位的所有图片和标定数据，不可恢复！"
         )

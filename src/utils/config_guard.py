@@ -139,9 +139,10 @@ def resolve_camera_intrinsics(
     dist = np.zeros((5, 1), dtype=np.float64)
     ref_w, ref_h = 1920, 1080
 
-    # 1. 工位沙盒专属内参 (最高优先级)
+    # 1. 工位沙盒专属内参 (最高优先级，单一真理源为 intrinsics/camera_intrinsics.yaml)
     if workspace_dir and os.path.exists(workspace_dir):
         candidate_paths = [
+            os.path.join(workspace_dir, "intrinsics", "camera_intrinsics.yaml"),
             os.path.join(workspace_dir, "calibration", "camera_intrinsics.yaml"),
             os.path.join(workspace_dir, "camera_intrinsics.yaml")
         ]
