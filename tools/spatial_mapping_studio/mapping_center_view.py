@@ -72,7 +72,7 @@ class MappingCenterViewMixin:
 
         # 1. BA 理论下拉框
         ba_x1, ba_x2 = cursor_x, cursor_x + 148
-        cur_ba_label = dict(BA_VIEW_OPTIONS).get(app.ba_view_mode, "3D 翡翠绿棱柱")
+        cur_ba_label = dict(BA_VIEW_OPTIONS).get(app.ba_view_mode, "3D 翡翠绿四棱柱")
         is_ba_open = (app.active_dropdown == "BA_VIEW_DROPDOWN")
         draw_dropdown_button(canvas, (ba_x1, row_y1, ba_x2, row_y2), cur_ba_label,
                              is_open=is_ba_open, mouse_pos=app.mouse_pos, prefix="BA理论: ")
@@ -86,7 +86,7 @@ class MappingCenterViewMixin:
 
         # 2. 实测识别下拉框
         obs_x1, obs_x2 = cursor_x, cursor_x + 148
-        cur_obs_label = dict(OBS_VIEW_OPTIONS).get(app.obs_view_mode, "3D 科技天蓝棱柱")
+        cur_obs_label = dict(OBS_VIEW_OPTIONS).get(app.obs_view_mode, "3D 科技天蓝四棱柱")
         is_obs_open = (app.active_dropdown == "OBS_VIEW_DROPDOWN")
         draw_dropdown_button(canvas, (obs_x1, row_y1, obs_x2, row_y2), cur_obs_label,
                              is_open=is_obs_open, mouse_pos=app.mouse_pos, prefix="实测识别: ")
@@ -233,13 +233,17 @@ class MappingCenterViewMixin:
             T_c_w[:3, :3] = R_c_w
             T_c_w[:3, 3] = tvec.flatten()
 
-            need_3d = (ba_mode == "3d" or obs_mode == "3d")
+            ba_is_3d = ba_mode in ("3d_prism", "3d_pyramid", "3d")
+            obs_is_3d = obs_mode in ("3d_prism", "3d_pyramid", "3d")
+            need_3d = (ba_is_3d or obs_is_3d)
+            ba_shape = "pyramid" if ba_mode == "3d_pyramid" else "prism"
+            obs_shape = "pyramid" if obs_mode == "3d_pyramid" else "prism"
             if need_3d:
                 # 收集候选标靶：
                 # (a) 当前帧观测到的所有标靶 (不论保留还是已剔除)
-                # (b) 如果开启了 ba_mode == "3d"，还包含地图中已建图的其余已知标靶
+                # (b) 如果开启了 ba_is_3d，还包含地图中已建图的其余已知标靶
                 candidate_tids = list(obs_map.keys())
-                if ba_mode == "3d":
+                if ba_is_3d:
                     tags_dict = (app.data_mgr.tags_map_data or {}).get("tags", {})
                     for m_tid in tags_dict.keys():
                         if m_tid not in obs_map:
@@ -263,7 +267,7 @@ class MappingCenterViewMixin:
 
                     # 理论 BA 位姿 (翡翠绿)
                     r_tag, t_tag = None, None
-                    if ba_mode == "3d":
+                    if ba_is_3d:
                         r_tag, _ = cv2.Rodrigues(T_c_t[:3, :3])
                         t_tag = t_tag_center.reshape((3, 1))
 
@@ -338,10 +342,10 @@ class MappingCenterViewMixin:
 
                     app.visualizer.render_tag_dual_prisms(
                         img=disp_frame,
-                        ba_rvec=r_tag if ba_mode == "3d" else None,
-                        ba_tvec=t_tag if ba_mode == "3d" else None,
-                        obs_rvec=obs_r if (obs_mode == "3d" and succ_single) else None,
-                        obs_tvec=obs_t if (obs_mode == "3d" and succ_single) else None,
+                        ba_rvec=r_tag if ba_is_3d else None,
+                        ba_tvec=t_tag if ba_is_3d else None,
+                        obs_rvec=obs_r if (obs_is_3d and succ_single) else None,
+                        obs_tvec=obs_t if (obs_is_3d and succ_single) else None,
                         tag_id=tid,
                         err_px=err_px,
                         err_mm=err_mm,
@@ -355,7 +359,9 @@ class MappingCenterViewMixin:
                         ref_frame_id=ref_fid,
                         ref_position_mm=ref_pos,
                         nominal_local_xyz=nom_pos,
-                        nominal_error_mm=nom_err
+                        nominal_error_mm=nom_err,
+                        ba_shape=ba_shape,
+                        obs_shape=obs_shape,
                     )
                     rendered_tids.add(tid)
 

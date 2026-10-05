@@ -282,17 +282,17 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_view_mode_and_ba_progress(self):
         """测试视口双独立正交模式 (BA 理论与单帧实测) 与全局平差进度条渲染"""
-        # 1. 测试默认双 3D 模式
-        self.assertEqual(self.studio.ba_view_mode, "3d")
-        self.assertEqual(self.studio.obs_view_mode, "3d")
+        # 1. 测试默认双 3D 模式 (四棱柱)
+        self.assertEqual(self.studio.ba_view_mode, "3d_prism")
+        self.assertEqual(self.studio.obs_view_mode, "3d_prism")
         self.assertEqual(self.studio.right_bar_w, 180, "右侧栏应成功瘦身为 180px")
 
         # 2. 测试切换 BA 与 OBS 独立下拉框
-        for ba_m in ["3d", "2d", "off"]:
+        for ba_m in ["3d_prism", "3d_pyramid", "2d", "off"]:
             self.studio._handle_button_click(f"DD_SELECT_BA_VIEW_DROPDOWN_{ba_m}", ("BA_VIEW_DROPDOWN", ba_m), 0, 0)
             self.assertEqual(self.studio.ba_view_mode, ba_m)
 
-        for obs_m in ["3d", "2d", "off"]:
+        for obs_m in ["3d_prism", "3d_pyramid", "2d", "off"]:
             self.studio._handle_button_click(f"DD_SELECT_OBS_VIEW_DROPDOWN_{obs_m}", ("OBS_VIEW_DROPDOWN", obs_m), 0, 0)
             self.assertEqual(self.studio.obs_view_mode, obs_m)
 
@@ -636,8 +636,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             return original_render_prisms(*args, **kwargs)
 
         self.studio.visualizer.render_tag_dual_prisms = mock_render_prisms
-        self.studio.ba_view_mode = "3d"
-        self.studio.obs_view_mode = "3d"
+        self.studio.ba_view_mode = "3d_prism"
+        self.studio.obs_view_mode = "3d_prism"
 
         # 执行视口叠加绘制
         self.studio.ui_renderer.overlay_visual_elements(

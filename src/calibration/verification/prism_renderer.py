@@ -48,15 +48,62 @@ def draw_prism(
     alpha: float = 0.35,
     draw_axes: bool = False,
     axis_len: float = 25.0,
+    shape: str = "prism",
 ) -> Optional[Dict[str, np.ndarray]]:
     """
-    在图像上绘制单根半透明实心四棱柱 (标靶位姿坐标系: 底面 Z=0, 沿 +Z 生长)。
+    在图像上绘制单根半透明实心 3D 几何标靶 (四棱柱 prism 或金字塔锥 pyramid)。
     :param colors: dict(side, cap, edge, top_edge, dot) BGR 配色, None=Studio 理论绿
     :param alpha: 半透明填充强度 (0~1)
     :param draw_axes: 绘制 X/Y 轴 (自标靶中心伸出 axis_len) 与 Z 顶面标注
+    :param shape: 几何形态 'prism' (四棱柱) 或 'pyramid' (金字塔锥)
     :return: {"bottom": 4x2, "top": 4x2, "top_center": (2,), "origin": (2,)} 像素投影点
     """
     c = dict(COLORS_THEORY if colors is None else colors)
+
+    if shape == "pyramid":
+        pts_3d = [
+            [-half_w, -half_w, 0.0], [half_w, -half_w, 0.0],
+            [half_w, half_w, 0.0], [-half_w, half_w, 0.0],        # 底面 4 点 (0:3)
+            [0.0, 0.0, height],                                    # 锥顶 Apex (4)
+        ]
+        if draw_axes:
+            pts_3d += [[axis_len, 0.0, 0.0], [0.0, axis_len, 0.0], [0.0, 0.0, 0.0]]  # X/Y 端点与原点 (5:7)
+
+        proj, _ = cv2.projectPoints(
+            np.array(pts_3d, dtype=np.float64), rvec, tvec,
+            np.asarray(camera_matrix, dtype=np.float64),
+            np.asarray(dist_coeffs, dtype=np.float64))
+        proj = proj.reshape((-1, 2)).astype(int)
+        b, apex = proj[0:4], tuple(proj[4])
+
+        # 1. 半透明填充 4 个三角形侧面与底面
+        overlay = img.copy()
+        for i in range(4):
+            j = (i + 1) % 4
+            cv2.fillPoly(overlay, [np.array([b[i], b[j], apex], dtype=np.int32)], c["side"])
+        cv2.fillPoly(overlay, [b], c["cap"])
+        cv2.addWeighted(overlay, alpha, img, 1.0 - alpha, 0, img)
+
+        # 2. 8 条棱线描边 (底圈 4 条 + 4 条斜棱)
+        cv2.polylines(img, [b], True, c["edge"], 2, cv2.LINE_AA)
+        for i in range(4):
+            cv2.line(img, tuple(b[i]), apex, c.get("top_edge", c["edge"]), 2, cv2.LINE_AA)
+
+        # 3. 锥顶标注点
+        if c.get("dot") is not None:
+            cv2.circle(img, apex, 4 if not draw_axes else 3, c["dot"], -1, cv2.LINE_AA)
+
+        # 4. 坐标轴 (X 红 / Y 绿 / Z 金黄文字)
+        if draw_axes:
+            p_x, p_y, p_orig = tuple(proj[5]), tuple(proj[6]), tuple(proj[7])
+            cv2.line(img, p_orig, p_x, AXIS_X_COLOR, 2, cv2.LINE_AA)
+            put_text(img, "X", p_x, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.line(img, p_orig, p_y, AXIS_Y_COLOR, 2, cv2.LINE_AA)
+            put_text(img, "Y", p_y, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
+            put_text(img, "Z", (apex[0] + 5, apex[1] - 5),
+                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, AXIS_Z_LABEL_COLOR, 2, cv2.LINE_AA)
+
+        return {"bottom": b, "top": np.array([apex, apex, apex, apex]), "top_center": np.array(apex), "origin": proj[7] if draw_axes else None}
 
     pts_3d = [
         [-half_w, -half_w, 0.0], [half_w, -half_w, 0.0],

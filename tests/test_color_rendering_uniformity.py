@@ -55,6 +55,40 @@ class TestColorRenderingUniformity(unittest.TestCase):
         )
         self.assertTrue(np.any(img > 0), "渲染图像不应全黑")
 
+    def test_pyramid_and_prism_shapes_rendering(self):
+        """验证 VerificationVisualizer 支持四棱柱与金字塔锥两种 3D 几何形态"""
+        from src.calibration.verification.prism_renderer import draw_prism
+        K = np.array([[1000.0, 0.0, 960.0], [0.0, 1000.0, 540.0], [0.0, 0.0, 1.0]])
+        dist = np.zeros(5)
+        viz = VerificationVisualizer(K, dist)
+
+        img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        ba_r = np.array([0.1, 0.1, 0.1])
+        ba_t = np.array([100.0, 50.0, 1000.0])
+        obs_r = np.array([0.11, 0.1, 0.1])
+        obs_t = np.array([102.0, 51.0, 1005.0])
+
+        # 测试金字塔锥与四棱柱混搭
+        viz.render_tag_dual_prisms(
+            img=img,
+            ba_rvec=ba_r,
+            ba_tvec=ba_t,
+            obs_rvec=obs_r,
+            obs_tvec=obs_t,
+            tag_id=7,
+            err_px=0.25,
+            err_mm=5.12,
+            ba_shape="pyramid",
+            obs_shape="prism",
+        )
+        self.assertTrue(np.any(img > 0), "金字塔锥与四棱柱混搭渲染图像不应全黑")
+
+        # 直接测试 draw_prism 的 pyramid 模式
+        res_pyr = draw_prism(img, K, dist, ba_r, ba_t, shape="pyramid", draw_axes=True)
+        self.assertIsNotNone(res_pyr)
+        self.assertEqual(len(res_pyr["bottom"]), 4)
+        self.assertEqual(len(res_pyr["top_center"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

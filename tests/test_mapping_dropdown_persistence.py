@@ -184,8 +184,8 @@ class TestMappingDropdownPersistence(unittest.TestCase):
         app = self._create_app()
         self.assertEqual(app.data_mgr.filter_mode, "all")
         self.assertEqual(app.data_mgr.sort_mode, "name_asc")
-        self.assertEqual(app.ba_view_mode, "3d")
-        self.assertEqual(app.obs_view_mode, "3d")
+        self.assertEqual(app.ba_view_mode, "3d_prism")
+        self.assertEqual(app.obs_view_mode, "3d_prism")
 
 
 if __name__ == "__main__":

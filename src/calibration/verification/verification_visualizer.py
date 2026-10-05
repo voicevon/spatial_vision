@@ -53,10 +53,12 @@ class VerificationVisualizer:
         ref_position_mm: Optional[List[float]] = None,
         nominal_local_xyz: Optional[List[float]] = None,
         nominal_error_mm: Optional[float] = None,
+        ba_shape: str = "prism",
+        obs_shape: str = "prism",
     ):
 
         """
-        绘制全局 BA 平差理论位姿 (纯正翠绿) 与单帧本地实测抓取位姿 (科技天蓝) 的 3D 双四棱柱立体对比
+        绘制全局 BA 平差理论位姿 (纯正翠绿) 与单帧本地实测抓取位姿 (科技天蓝) 的 3D 立体对比 (四棱柱或金字塔锥)
         (黑色提示框: 默认仅 Tag 编号省空间; 鼠标悬停展开六维详情:
          世界系 XYZ/RPY + BA 理论与单帧实测的相机系中心 XYZ, 绿/蓝着色区分)
         """
@@ -64,17 +66,17 @@ class VerificationVisualizer:
             hw = 15.0   # 截面半宽 15mm，整体截面 30.0mm x 30.0mm
             L = 75.0    # 柱体高度 75mm (与实际尺寸协调)
 
-            # 统一 PrismRenderer: 绿色 BA 理论棱柱 + 蓝色实测棱柱 (半透明填充 + 棱线 + 顶面中心)
+            # 统一 PrismRenderer: 绿色 BA 理论立体标靶 + 蓝色实测立体标靶 (四棱柱或金字塔锥)
             proj_ba = None
             if ba_rvec is not None and ba_tvec is not None:
                 proj_ba = draw_prism(img, self.camera_matrix, self.dist_coeffs,
                                      ba_rvec, ba_tvec, half_w=hw, height=L,
-                                     colors=COLORS_THEORY, alpha=0.35)
+                                     colors=COLORS_THEORY, alpha=0.35, shape=ba_shape)
             proj_obs = None
             if obs_rvec is not None and obs_tvec is not None:
                 proj_obs = draw_prism(img, self.camera_matrix, self.dist_coeffs,
                                       obs_rvec, obs_tvec, half_w=hw, height=L,
-                                      colors=COLORS_OBSERVED, alpha=0.35)
+                                      colors=COLORS_OBSERVED, alpha=0.35, shape=obs_shape)
             if proj_ba is None and proj_obs is None:
                 return
 

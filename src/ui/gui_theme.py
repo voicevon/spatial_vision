@@ -114,13 +114,15 @@ class GuiTheme:
     ]
 
     BA_VIEW_OPTIONS = [
-        ("3d", "3D 翡翠绿棱柱"),
+        ("3d_prism", "3D 翡翠绿四棱柱"),
+        ("3d_pyramid", "3D 翡翠绿金字塔"),
         ("2d", "2D 理论投影框"),
         ("off", "隐藏 (关闭显示)"),
     ]
 
     OBS_VIEW_OPTIONS = [
-        ("3d", "3D 科技天蓝棱柱"),
+        ("3d_prism", "3D 科技天蓝四棱柱"),
+        ("3d_pyramid", "3D 科技天蓝金字塔"),
         ("2d", "2D 实测识别框"),
         ("off", "隐藏 (关闭显示)"),
     ]

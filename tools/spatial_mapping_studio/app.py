@@ -205,9 +205,9 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             tag_detector=self.tag_detector
         )
 
-        # 视口显示双独立正交模式 (用户指定默认 3d)
-        self.ba_view_mode: str = "3d"    # BA 理论值: "3d" (翡翠绿棱柱), "2d" (投影框), "off" (隐藏)
-        self.obs_view_mode: str = "3d"   # 实测识别值: "3d" (天蓝棱柱), "2d" (实测角点框), "off" (隐藏)
+        # 视口显示双独立正交模式 (默认 3d_prism 四棱柱)
+        self.ba_view_mode: str = "3d_prism"    # BA 理论值: "3d_prism" (四棱柱), "3d_pyramid" (金字塔), "2d" (投影框), "off" (隐藏)
+        self.obs_view_mode: str = "3d_prism"   # 实测识别值: "3d_prism" (四棱柱), "3d_pyramid" (金字塔), "2d" (实测角点框), "off" (隐藏)
 
         # 下拉菜单展开态标识 ("FILTER_DROPDOWN", "SORT_DROPDOWN", "BA_VIEW_DROPDOWN", "OBS_VIEW_DROPDOWN" 或 None)
         self.active_dropdown: Optional[str] = None
@@ -349,11 +349,15 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             valid_ba = [k for k, _ in BA_VIEW_OPTIONS]
             if state.get("ba_view_mode") in valid_ba:
                 self.ba_view_mode = state["ba_view_mode"]
+            elif state.get("ba_view_mode") == "3d":
+                self.ba_view_mode = "3d_prism"
 
             # 4. 实测识别视口显示下拉 (obs_view_mode)
             valid_obs = [k for k, _ in OBS_VIEW_OPTIONS]
             if state.get("obs_view_mode") in valid_obs:
                 self.obs_view_mode = state["obs_view_mode"]
+            elif state.get("obs_view_mode") == "3d":
+                self.obs_view_mode = "3d_prism"
 
             # 5. Z 轴特殊点 / XY 平面显示下拉 (plane_z, show_xy_plane)
             if "show_xy_plane" in state:
@@ -809,10 +813,12 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                     self.toggle_frame_diagnostics()
                 elif key in (ord('v'), ord('V')):      # V 键 -> 循环切换视口预设模式
                     presets = [
-                        ("3d", "3d", "全 3D 双棱柱空间对比 (BA 3D + 实测 3D)"),
+                        ("3d_prism", "3d_prism", "全 3D 四棱柱空间对比 (BA 四棱柱 + 实测 四棱柱)"),
+                        ("3d_pyramid", "3d_pyramid", "全 3D 金字塔空间对比 (BA 金字塔 + 实测 金字塔)"),
+                        ("3d_prism", "3d_pyramid", "3D 混搭模式 (BA 四棱柱 + 实测 金字塔)"),
                         ("2d", "2d", "全 2D 重投影与残差矢量 (BA 2D + 实测 2D)"),
                         ("off", "2d", "仅单帧实测识别角点框"),
-                        ("3d", "off", "仅 BA 空间理论 3D 棱柱"),
+                        ("3d_prism", "off", "仅 BA 空间理论 3D 四棱柱"),
                         ("off", "off", "纯净原始采图 (全隐藏)")
                     ]
                     curr_idx = -1
