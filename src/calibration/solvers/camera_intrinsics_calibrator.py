@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from src.utils.logger import get_logger
+from src.utils.image_io import imread_unicode
 from src.workspace.workspace_manager import Workspace
 
 log = get_logger(__name__)
@@ -73,13 +74,7 @@ def calibrate_camera_from_images(
         if not os.path.exists(img_path):
             continue
 
-        try:
-            data = np.fromfile(img_path, dtype=np.uint8)
-            img = cv2.imdecode(data, cv2.IMREAD_COLOR)
-        except Exception as e:
-            log.warning(f"读取图片失败: {img_path}, err: {e}")
-            continue
-
+        img = imread_unicode(img_path)
         if img is None:
             continue
 

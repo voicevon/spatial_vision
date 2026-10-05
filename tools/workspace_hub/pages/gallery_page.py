@@ -47,13 +47,8 @@ class GalleryPageRenderer:
         cam_serial = getattr(ws, "camera_serial", "") or ""
         res_str = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
 
-        # 判断工位硬件是否已因存在历史图像而锁定单一真理源
-        total_imgs = (
-            ws.get_image_count("intrinsics")
-            + ws.get_image_count("calibration")
-            + ws.get_image_count("production")
-        ) if ws else 0
-        is_locked = (total_imgs > 0)
+        # 判断工位硬件是否已因存在历史图像而锁定单一真理源 (基于内存缓存，杜绝渲染帧高频磁盘 I/O)
+        is_locked = ws.is_hardware_locked if ws else False
 
         # ---------------- 行 1: 相机设备与序列号 (相机占一行) ----------------
         draw_text(canvas, "相机设备:", (hw_bar_x + 14, hw_bar_y + 11), font_size=12, color=(0, 240, 220), bold=True)

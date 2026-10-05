@@ -95,6 +95,16 @@ class Workspace:
             return False, f"图像物理分辨率 ({img_w}x{img_h}) 与工位锁定规格 ({target_w}x{target_h}) 严重失配，已被系统拒绝！"
         return True, ""
 
+    @property
+    def total_image_count(self) -> int:
+        """工位全量业务照片总数 (基于内存缓存指标: 内参 + 外参 + 生产)"""
+        return self.intrinsics_image_count + self.extrinsic_calib_image_count + self.prod_image_count
+
+    @property
+    def is_hardware_locked(self) -> bool:
+        """工位是否已锁定硬件配置 (已有历史照片保护，杜绝跨分辨率或换机污染)"""
+        return self.total_image_count > 0
+
     # ------------------------------ 相机内参标定专区 (intrinsics/) ------------------------------
     @property
     def intrinsics_dir(self) -> str:

@@ -390,13 +390,9 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.set_toast("未选中任何工位，无法配置硬件！")
             return
 
-        total_imgs = (
-            ws.get_image_count("intrinsics")
-            + ws.get_image_count("calibration")
-            + ws.get_image_count("production")
-        )
-        if total_imgs > 0:
-            self.state.set_toast(f"工位【{ws.name}】已锁定硬件配置 (已有 {total_imgs} 帧照片保护)，禁止修改！")
+        ws.refresh_stats()
+        if ws.is_hardware_locked:
+            self.state.set_toast(f"工位【{ws.name}】已锁定硬件配置 (已有 {ws.total_image_count} 帧照片保护)，禁止修改！")
             return
 
         devs = CameraService.probe_available_devices()
