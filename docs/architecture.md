@@ -64,7 +64,7 @@ graph TD
 | `tag_whitelist_manager.py` | `tag_whitelist.yaml` 唯一真理源读写（Tag 局部名义坐标） |
 | `health_auditor.py` | 数据一致性审计与自愈（含 tags_map 非法标靶清除） |
 
-> **整改说明（已解耦收敛）**：`spatial_scene.yaml` 已收敛为 `SceneConfigGuard` 单一序列化出口，coordinate_manager 与 roi_manager 统一委托原子更新，彻底消除双写者竞态覆写风险；`health_auditor` 构成 tags_map 第二写者仍待整改。
+> **整改说明（已解耦收敛）**：`spatial_scene.yaml` 已收敛为 `SceneConfigGuard` 单一序列化出口，coordinate_manager 与 roi_manager 统一委托原子更新；`health_auditor` 的地图自愈写回亦已统一收敛至 `ManifestRepository.save_map`，双写隐患彻底根除。
 
 ### 2.2 calibration — 标定与空间平差引擎
 
@@ -140,10 +140,10 @@ flowchart LR
 
 | 文件 | 唯一写者 | 备注 |
 | :--- | :--- | :--- |
-| `data/workspaces/<id>/tags_map.yaml` | `ManifestRepository.save_map` | health_auditor 自愈写回为待整改的第二写者 |
+| `data/workspaces/<id>/tags_map.yaml` | `ManifestRepository.save_map` | 单一权威写者（BA 求解落盘与 health_auditor 自愈均收敛于此） |
 | `data/workspaces/<id>/spatial_scene.yaml` | `SceneConfigGuard` | 单一原子写者（含路径锁与临时文件原子重命名），消除 coordinate 与 roi 竞态 |
 | `data/workspaces/<id>/tag_whitelist.yaml` | `tag_whitelist_manager.save_workspace_tag_config` | workspace_manager 存在旁路写入口，待整改 |
-| `config/config.yaml` | `config_guard` 原子读写 | `calibration.anchor_tags` 段属违规残留双源，待清理 |
+| `config/config.yaml` | `config_guard` 原子读写 | 纯系统参数，已彻底物理清除历史 anchor_tags 双源逻辑 |
 
 ---
 
@@ -213,8 +213,9 @@ sequenceDiagram
 | **SCARA 生产工作台** | `tools/scara_production/` | ROI 驱动分拣抓取（感知闭环待接入，当前为模拟队列） |
 | **位姿工作室** | `tools/asparagus_pose_studio/` | 抓取位姿离线验证 |
 | **隔离轮生产** | `tools/isolate_wheels_production/` | 隔离轮工位生产 |
+| **标靶图纸生成** | `tools/generate_apriltags.py` | 工业打印 16h5 标靶图纸与 A4 排版 PDF 一键生成 |
 
-> **待整改**：`tools/calibration/`（tag_map_builder、tag_manifest_reviewer、tag_manager、diagnose_tag_frame 等 ~150KB 旧 CLI 建图链）已被 spatial_mapping_studio 全面取代且未在 gui_launcher 注册，按 AGENTS.md 准则待物理删除。
+> **整改说明（已清理重构）**：原 `tools/calibration/` 废弃代码已彻底物理删除；实用图纸生成能力收敛至 `tools/generate_apriltags.py`；核心超精提取引擎下沉至 `src/calibration/tag_super_extractor.py`。
 
 ---
 

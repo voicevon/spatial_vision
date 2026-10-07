@@ -457,14 +457,9 @@ class WorkspaceHubApp(BaseCvApp):
                "--map", ws.map_path]
         self._run_subtool(cmd, "空间建图工作站 (Spatial Mapping Studio)")
 
-    def _launch_image_diagnostics(self):
-        """启动标靶单帧漏检病因深度切片与梯度诊断"""
-        cmd = [sys.executable, "tools/calibration/diagnose_tag_frame.py"]
-        self._run_subtool(cmd, "图像深度病因诊断切片系统")
-
     def _launch_tag_generator(self):
         """启动 AprilTag 标靶图纸生成与 1:1 A4 排版"""
-        cmd = [sys.executable, "tools/calibration/generate_apriltags.py"]
+        cmd = [sys.executable, "tools/generate_apriltags.py"]
         self._run_subtool(cmd, "标靶高清生成与排版工具")
 
     def _handle_frame_tag_edit_xyz(self, tag_id: int):

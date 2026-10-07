@@ -181,7 +181,7 @@ class MappingDataManager(MappingDataActionsMixin):
     def super_extractor(self):
         """惰性装载工序 3 工业级超精重提取引擎"""
         if self._super_extractor is None:
-            from tools.calibration.tag_super_extractor import TagSuperExtractor
+            from src.calibration.tag_super_extractor import TagSuperExtractor
             self._super_extractor = TagSuperExtractor(
                 image_dir=self.image_dir,
                 manifest_path=self.manifest_path,

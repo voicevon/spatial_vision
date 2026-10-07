@@ -147,8 +147,8 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
                     if raw_poses:
                         map_data["raw_relative_poses"] = raw_poses
                     try:
-                        with open(ws.map_path, "w", encoding="utf-8") as f:
-                            yaml.dump(map_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+                        from src.calibration.manifest_repository import ManifestRepository
+                        ManifestRepository.save_map(map_data, ws.map_path)
                         actions_taken.append(f"平差输出自愈: 从 tags_map.yaml 彻底清除未放行非法标靶 {illegal_map_tags}")
                         mapped_tags = sorted([t for t in mapped_tags if t in allowed_set])
                         mapped_set = set(mapped_tags)

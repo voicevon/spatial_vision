@@ -381,7 +381,7 @@ def build_tools_catalog() -> List[ToolCardMeta]:
             subtitle="[W] 一键生成 ID 0~29 标靶与 A4 打印 PDF",
             category="D — 硬件调试与系统运维",
             is_gui=False,
-            command=[sys.executable, "tools/calibration/generate_apriltags.py"],
+            command=[sys.executable, "tools/generate_apriltags.py"],
             tag_color=COLOR_D,
             summary="一键批量生成 AprilTag 16h5 标靶（ID 0~29）矢量高清图及标准 A4 排版打印 PDF。",
             details=[

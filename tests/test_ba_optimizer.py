@@ -24,7 +24,6 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
-from src.utils.config_guard import load_anchor_tags
 
 
 class TestBundleAdjustmentOptimizer(unittest.TestCase):
@@ -296,33 +295,6 @@ class TestConstraintAnchor(unittest.TestCase):
         self.assertEqual(result["anchor_mode"], "none")
         self.assertTrue(result.get("anchor_skip_reason"))
 
-    def test_load_anchor_tags_migration(self):
-        """【无向后兼容原则】旧 world_anchor 不再支持，仅加载标准的 calibration.anchor_tags"""
-        with tempfile.TemporaryDirectory() as td:
-            # 旧 world_anchor 格式不再被解析
-            p_old = os.path.join(td, "old.yaml")
-            with open(p_old, "w", encoding="utf-8") as f:
-                f.write("calibration:\n"
-                        "  world_anchor:\n"
-                        "    origin_tag_id: 0\n"
-                        "    origin_xyz_mm: [0.0, 0.0, 405.0]\n"
-                        "    align_tag_id: 1\n"
-                        "    align_xyz_mm: [0.0, 520.0, 196.0]\n")
-            anchors_old = load_anchor_tags(p_old)
-            self.assertEqual(anchors_old, {}, "旧格式不再解析为有效锚点")
-
-            # 新 anchor_tags 格式 (含部分已知与 null 轴)
-            p_new = os.path.join(td, "new.yaml")
-            with open(p_new, "w", encoding="utf-8") as f:
-                f.write("calibration:\n"
-                        "  anchor_tags:\n"
-                        "    0:\n"
-                        "      xyz_mm: [0.0, 0.0, 405.0]\n"
-                        "    5:\n"
-                        "      xyz_mm: [100.0, 200.0, null]\n")
-            anchors = load_anchor_tags(p_new)
-            self.assertEqual(set(anchors.keys()), {0, 5})
-            self.assertEqual(anchors[5]["known"], [True, True, False])
 
     def test_anchor_umeyama_3d_with_roll_pitch(self):
         """测试 >=3 枚全知锚点时自动触发 Umeyama 3D 最优相似变换，消除标靶自身倾角对世界系的绑架"""
