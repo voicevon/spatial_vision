@@ -57,13 +57,14 @@ graph TD
 
 | 模块 | 职责 |
 | :--- | :--- |
-| `coordinate_manager.py` | **坐标树管理器**：`world` 根 + `fixed_transform`（平移+RPY）/ `tag_bound`（动标绑定）子帧；`get_transform`/`transform_points` 完成任意两帧级联变换；持久化至 `spatial_scene.yaml`（frames 节） |
-| `roi_manager.py` | ROI 定义与挂载（挂载于坐标树子帧，存于 `spatial_scene.yaml` rois 节） |
+| `coordinate_manager.py` | **坐标树管理器**：`world` 根 + `fixed_transform`（平移+RPY）/ `tag_bound`（动标绑定）子帧；`get_transform`/`transform_points` 完成任意两帧级联变换；持久化委托至 `SceneConfigGuard` |
+| `roi_manager.py` | ROI 定义与挂载（挂载于坐标树子帧，持久化委托至 `SceneConfigGuard`） |
+| `scene_config_guard.py` | **空间几何场景安全守卫 (SSOT)**：统管 `spatial_scene.yaml` (frames 坐标树 + rois 空间物件) 的线程锁原子读写与单一写者 |
 | `workspace_manager.py` | 工位生命周期 CRUD、沙盒隔离、当前工位状态机 |
 | `tag_whitelist_manager.py` | `tag_whitelist.yaml` 唯一真理源读写（Tag 局部名义坐标） |
 | `health_auditor.py` | 数据一致性审计与自愈（含 tags_map 非法标靶清除） |
 
-> **待整改**：`spatial_scene.yaml` 目前由 coordinate_manager 与 roi_manager 双写（各自“保留对方节点”），应收敛为单一 SceneStore；`health_auditor` 构成 tags_map 第二写者。
+> **整改说明（已解耦收敛）**：`spatial_scene.yaml` 已收敛为 `SceneConfigGuard` 单一序列化出口，coordinate_manager 与 roi_manager 统一委托原子更新，彻底消除双写者竞态覆写风险；`health_auditor` 构成 tags_map 第二写者仍待整改。
 
 ### 2.2 calibration — 标定与空间平差引擎
 
@@ -140,7 +141,7 @@ flowchart LR
 | 文件 | 唯一写者 | 备注 |
 | :--- | :--- | :--- |
 | `data/workspaces/<id>/tags_map.yaml` | `ManifestRepository.save_map` | health_auditor 自愈写回为待整改的第二写者 |
-| `data/workspaces/<id>/spatial_scene.yaml` | **双写者（待整改）** | coordinate_manager（保留 rois 节）与 roi_manager（保留 frames 节）并存，应收敛为单一 SceneStore |
+| `data/workspaces/<id>/spatial_scene.yaml` | `SceneConfigGuard` | 单一原子写者（含路径锁与临时文件原子重命名），消除 coordinate 与 roi 竞态 |
 | `data/workspaces/<id>/tag_whitelist.yaml` | `tag_whitelist_manager.save_workspace_tag_config` | workspace_manager 存在旁路写入口，待整改 |
 | `config/config.yaml` | `config_guard` 原子读写 | `calibration.anchor_tags` 段属违规残留双源，待清理 |
 

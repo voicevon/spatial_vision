@@ -542,15 +542,15 @@ class CoordinateTreeManager:
         return transformed[:, :3]
 
     def load(self, filepath: Optional[str] = None) -> bool:
-        """从 spatial_scene.yaml 文件加载坐标系配置"""
+        """从 spatial_scene.yaml 文件加载坐标系配置 (通过 SceneConfigGuard 权威读取)"""
         path = filepath or self.spatial_scene_path
         if not path or not os.path.exists(path):
             self._init_default_world()
             return False
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+            from src.workspace.scene_config_guard import SceneConfigGuard
+            data = SceneConfigGuard.load_scene(path)
 
             self.workspace_id = data.get("workspace_id", self.workspace_id)
             self.active_frame_id = data.get("active_frame_id", "world")
@@ -583,32 +583,23 @@ class CoordinateTreeManager:
             return False
 
     def save(self, filepath: Optional[str] = None) -> bool:
-        """持久化保存至 spatial_scene.yaml 文件 (原子保留 rois 节)"""
+        """持久化保存至 spatial_scene.yaml 文件 (委托 SceneConfigGuard 原子写入，防竞态保留 rois 节)"""
         path = filepath or self.spatial_scene_path
         if not path:
             return False
 
         try:
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            existing_data = {}
-            if os.path.exists(path):
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        existing_data = yaml.safe_load(f) or {}
-                except Exception:
-                    existing_data = {}
-
-            existing_data["version"] = "2.0"
-            existing_data["workspace_id"] = self.workspace_id
-            existing_data["active_frame_id"] = self.active_frame_id
-            existing_data["frames"] = [f.to_dict() for f in self.list_frames()]
-            if "rois" not in existing_data:
-                existing_data["rois"] = []
-
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(existing_data, f, allow_unicode=True, sort_keys=False, indent=2)
-            log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个) 至空间场景: {path}")
-            return True
+            from src.workspace.scene_config_guard import SceneConfigGuard
+            frames_dicts = [f.to_dict() for f in self.list_frames()]
+            success = SceneConfigGuard.update_frames(
+                filepath=path,
+                frames=frames_dicts,
+                active_frame_id=self.active_frame_id,
+                workspace_id=self.workspace_id,
+            )
+            if success:
+                log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个) 至空间场景: {path}")
+            return success
         except Exception as e:
             log.error(f"[FrameTree] 保存空间场景坐标系配置失败 ({path}): {e}")
             return False

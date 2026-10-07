@@ -25,6 +25,7 @@ from src.workspace.tag_whitelist_manager import (
 )
 from src.workspace.coordinate_manager import CoordinateTreeManager
 from src.workspace.roi_manager import RoiSpaceManager
+from src.workspace.scene_config_guard import SceneConfigGuard
 from src.workspace.health_auditor import audit_workspace, audit_all_workspaces
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "WorkspaceManager",
     "CoordinateTreeManager",
     "RoiSpaceManager",
+    "SceneConfigGuard",
     "audit_workspace",
     "audit_all_workspaces",
     "load_workspace_tag_whitelist",
