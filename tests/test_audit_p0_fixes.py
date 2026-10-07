@@ -125,9 +125,12 @@ class TestAuditP0Fixes(unittest.TestCase):
             }
         }
 
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w", encoding="utf-8") as tf:
+        tf = tempfile.NamedTemporaryFile(suffix=".yaml", delete=False, mode="w", encoding="utf-8")
+        try:
             yaml.dump(test_map, tf)
             tf_path = tf.name
+        finally:
+            tf.close()
 
         try:
             localizer = TagLocalizer(

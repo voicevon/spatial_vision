@@ -33,7 +33,6 @@ from src.ui.gui_components import (
     render_floating_tooltip,
 )
 from tools.spatial_mapping_studio.mapping_ui_common import (
-    VIEW_MODE_OPTIONS,
     FILTER_MODE_OPTIONS,
     SORT_MODE_OPTIONS,
     BA_VIEW_OPTIONS,

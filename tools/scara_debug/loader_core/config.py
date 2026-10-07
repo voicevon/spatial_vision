@@ -54,7 +54,6 @@ class LoaderConfig:
     z_max_mm: float = 100.0             # Z 轴最高行程 (mm)
     z_servo_angle_at_min: float = 270.0 # Z = z_min_mm (最低工作位) 对应的舵机物理角度 (°)
     z_servo_angle_at_max: float = 0.0   # Z = z_max_mm (最高安全位) 对应的舵机物理角度 (°)
-    z_servo_angle_max: float = 270.0    # 舵机满行程物理转角 (兼容旧字段)
 
     # 奇异点安全裕量：IK 求解时目标点与极限可达半径的最小距离 (mm)
     # 避免在 l1==l2 时近原点区域 (两臂完全重叠) 产生数值奇异 (#1 评审修正)

@@ -421,9 +421,6 @@ def draw_styled_button(
     is_active: bool = False,
     is_enabled: bool = True,
     font_scale: float = 0.42,
-    style: Optional[str] = None,
-    hover: Optional[bool] = None,
-    **kwargs
 ) -> bool:
     """
     绘制符合统一工业设计规范的现代化按钮（纯 ASCII/标准中文，严禁 Emoji，杜绝乱码）
@@ -435,19 +432,11 @@ def draw_styled_button(
     :param is_active: 是否处于激活/按下状态
     :param is_enabled: 是否可用
     :param font_scale: 字号缩放
-    :param style: 语义类型别名兼容参数 (若传入则覆盖 btn_type)
-    :param hover: 悬停态显式布尔值兼容参数 (若传入则覆盖坐标判定)
     :return: is_hovered
     """
-    if style is not None:
-        btn_type = style
-
     x1, y1, x2, y2 = rect
     mx, my = mouse_pos
-    if hover is not None:
-        is_hover = is_enabled and bool(hover)
-    else:
-        is_hover = is_enabled and (x1 <= mx <= x2 and y1 <= my <= y2)
+    is_hover = is_enabled and (x1 <= mx <= x2 and y1 <= my <= y2)
 
     PALETTE = {
         "normal":  {"bg": (38, 40, 48),  "border": (70, 75, 90),   "text": (220, 225, 230)},

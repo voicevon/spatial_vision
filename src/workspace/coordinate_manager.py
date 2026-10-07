@@ -205,14 +205,7 @@ class FrameDefinition:
                 known_dof = [bool(b) for b in raw_k]
 
             if not status:
-                # 兼容旧配置: 若有非空数值且不是全 0，视为 manual，否则默认 unknown
-                if t_xyz is not None and r_rpy is not None and (any(t_xyz) or any(r_rpy)):
-                    status = "manual"
-                else:
-                    status = "unknown"
-                    if t_xyz == [0.0, 0.0, 0.0] and r_rpy == [0.0, 0.0, 0.0] and not calib_metrics:
-                        t_xyz = None
-                        r_rpy = None
+                status = "unknown"
 
         return cls(
             frame_id=fid,

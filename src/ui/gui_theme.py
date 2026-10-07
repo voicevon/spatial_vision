@@ -106,12 +106,7 @@ class GuiTheme:
     ACTIVE = _ACTIVE
     BTN_BEHAVIOR = BTN_BEHAVIOR   # 按钮 hover 行为参数 (与颜色无关, 同一单源)
 
-    # 3D 标靶棱柱与双轨比对视图模式选项 (全局跨应用标准)
-    VIEW_MODE_OPTIONS = [
-        ("3d", "3D 双四棱柱对比"),
-        ("2d", "2D 识别框与残差矢量"),
-        ("mix", "混合透视模式"),
-    ]
+    # 3D 标靶棱柱/锥体与双轨比对视图模式选项 (全局跨应用标准)
 
     BA_VIEW_OPTIONS = [
         ("3d_prism", "3D 翡翠绿四棱柱"),

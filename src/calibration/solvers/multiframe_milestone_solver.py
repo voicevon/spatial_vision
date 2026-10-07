@@ -167,7 +167,7 @@ def check_sub_frame_local_rigidity(
     relative_tags: Dict[int, np.ndarray],
     dist_tol_mm: float = 3.0,
     dist_tol_ratio: float = 0.015,
-    fallback_anchor_tags: Optional[Dict[int, Any]] = None,
+    whitelist_anchor_tags: Optional[Dict[int, Any]] = None,
     coord_mgr: Optional[CoordinateTreeManager] = None,
 ) -> SubFrameMilestoneReport:
     """
@@ -185,8 +185,8 @@ def check_sub_frame_local_rigidity(
     nominal_tags: Dict[int, np.ndarray] = {}
     spec = frame.calibration_spec or {}
 
-    # 优先从 fallback_anchor_tags (tag_whitelist.yaml 第一真理源) 提取名义坐标
-    if fallback_anchor_tags:
+    # 从 whitelist_anchor_tags (tag_whitelist.yaml 第一真理源) 提取名义坐标
+    if whitelist_anchor_tags:
         target_range = None
         if coord_mgr:
             try:
@@ -203,7 +203,7 @@ def check_sub_frame_local_rigidity(
             start = idx * 10
             target_range = set(range(start, start + 10))
 
-        for tid_raw, a_entry in fallback_anchor_tags.items():
+        for tid_raw, a_entry in whitelist_anchor_tags.items():
             try:
                 tid = int(tid_raw)
             except (ValueError, TypeError):
@@ -213,13 +213,6 @@ def check_sub_frame_local_rigidity(
                 coords = a_entry.get("xyz_mm") or a_entry.get("coords") or a_entry.get("position_mm")
                 if coords and len(coords) >= 3 and None not in coords[:3]:
                     nominal_tags[tid] = np.array(coords[:3], dtype=np.float64)
-
-    # 实验性兼容: 若 whitelist 未定义该坐标局部坐标，尝试从 reference_tag_ids 匹配 (ID 列表模式)
-    if not nominal_tags:
-        ref_ids = spec.get("reference_tag_ids")
-        if ref_ids:
-            # 新规范: 只存 ID 列表，坐标必须在 whitelist 中展开定义才能赊入该分支
-            pass  # nominal_tags 已通过上方 whitelist 路径处理
 
     # 2. 匹配当前相对底图中存在的标靶
     matched_tids = sorted([tid for tid in nominal_tags if tid in relative_tags])
@@ -445,7 +438,7 @@ class MultiFrameMilestoneSolver:
                 relative_tags=metric_tags_3d,
                 dist_tol_mm=self.dist_tol_mm,
                 dist_tol_ratio=self.dist_tol_ratio,
-                fallback_anchor_tags=anchor_tags,
+                whitelist_anchor_tags=anchor_tags,
                 coord_mgr=coord_mgr,
             )
             report.sub_frames[frame.frame_id] = sub_rep

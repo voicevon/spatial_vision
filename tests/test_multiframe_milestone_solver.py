@@ -79,7 +79,7 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             frame=self.frame_sub_1,
             relative_tags=rel_tags_good,
             dist_tol_mm=3.0,
-            fallback_anchor_tags=anchor_sub_1,
+            whitelist_anchor_tags=anchor_sub_1,
         )
         self.assertTrue(rep_good.local_rigidity_passed)
         self.assertEqual(len(rep_good.local_conflict_pairs), 0)
@@ -95,7 +95,7 @@ class TestMultiFrameMilestoneSolver(unittest.TestCase):
             frame=self.frame_sub_1,
             relative_tags=rel_tags_bad,
             dist_tol_mm=3.0,
-            fallback_anchor_tags=anchor_sub_1,
+            whitelist_anchor_tags=anchor_sub_1,
         )
         self.assertFalse(rep_bad.local_rigidity_passed)
         self.assertGreater(len(rep_bad.local_conflict_pairs), 0)

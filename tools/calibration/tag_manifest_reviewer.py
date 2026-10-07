@@ -43,16 +43,10 @@ try:
 except ImportError:
     force_window_focus = None
 
-try:
-    from src.ui.viewport_manager import (
-        ViewportManager, get_safe_screen_size,
-        draw_styled_button, draw_segmented_toggle
-    )
-except ImportError:
-    ViewportManager = None
-    get_safe_screen_size = None
-    draw_styled_button = None
-    draw_segmented_toggle = None
+from src.ui.viewport_manager import (
+    ViewportManager, get_safe_screen_size,
+    draw_styled_button, draw_segmented_toggle
+)
 
 from src.ui.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
@@ -978,8 +972,7 @@ class TagManifestReviewer:
         # A. 翻页按钮组
         for act_id, label, bw, enabled in [("PREV", "< 上张 (A)", 95, can_prev), ("NEXT", "下张 (D) >", 95, can_next)]:
             b_rect = (bx, by1, bx + bw, by2)
-            if draw_styled_button:
-                draw_styled_button(canvas, b_rect, label, self.mouse_hover_pos, btn_type="normal", is_enabled=enabled)
+            draw_styled_button(canvas, b_rect, label, self.mouse_hover_pos, btn_type="normal", is_enabled=enabled)
             self.gui_action_buttons.append((act_id, b_rect, label, enabled))
             bx += bw + 6
 
@@ -988,8 +981,7 @@ class TagManifestReviewer:
         frame_type = "normal" if is_frame_enabled else "danger"
         frame_bw = 135
         f_rect = (bx, by1, bx + frame_bw, by2)
-        if draw_styled_button:
-            draw_styled_button(canvas, f_rect, frame_lbl, self.mouse_hover_pos, btn_type=frame_type)
+        draw_styled_button(canvas, f_rect, frame_lbl, self.mouse_hover_pos, btn_type=frame_type)
         self.gui_action_buttons.append(("TOGGLE_FRAME", f_rect, frame_lbl, True))
         bx += frame_bw + 6
 
@@ -999,12 +991,9 @@ class TagManifestReviewer:
             foc_idx = 1 if self.focus_mode else 0
             foc_w = 175
             foc_rect = (bx, by1, bx + foc_w, by2)
-            if draw_segmented_toggle:
-                sub_rects = draw_segmented_toggle(canvas, foc_rect, foc_opts, foc_idx, self.mouse_hover_pos, shortcut="Tab", active_color=(120, 45, 130))
-                for key, srect in sub_rects:
-                    self.gui_action_buttons.append(("TOGGLE_FOCUS", srect, "TOGGLE_FOCUS", True))
-            else:
-                self.gui_action_buttons.append(("TOGGLE_FOCUS", foc_rect, "TOGGLE_FOCUS", True))
+            sub_rects = draw_segmented_toggle(canvas, foc_rect, foc_opts, foc_idx, self.mouse_hover_pos, shortcut="Tab", active_color=(120, 45, 130))
+            for key, srect in sub_rects:
+                self.gui_action_buttons.append(("TOGGLE_FOCUS", srect, "TOGGLE_FOCUS", True))
             bx += foc_w + 6
 
         # D. 操作按钮 (全自动即时存盘，彻底移除冗余的手动保存按钮)
@@ -1014,8 +1003,7 @@ class TagManifestReviewer:
         ]
         for act_id, label, bw, btype in action_defs:
             b_rect = (bx, by1, bx + bw, by2)
-            if draw_styled_button:
-                draw_styled_button(canvas, b_rect, label, self.mouse_hover_pos, btn_type=btype)
+            draw_styled_button(canvas, b_rect, label, self.mouse_hover_pos, btn_type=btype)
             self.gui_action_buttons.append((act_id, b_rect, label, True))
             bx += bw + 6
 
@@ -1023,8 +1011,7 @@ class TagManifestReviewer:
         exit_bw = 85
         exit_bx = w - exit_bw - 10
         exit_rect = (exit_bx, by1, exit_bx + exit_bw, by2)
-        if draw_styled_button:
-            draw_styled_button(canvas, exit_rect, "[退出 (Q)]", self.mouse_hover_pos, btn_type="danger")
+        draw_styled_button(canvas, exit_rect, "[退出 (Q)]", self.mouse_hover_pos, btn_type="danger")
         self.gui_action_buttons.append(("EXIT", exit_rect, "退出", True))
 
         # 5. Toast 临时浮层通知

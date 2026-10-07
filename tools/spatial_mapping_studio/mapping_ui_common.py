@@ -16,8 +16,7 @@ from src.ui.gui_components import (
     render_dropdown_popup,
 )
 
-# 3D 视觉比对与双四棱柱选项 (取自全局单源 GuiTheme)
-VIEW_MODE_OPTIONS = GuiTheme.VIEW_MODE_OPTIONS
+# 3D 视觉比对选项 (取自全局单源 GuiTheme)
 BA_VIEW_OPTIONS = GuiTheme.BA_VIEW_OPTIONS
 OBS_VIEW_OPTIONS = GuiTheme.OBS_VIEW_OPTIONS
 
