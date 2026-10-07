@@ -39,7 +39,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from src.workspace.workspace_manager import WorkspaceManager, Workspace
 from src.devices.camera_service import CameraService
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 from src.utils.logger import get_logger
 from src.utils.image_io import imwrite_unicode
 from src.ui.base_cv_app import BaseCvApp

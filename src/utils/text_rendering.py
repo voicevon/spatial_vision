@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """通用文字渲染工具: TrueType 中文字体缓存 + OpenCV BGR 图像上的 PIL 高质量抗锯齿文本贴图。
 
-下沉自 tools/gui_launcher (消除 src→tools 逆向依赖):
-src 库层 (报告可视化) 与全部 GUI 工具统一从本模块导入, 依赖方向保持 tools→src 单向。
+下沉至 src/utils 层 (消除算法层 vision/calibration 对 src/ui 的逆向依赖):
+系统基础构件层 (utils)、算法感知层 (vision)、空间平差层 (calibration)、
+GUI 交互层 (ui) 与应用工具链 (tools) 统一从本模块导入。
 
 == 中文渲染规范 (全仓唯一文本管线) ==
 禁止在图像绘制路径使用 cv2.putText / cv2.getTextSize (Hershey 字体仅含 ASCII,
@@ -110,7 +111,6 @@ def _get_text_mask(text: str, font_size: int, bold: bool) -> Tuple[np.ndarray, i
     if hit is not None:
         _MASK_CACHE.move_to_end(key)
         return hit
-
     font = get_cached_font(font_size, bold)
     bbox = font.getbbox(text)
     x0, y0 = int(bbox[0]), int(bbox[1])

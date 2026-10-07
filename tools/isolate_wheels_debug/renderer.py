@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 from typing import Tuple, List, Optional
 
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 from tools.isolate_wheels_debug.ui_layout import (
     LOGIC_W, LOGIC_H,
     COLOR_BG, COLOR_PANEL, COLOR_BORDER, COLOR_BORDER_HL,

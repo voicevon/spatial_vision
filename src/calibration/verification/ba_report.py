@@ -16,7 +16,7 @@ import numpy as np
 import cv2
 
 from src.utils.logger import get_logger
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 
 log = get_logger(__name__)
 

@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 from src.vision.pipelines.base_pipeline import BaseAsparagusPipeline, PipelineResult, PipelineStep
 from src.vision.pipelines.registry import PipelineRegistry
 

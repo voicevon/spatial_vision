@@ -21,7 +21,7 @@ from reportlab.lib import colors
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

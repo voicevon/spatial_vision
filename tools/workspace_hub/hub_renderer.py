@@ -20,7 +20,7 @@ from src.ui.gui_components import (
     draw_rounded_rectangle,
 )
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, put_text
+from src.utils.text_rendering import draw_text, put_text
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_modals_renderer import HubModalsRenderer
 from tools.workspace_hub.hub_hit_tester import HubHitTester

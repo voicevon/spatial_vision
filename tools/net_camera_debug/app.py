@@ -33,7 +33,7 @@ import paho.mqtt.client as mqtt  # noqa: E402
 
 from src.utils.logger import get_logger  # noqa: E402
 from src.ui.base_cv_app import BaseCvApp  # noqa: E402
-from src.ui.text_rendering import draw_text  # noqa: E402
+from src.utils.text_rendering import draw_text  # noqa: E402
 
 log = get_logger(__name__)
 

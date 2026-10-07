@@ -17,7 +17,7 @@ import numpy as np
 
 from src.ui.gui_window_manager import GuiWindowManager
 from src.utils.logger import get_logger
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 from src.workspace.workspace_manager import WorkspaceManager
 from src.vision.asparagus_analyzer import AsparagusAnalyzer
 from src.vision.pipelines import PipelineRegistry, BaseAsparagusPipeline, PipelineResult

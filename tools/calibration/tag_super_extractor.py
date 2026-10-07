@@ -45,7 +45,7 @@ except Exception:
     DEFAULT_MANIFEST_PATH = os.path.join(PROJECT_ROOT, "data", "workspaces", "default", "calibration", "tag_observations.yaml")
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")  # 相机内参兜底, 不再持有 Tag 数据
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

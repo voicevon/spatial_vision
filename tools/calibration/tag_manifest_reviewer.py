@@ -48,7 +48,7 @@ from src.ui.viewport_manager import (
     draw_styled_button, draw_segmented_toggle
 )
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 from src.workspace.workspace_manager import load_workspace_marker_size_mm
 

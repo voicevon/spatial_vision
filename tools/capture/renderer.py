@@ -18,7 +18,7 @@ from src.ui.gui_components import (
     draw_dropdown_button,
     render_dropdown_popup,
 )
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 
 # 视觉样式常量 (BGR, 统一取自 GuiTheme 主题单源)
 COLOR_BG = GuiTheme.BG                    # 工具栏 / 占位背景
@@ -232,5 +232,5 @@ class CaptureRenderer:
 
     @staticmethod
     def _measure(text):
-        from src.ui.text_rendering import measure_text
+        from src.utils.text_rendering import measure_text
         return measure_text(text, font_size=16, bold=False)

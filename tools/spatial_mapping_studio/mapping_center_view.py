@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 from src.ui.gui_theme import GuiTheme
 from src.ui.gui_components import draw_dropdown_button, draw_dashboard_button
 

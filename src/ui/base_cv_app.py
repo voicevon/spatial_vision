@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from src.ui.gui_window_manager import GuiWindowManager
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 
 
 class BaseCvApp:

@@ -23,7 +23,7 @@ from typing import Tuple, Optional
 import numpy as np
 import cv2
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 
 # Windows API 可用性检测
 if sys.platform == "win32":

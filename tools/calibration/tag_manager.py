@@ -20,7 +20,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from src.ui.gui_window_manager import GuiWindowManager
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 from src.ui.gui_components import draw_app_header, TabBar, TabItem
 from src.utils.config_guard import load_raw_config
 from src.workspace.workspace_manager import (

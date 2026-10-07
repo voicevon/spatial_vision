@@ -20,7 +20,7 @@ from tools.tracker.common import (
     COL_WHITE, COL_YELLOW, TOOLBAR_H,
     PRISM_HW_MM, PRISM_HEIGHT_MM, _tag_local_frame, fmt_point,
     ASPARAGUS_WIDTH_MM, ASPARAGUS_LENGTH_MM, ASPARAGUS_HALF_LENGTH_MM, ASPARAGUS_HALF_WIDTH_MM, fmt_pose_4d)
-from src.ui.text_rendering import draw_text, measure_text
+from src.utils.text_rendering import draw_text, measure_text
 from src.ui.gui_theme import GuiTheme
 from src.calibration.verification.prism_renderer import draw_prism, COLORS_THEORY, COLORS_OBSERVED
 

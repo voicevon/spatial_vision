@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, measure_text
+from src.utils.text_rendering import draw_text, measure_text
 
 # 逻辑视窗分辨率
 LOGIC_W = 1280

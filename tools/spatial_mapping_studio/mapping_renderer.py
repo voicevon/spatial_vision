@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Tuple
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 
 # 共享常量与模块级绘制函数已迁移至 mapping_ui_common, 此处 re-import 保持
 # 既有外部导入路径 (from tools.spatial_mapping_studio.mapping_renderer import ...) 兼容可用。
@@ -580,7 +580,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         每行: [☑/☐ checkbox] + ROI 名称
         勾选/取消直接切换 RoiDefinition.enabled，并立即写盘到 spatial_scene.yaml。
         """
-        from src.ui.text_rendering import put_text as _put_text
+        from src.utils.text_rendering import put_text as _put_text
         from src.ui.gui_theme import GuiTheme
 
         roi_mgr = getattr(app, "roi_mgr", None)
@@ -678,7 +678,7 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         每行: [☑/☐ checkbox] + 坐标系名称 + frame_id
         勾选/取消直接切换 coord_frame_visibility[frame_id]。
         """
-        from src.ui.text_rendering import put_text as _put_text
+        from src.utils.text_rendering import put_text as _put_text
 
         coord_mgr = getattr(app, "coord_mgr", None)
         frames = coord_mgr.list_frames() if coord_mgr else []

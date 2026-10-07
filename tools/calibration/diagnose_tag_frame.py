@@ -46,7 +46,7 @@ except Exception:
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 
 from src.utils.config_guard import load_raw_config
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

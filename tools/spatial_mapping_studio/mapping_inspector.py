@@ -14,7 +14,7 @@ from typing import Any, Dict, List
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.ui.viewport_manager import draw_styled_button
 
 

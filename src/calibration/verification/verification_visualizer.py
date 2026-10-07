@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
-from src.ui.text_rendering import draw_text, get_cached_font, measure_text, put_text
+from src.utils.text_rendering import draw_text, get_cached_font, measure_text, put_text
 from src.utils.logger import get_logger
 from src.calibration.verification.prism_renderer import draw_prism, COLORS_THEORY, COLORS_OBSERVED
 

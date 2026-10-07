@@ -29,7 +29,7 @@ from src.calibration.manifest_repository import ManifestRepository
 from src.calibration.solvers.ba_optimizer import BundleAdjustmentOptimizer
 from src.vision.tag_detector import TagDetector
 from src.calibration.verification.prism_renderer import draw_prism, COLORS_MAPPING
-from src.ui.text_rendering import measure_text, put_text
+from src.utils.text_rendering import measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

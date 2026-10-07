@@ -56,7 +56,7 @@ from tools.scara_debug.loader_core.config import LoaderConfig
 from tools.tracker.common import (
     COLOR_ACCENT, COLOR_TEXT_SUB, COL_CYAN, COL_YELLOW,
     TOOLBAR_H, fmt_point, list_serial_ports)
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 from tools.tracker.renderer import TrackerRenderer
 from src.utils.logger import get_logger
 

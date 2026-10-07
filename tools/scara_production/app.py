@@ -25,7 +25,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src.ui.base_cv_app import BaseCvApp
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, put_text, measure_text
+from src.utils.text_rendering import draw_text, put_text, measure_text
 from src.utils.logger import get_logger
 
 from src.workspace.workspace_manager import (

@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import cv2
 
-from src.ui.text_rendering import put_text, draw_text
+from src.utils.text_rendering import put_text, draw_text
 from src.calibration.verification.verification_visualizer import VerificationVisualizer
 
 
