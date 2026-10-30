@@ -288,8 +288,8 @@ class ManifestRepository:
                 area = float(cv2.contourArea(corners.astype(np.float32)))
                 z = 0.0
                 succ = False
-                if self.builder is not None and hasattr(self.builder, "solve_single_tag_pnp"):
-                    succ, _, tv = self.builder.solve_single_tag_pnp(corners)
+                if self.builder is not None and hasattr(self.builder, "solve_planar_tag_pnp"):
+                    succ, _, tv = self.builder.solve_planar_tag_pnp(corners)
                     z = float(tv[2][0]) if succ else 0.0
 
                 if area < 120.0 or (succ and (z > 2200.0 or z < 150.0)):

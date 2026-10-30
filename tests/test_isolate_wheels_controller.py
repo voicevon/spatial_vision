@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-IsolateWheelsController 单元测试
+IsolationWheelController 单元测试
 =================================
 验证分离轮中枢控制器的网络生命周期、命令打包、安全互锁与参数校验机制。
 """
@@ -15,8 +15,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.control.isolate_wheels_controller import (
-    IsolateWheelsController,
+from src.control.isolation_wheel_controller import (
+    IsolationWheelController,
     WheelState,
     LOAD_SPEED_OPTS,
     TOPIC_PREFIX,
@@ -51,10 +51,10 @@ class _FakeMsg:
         self.payload = payload
 
 
-class TestIsolateWheelsController(unittest.TestCase):
+class TestIsolationWheelController(unittest.TestCase):
 
     def setUp(self):
-        self.controller = IsolateWheelsController()
+        self.controller = IsolationWheelController()
 
     def tearDown(self):
         self.controller.disconnect()

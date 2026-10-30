@@ -475,11 +475,11 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
     def test_frame_diagnostics_and_gate_status(self):
         """测试单帧病因切片诊断算法、物理指标与准入门限/拓扑评估"""
         diag = self.studio.data_mgr.diagnose_frame(0)
-        self.assertIn("contrast_rms", diag)
-        self.assertIn("laplacian_var", diag)
-        self.assertIn("mean_intensity", diag)
-        self.assertIn("false_rejections_count", diag)
-        self.assertIn("missing_projected_tags", diag)
+        self.assertIn("contrast", diag)
+        self.assertIn("sharpness", diag)
+        self.assertIn("brightness", diag)
+        self.assertIn("rejected_quads_count", diag)
+        self.assertIn("missing_theoretical_tags", diag)
 
         # 检查 StudioDataManager 的门限与拓扑字段
         self.assertIn(self.studio.data_mgr.gate_status, ["PASS", "ACCEPTABLE", "REVIEW"])
@@ -819,13 +819,14 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             translation_xyz_mm=[100.0, 0.0, 0.0],
             rotation_rpy_deg=[0.0, 0.0, 0.0],
             calibration_spec={
-                "reference_tags": {
-                    5: [0.0, 0.0, 0.0],  # Tag 5 在子系的名义坐标为 [0, 0, 0]
-                }
+                "reference_tag_ids": [5],
             }
         )
         coord_mgr.add_frame(sub_frame)
         self.studio.coord_mgr = coord_mgr
+        self.studio.ba_runner.anchor_tags = {
+            5: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"}
+        }
 
         # 默认基准为 world
         self.assertEqual(self.studio.active_reference_frame_id, "world")

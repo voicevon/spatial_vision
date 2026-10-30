@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import yaml
 
-from src.utils.config_guard import resolve_camera_intrinsics
+from src.utils.intrinsics_resolver import resolve_camera_intrinsics
 from src.workspace.workspace_manager import Workspace
 
 

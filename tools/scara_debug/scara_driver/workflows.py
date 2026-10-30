@@ -43,7 +43,7 @@ class PickAndPlaceConfig:
     grip_delay_s: float = 0.6
     release_delay_s: float = 0.5
     lift_delay_s: float = 0.4
-    feedrate: Optional[float] = None    # 移动进给率 (mm/min)，None 则自动使用 LoaderConfig.default_feedrate
+    feedrate: Optional[float] = None    # 移动进给率 (mm/min)，None 则自动使用 ScaraRobotConfig.default_feedrate
 
 
 class PickAndPlaceWorkflow:

@@ -20,7 +20,7 @@ from scipy.optimize import least_squares
 from scipy.sparse import lil_matrix
 
 from src.calibration.solvers.covisibility_graph import CovisibilityGraphAnalyzer, CovisibilityGraphError
-from src.calibration.verification.ba_report import compute_3d_uncertainties, export_diagnostic_report
+from src.calibration.verification.ba_uncertainty_analyzer import compute_3d_uncertainties, export_diagnostic_report
 from src.calibration.solvers.world_datum_aligner import WorldDatumAligner
 from src.workspace.coordinate_manager import rot_mat_to_rpy_deg
 
@@ -38,7 +38,7 @@ _OUTLIER_WEIGHT_SUPPRESS = 0.01  # 离群项权重强力压制因子
 _STAGE1_CAUCHY_SCALE = 1.5       # 阶段一全局粗差清洗 Cauchy 尺度因子
 _STAGE2_CAUCHY_SCALE = 1.0       # 阶段二微容差精修 Cauchy 尺度因子
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 
 class BundleAdjustmentOptimizer:
@@ -585,7 +585,7 @@ class BundleAdjustmentOptimizer:
 
     def compute_3d_uncertainties(self, jacobian, static_tags, base_id, sigma_res_px,
                                  similarity_transform: Optional[Tuple[float, np.ndarray]] = None) -> Dict[int, Dict[str, float]]:
-        """标靶 3D 置信区间计算（委托 ba_report 纯函数实现）"""
+        """标靶 3D 置信区间计算（委托 ba_uncertainty_analyzer 纯函数实现）"""
         return compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px, similarity_transform)
 
     def export_diagnostic_report(self,
@@ -596,7 +596,7 @@ class BundleAdjustmentOptimizer:
                                  outliers_detected: Set[Tuple[int, int]],
                                  rmse_px: float,
                                  report_dir: Optional[str] = None) -> str:
-        """Quiver 残差矢量场与 Markdown 精度体检报告生成（委托 ba_report 纯函数实现）"""
+        """Quiver 残差矢量场与 Markdown 精度体检报告生成（委托 ba_uncertainty_analyzer 纯函数实现）"""
         return export_diagnostic_report(
             final_tags_map=final_tags_map,
             detailed_obs_res=detailed_obs_res,

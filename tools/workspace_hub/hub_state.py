@@ -155,14 +155,14 @@ class HubState:
             self.save_selected_workspace()
             self.gallery.selected_intrinsics_image_idx = 0
             self.gallery.intrinsics_grid_offset = 0
-            self.gallery.selected_image_idx = 0
-            self.gallery.image_grid_offset = 0
+            self.gallery.selected_calib_image_idx = 0
+            self.gallery.calib_grid_offset = 0
             self.gallery.selected_prod_image_idx = 0
             self.gallery.prod_grid_offset = 0
             self.geometry.roi_scroll_offset = 0
             self.geometry.load_geometry_managers()
             self.gallery.load_intrinsics_images()
-            self.gallery.load_current_workspace_images()
+            self.gallery.load_calib_images()
             self.gallery.load_prod_images()
             self.whitelist.refresh_whitelist_cache()
 
@@ -173,7 +173,7 @@ class HubState:
         if not self.workspaces:
             self.selected_workspace_idx = 0
             self.active_dropdown = None
-            self.gallery.current_images = []
+            self.gallery.calib_images = []
             self.geometry.coord_mgr = None
             self.geometry.roi_mgr = None
             return

@@ -23,7 +23,7 @@ from src.utils.text_rendering import put_text
 @dataclass
 class AsparagusTarget:
     """单根芦笋感知与几何特征数据"""
-    id: int
+    target_id: int
     center_px: Tuple[float, float]       # 图像像素中心 (u, v)
     length_px: float                     # 像素长度
     diam_px: float                       # 像素直径
@@ -37,9 +37,9 @@ class AsparagusTarget:
     diam_mm: float                       # 物理平均直径
     
     # 相机坐标系下的物理空间点 (单位: mm, 原点为镜头光心)
-    grip_x: float                        # 相机系 X
-    grip_y: float                        # 相机系 Y
-    grip_z: float                        # 相机系 Z (沿光轴的镜头绝对深度，如 530mm)
+    grip_cam_x: float                    # 相机系 X
+    grip_cam_y: float                    # 相机系 Y
+    grip_cam_z: float                    # 相机系 Z (沿光轴的镜头绝对深度，如 530mm)
     z_top: float                         # 芦笋顶面绝对深度 (越小越靠近相机)
     rel_height_mm: float                 # 相对工作台面的凸起净高度 (越大越在上层, 如 +45mm)
     
@@ -637,7 +637,7 @@ class AsparagusAnalyzer:
                 robot_r = float(yaw_deg)
 
             target = AsparagusTarget(
-                id=sp['id'],
+                target_id=sp['id'],
                 center_px=(cx_val, cy_val),
                 length_px=length_px,
                 diam_px=diam_px,
@@ -647,9 +647,9 @@ class AsparagusAnalyzer:
                 contour=box_corners,
                 length_mm=round(length_mm, 1),
                 diam_mm=round(diam_mm, 1),
-                grip_x=round(grip_x, 1),
-                grip_y=round(grip_y, 1),
-                grip_z=round(grip_z, 1),
+                grip_cam_x=round(grip_x, 1),
+                grip_cam_y=round(grip_y, 1),
+                grip_cam_z=round(grip_z, 1),
                 z_top=round(z_top, 1),
                 rel_height_mm=round(rel_height_mm, 1),
                 robot_x=round(robot_x, 1),
@@ -671,7 +671,7 @@ class AsparagusAnalyzer:
             # 严格保留排名前三位 (Top 3)
             targets = targets[:3]
             for rank_i, t in enumerate(targets):
-                t.id = rank_i + 1
+                t.target_id = rank_i + 1
                 t.is_topmost = (rank_i == 0)
 
         self.last_pipeline_targets = targets
@@ -785,7 +785,7 @@ class AsparagusAnalyzer:
                 cv2.drawMarker(annotated, (cx_int, cy_int), (255, 255, 255), cv2.MARKER_CROSS, 20, 2)
 
                 # 详细数据悬浮卡片 (包含用户关心的：直径、长度、方向、高度)
-                badge = f"TOP #1 [最优选取]" if is_top else f"#{t.id} [当前选取]"
+                badge = f"TOP #1 [最优选取]" if is_top else f"#{t.target_id} [当前选取]"
                 line1 = f"{badge}  D:{t.diam_mm}mm  L:{t.length_mm}mm"
                 h_str = f"H:+{t.rel_height_mm}mm" if t.rel_height_mm > 0 else "H:--"
                 line2 = f"方向:{t.yaw_deg}deg  高度:{h_str}"
@@ -814,7 +814,7 @@ class AsparagusAnalyzer:
                 cv2.drawMarker(annotated, (cx_int, cy_int), (240, 180, 40), cv2.MARKER_CROSS, 12, 1)
 
                 h_val = f"+{t.rel_height_mm}mm" if t.rel_height_mm > 0 else "--"
-                label = f"#{t.id} D:{t.diam_mm} L:{t.length_mm} R:{t.yaw_deg} H:{h_val}"
+                label = f"#{t.target_id} D:{t.diam_mm} L:{t.length_mm} R:{t.yaw_deg} H:{h_val}"
                 (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
                 lx = max(6, min(annotated.shape[1] - lw - 10, cx_int - lw // 2))
                 ly = max(lh + 6, cy_int - 12)

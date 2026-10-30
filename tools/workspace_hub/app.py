@@ -74,9 +74,9 @@ class WorkspaceHubApp(BaseCvApp):
         return self.renderer.render(self.state)
 
     def _launch_capture_wizard(self, purpose: str = "calibration"):
-        """启动多视角交互式采图向导 (tools/capture/capture_wizard.py)，支持三用途归档路由"""
+        """启动多视角交互式采图向导 (tools/capture/app.py)，支持三用途归档路由"""
         ws = self.state.get_selected_workspace()
-        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "tools", "capture", "capture_wizard.py"), "--purpose", purpose]
+        cmd = [sys.executable, "-m", "tools.capture", "--purpose", purpose]
         if ws:
             cmd.extend(["--workspace", ws.workspace_id])
         name_map = {"intrinsics": "相机内参采图", "calibration": "外参建图采图", "production": "生产采样采图"}
@@ -96,7 +96,7 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.select_workspace_by_offset(wheel_dir)
         elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED:
             # 全宽大图沉浸模式下滚轮切换大图
-            self.state.gallery.select_image_by_offset(wheel_dir)
+            self.state.gallery.select_calib_image_by_offset(wheel_dir)
         else:
             # 卡片网格墙模式下滚轮翻页
             self._scroll_grid_for_active_tab(wheel_dir)
@@ -160,8 +160,8 @@ class WorkspaceHubApp(BaseCvApp):
             if 0 <= target_idx < len(self.state.gallery.prod_images):
                 self.state.gallery.select_prod_image_at_index(target_idx)
         elif tab == HubState.TAB_CALIB_IMAGES:
-            if 0 <= target_idx < len(self.state.gallery.current_images):
-                self.state.gallery.select_image_at_index(target_idx)
+            if 0 <= target_idx < len(self.state.gallery.calib_images):
+                self.state.gallery.select_calib_image_at_index(target_idx)
 
     def _action_dropdown_toggle(self, dd_type: str):
         """响应下拉框的展开/收起切换"""
@@ -292,9 +292,9 @@ class WorkspaceHubApp(BaseCvApp):
                 if 0 <= target < len(self.state.gallery.intrinsics_images):
                     self.state.gallery.select_intrinsics_image_at_index(target)
             elif tab == HubState.TAB_CALIB_IMAGES:
-                target = self.state.gallery.image_grid_offset + cell_idx
-                if 0 <= target < len(self.state.gallery.current_images):
-                    self.state.gallery.select_image_at_index(target)
+                target = self.state.gallery.calib_grid_offset + cell_idx
+                if 0 <= target < len(self.state.gallery.calib_images):
+                    self.state.gallery.select_calib_image_at_index(target)
             elif tab == HubState.TAB_PROD_IMAGES:
                 target = self.state.gallery.prod_grid_offset + cell_idx
                 if 0 <= target < len(self.state.gallery.prod_images):
@@ -322,7 +322,7 @@ class WorkspaceHubApp(BaseCvApp):
         elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.select_prod_image_by_offset(delta)
         elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED or self.state.active_tab == HubState.TAB_CALIB_IMAGES:
-            self.state.gallery.select_image_by_offset(delta)
+            self.state.gallery.select_calib_image_by_offset(delta)
 
     def _scroll_grid_for_active_tab(self, delta_rows: int):
         """按当前激活页签滚动卡片网格 / ROI 列表 (滚轮驱动)"""
@@ -333,7 +333,7 @@ class WorkspaceHubApp(BaseCvApp):
         elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.scroll_prod_grid(delta_rows)
         else:
-            self.state.gallery.scroll_image_grid(delta_rows)
+            self.state.gallery.scroll_calib_grid(delta_rows)
 
     def _action_run_intrinsics_calib(self):
         """响应点击【标定内参】动作：从当前工位内参图集一键求解物理焦距与畸变并写穿至工位沙盒"""
@@ -442,7 +442,7 @@ class WorkspaceHubApp(BaseCvApp):
             ws.refresh_stats()
             ws.save_meta()
         self.state.refresh_workspaces()
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.set_toast(f"已完成 {desc} 并返回 Workspace 驾驶舱，数据已同步！")
 
     def _launch_spatial_mapping_studio(self):

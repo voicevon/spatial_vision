@@ -6,9 +6,8 @@ BundleAdjustmentOptimizer 单元测试 (test_ba_optimizer.py)
 覆盖核心特性：
   1. 旋转平移向量与 4x4 齐次矩阵双向精确可逆转换；
   2. 双标靶基线尺度修正算法 (Metric Baseline Gauge)；
-  3. SCARA 世界坐标系对齐闭环 (Origin 锚定与 X 轴水平对齐)；
-  4. 3D 不确定度协方差提取；
-  5. 约束积累式世界锚定 (全知/部分已知锚点, full/partial/none 三级模式)。
+  3. 3D 不确定度协方差提取；
+  4. 约束积累式世界锚定 (全知/部分已知锚点, full/partial/none 三级模式)。
 """
 
 import os
@@ -64,29 +63,6 @@ class TestBundleAdjustmentOptimizer(unittest.TestCase):
         self.assertAlmostEqual(scale, 1.05, places=5)
         self.assertAlmostEqual(real_marker_size, 52.5, places=2)
         np.testing.assert_allclose(scaled_poses[1][:3, 3], [525.0, 0.0, 0.0], atol=1e-5)
-
-    def test_align_to_scara_world(self):
-        """测试将 Tag 0 绑定为原点，Tag 1 对齐至 +X 轴"""
-        # 构造未对齐状态：Tag 0 在 (100, 100, 0)，Tag 1 在 (100+300*cos(45°), 100+300*sin(45°), 0)
-        p0 = np.array([100.0, 100.0, 0.0])
-        p1 = np.array([100.0 + 300.0 * np.cos(np.pi / 4), 100.0 + 300.0 * np.sin(np.pi / 4), 0.0])
-        T0 = np.eye(4)
-        T0[:3, 3] = p0
-        T1 = np.eye(4)
-        T1[:3, 3] = p1
-
-        tag_poses = {0: T0, 1: T1}
-        aligner = WorldDatumAligner(marker_size_mm=50.0)
-        aligned_map = aligner.align_to_scara_world(tag_poses, origin_tag_id=0, x_align_tag_id=1)
-
-        pos0 = aligned_map["tags"][0]["position_mm"]
-        pos1 = aligned_map["tags"][1]["position_mm"]
-
-        # 校验 Tag 0 归零
-        np.testing.assert_allclose(pos0, [0.0, 0.0, 0.0], atol=1e-2)
-        # 校验 Tag 1 落在 +X 轴上 (Y=0, X 约为 300.0)
-        self.assertAlmostEqual(pos1[1], 0.0, places=1)
-        self.assertAlmostEqual(pos1[0], 300.0, places=1)
 
     def test_optimize_with_callback(self):
         """测试 BA optimize 求解过程中 callback 回调机制正常被触发且接收到指标"""
@@ -276,25 +252,19 @@ class TestConstraintAnchor(unittest.TestCase):
             self.assertAlmostEqual(pos[2], scale_gt * z_ba[tid], places=1)
         self.assertAlmostEqual(result["world_anchor"]["scale_factor"], scale_gt, places=5)
 
-    def test_anchor_none_fallback(self):
-        """测试约束不足 → none 模式退化相对对齐 (含配置锚点未被检出的情形)"""
-        # 单枚全知锚点: 无尺度来源 → 相对对齐 + none 标记
+    def test_anchor_insufficient_dof_raises(self):
+        """测试约束不足时严格拒绝旧式相对对齐兜底并抛出 ValueError (FR-9.6 禁止兜底)"""
         poses = {0: np.eye(4), 1: np.eye(4)}
         poses[1][:3, 3] = [400.0, 0.0, 0.0]
         anchor_tags = {0: {"xyz_mm": [10.0, 20.0, 30.0], "known": [True] * 3}}
-        result = self.aligner.anchor_to_absolute_world(poses, anchor_tags)
-        self.assertEqual(result["anchor_mode"], "none")
-        self.assertTrue(result.get("anchor_skip_reason"))
-        # 相对对齐行为: Tag 0 归零
-        np.testing.assert_allclose(result["tags"][0]["position_mm"], [0.0, 0.0, 0.0], atol=1e-6)
+        with self.assertRaises(ValueError):
+            self.aligner.anchor_to_absolute_world(poses, anchor_tags)
 
-        # 配置双锚点但 Tag 5 未被检出 → 可用约束只剩 1 枚 → none
+        # 配置双锚点但 Tag 5 未被检出 → 可用约束只剩 1 枚 → 抛出 ValueError
         anchor_tags = {0: {"xyz_mm": [0.0, 0.0, 405.0], "known": [True] * 3},
                        5: {"xyz_mm": [0.0, 520.0, 196.0], "known": [True] * 3}}
-        result = self.aligner.anchor_to_absolute_world(poses, anchor_tags)
-        self.assertEqual(result["anchor_mode"], "none")
-        self.assertTrue(result.get("anchor_skip_reason"))
-
+        with self.assertRaises(ValueError):
+            self.aligner.anchor_to_absolute_world(poses, anchor_tags)
 
     def test_anchor_umeyama_3d_with_roll_pitch(self):
         """测试 >=3 枚全知锚点时自动触发 Umeyama 3D 最优相似变换，消除标靶自身倾角对世界系的绑架"""

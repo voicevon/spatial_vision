@@ -77,20 +77,20 @@ class TestWorkspaceHub(unittest.TestCase):
         """测试 HubState 原地连拍保存与归档"""
         state = HubState(self.workspace_mgr)
         cur_ws = state.get_selected_workspace()
-        self.assertEqual(cur_ws.extrinsic_calib_image_count, 0)
+        self.assertEqual(cur_ws.calibration_image_count, 0)
 
         # 模拟生成并抓拍一帧
         test_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
         saved_file = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file))
-        self.assertEqual(cur_ws.extrinsic_calib_image_count, 1)
-        self.assertEqual(len(state.gallery.current_images), 1)
+        self.assertEqual(cur_ws.calibration_image_count, 1)
+        self.assertEqual(len(state.gallery.calib_images), 1)
 
         # 再次抓拍第二帧
         saved_file2 = state.gallery.save_capture_frame(test_frame)
         self.assertTrue(os.path.exists(saved_file2))
-        self.assertEqual(cur_ws.extrinsic_calib_image_count, 2)
-        self.assertEqual(len(state.gallery.current_images), 2)
+        self.assertEqual(cur_ws.calibration_image_count, 2)
+        self.assertEqual(len(state.gallery.calib_images), 2)
 
     def test_hub_renderer_canvas(self):
         """测试 HubRenderer 双缓冲画布在宏观工位页签与微观坐标系页签下的渲染输出 (960x720)"""
@@ -178,7 +178,7 @@ class TestWorkspaceHub(unittest.TestCase):
                 break
         self.assertNotEqual(target_idx, -1)
         state.selected_workspace_idx = target_idx
-        state.gallery.load_current_workspace_images()
+        state.gallery.load_calib_images()
         self.assertEqual(state.get_selected_workspace().name, "对照组_工况测试")
 
     def test_hub_rename_workspace(self):
@@ -407,30 +407,30 @@ class TestWorkspaceHub(unittest.TestCase):
         dummy = np.zeros((480, 640, 3), dtype=np.uint8)
         for i in range(20):
             cv2.imwrite(os.path.join(ws.calib_raw_images_dir, f"test_view_{i:02d}.png"), dummy)
-        state.gallery.load_current_workspace_images()
+        state.gallery.load_calib_images()
 
-        initial_count = len(state.gallery.current_images)
+        initial_count = len(state.gallery.calib_images)
         self.assertGreaterEqual(initial_count, 20)
-        state.gallery.selected_image_idx = 0
+        state.gallery.selected_calib_image_idx = 0
 
         # 2. 测试通过 state.gallery.delete_selected_image() 删除首张照片
-        deleted_file = state.gallery.current_images[0]
+        deleted_file = state.gallery.calib_images[0]
         ok = state.gallery.delete_selected_image()
         self.assertTrue(ok)
         self.assertFalse(os.path.exists(deleted_file), "被删除的照片文件应已从磁盘移除")
-        self.assertEqual(len(state.gallery.current_images), initial_count - 1)
-        self.assertEqual(ws.extrinsic_calib_image_count, initial_count - 1)
+        self.assertEqual(len(state.gallery.calib_images), initial_count - 1)
+        self.assertEqual(ws.calibration_image_count, initial_count - 1)
 
         # 3. 键盘 [Del] 对应的状态层删除逻辑
-        del_target = state.gallery.current_images[0]
+        del_target = state.gallery.calib_images[0]
         self.assertTrue(state.gallery.delete_selected_image())
         self.assertFalse(os.path.exists(del_target), "键盘 [Del] 删除逻辑应移除当前照片")
-        self.assertEqual(len(state.gallery.current_images), initial_count - 2)
+        self.assertEqual(len(state.gallery.calib_images), initial_count - 2)
 
         # 4. 滚轮在卡片网格中按行滚动 (每格滚动一行)
-        state.gallery.image_grid_offset = 0
+        state.gallery.calib_grid_offset = 0
         app._on_mouse_event(cv2.EVENT_MOUSEWHEEL, 700, 300, -1, None)
-        self.assertEqual(state.gallery.image_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
+        self.assertEqual(state.gallery.calib_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
 
         # 5. 测试点击 Header 页签 Tab 切换动态区内容 (左栏保持稳定)
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
@@ -703,16 +703,16 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertIsNotNone(ws)
 
         # 模拟数据矛盾场景：元数据记录标定 22 帧，但物理目录为空 (0 帧)
-        ws.extrinsic_calib_image_count = 22
+        ws.calibration_image_count = 22
         ws.save_meta()
-        self.assertEqual(ws.extrinsic_calib_image_count, 22)
+        self.assertEqual(ws.calibration_image_count, 22)
 
         # 触发 [更新元数据] 按钮 (卡片1底栏左侧, x=430, y=205)
         app.state.active_tab = HubState.TAB_REPORT
         app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 430, 205, 0, None)
 
         # 验证自动核验自愈：已同步至物理真实照片数，且元数据已更新
-        self.assertEqual(ws.extrinsic_calib_image_count, ws.get_image_count("calibration"))
+        self.assertEqual(ws.calibration_image_count, ws.get_image_count("calibration"))
         self.assertIn("已", app.state.toast_msg)
 
     def test_prod_images_loading_and_gallery_separation(self):
@@ -727,13 +727,13 @@ class TestWorkspaceHub(unittest.TestCase):
         for i in range(3):
             cv2.imwrite(os.path.join(ws.prod_raw_images_dir, f"prod_{i:04d}.png"), np.zeros((100, 100, 3), dtype=np.uint8))
 
-        state.gallery.load_current_workspace_images()
+        state.gallery.load_calib_images()
         state.gallery.load_prod_images()
 
         # 验证两相册图片互相独立
-        self.assertEqual(len(state.gallery.current_images), 2)
+        self.assertEqual(len(state.gallery.calib_images), 2)
         self.assertEqual(len(state.gallery.prod_images), 3)
-        self.assertTrue(all("calib_" in p for p in state.gallery.current_images))
+        self.assertTrue(all("calib_" in p for p in state.gallery.calib_images))
         self.assertTrue(all("prod_" in p for p in state.gallery.prod_images))
 
         # 切换到生产相册并进入全宽大图
@@ -747,7 +747,7 @@ class TestWorkspaceHub(unittest.TestCase):
         deleted = state.gallery.delete_selected_image()
         self.assertTrue(deleted)
         self.assertEqual(len(state.gallery.prod_images), 2)
-        self.assertEqual(len(state.gallery.current_images), 2)
+        self.assertEqual(len(state.gallery.calib_images), 2)
 
     def test_prod_mode_dropdown_interaction(self):
         """测试大盘看板中工作流模式下拉框的展开、选项切换与点击外部收起闭环"""

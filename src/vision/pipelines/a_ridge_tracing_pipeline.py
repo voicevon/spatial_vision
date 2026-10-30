@@ -325,12 +325,12 @@ class RidgeTracingPipeline(BaseAsparagusPipeline):
                 robot_r = float(sp['yaw_deg'])
 
             target = AsparagusTarget(
-                id=sp['id'], center_px=(cx_val, cy_val),
+                target_id=sp['id'], center_px=(cx_val, cy_val),
                 length_px=sp['length_px'], diam_px=sp['diam_px'],
                 yaw_deg=sp['yaw_deg'], axis_vector=(vx_val, vy_val),
                 box_corners=box_corners, contour=box_corners,
                 length_mm=sp['length_mm'], diam_mm=sp['diam_mm'],
-                grip_x=round(grip_x, 1), grip_y=round(grip_y, 1), grip_z=round(grip_z, 1),
+                grip_cam_x=round(grip_x, 1), grip_cam_y=round(grip_y, 1), grip_cam_z=round(grip_z, 1),
                 z_top=round(z_top, 1), rel_height_mm=round(rel_height_mm, 1),
                 robot_x=round(robot_x, 1), robot_y=round(robot_y, 1),
                 robot_z=round(robot_z, 1), robot_r=round(robot_r, 1),
@@ -345,7 +345,7 @@ class RidgeTracingPipeline(BaseAsparagusPipeline):
                 targets.sort(key=lambda t: (t.length_px * t.diam_px), reverse=True)
             targets = targets[:3]
             for rank_i, t in enumerate(targets):
-                t.id = rank_i + 1
+                t.target_id = rank_i + 1
                 t.is_topmost = (rank_i == 0)
 
         # 渲染位姿图 (调用现有 draw_detections 工具)

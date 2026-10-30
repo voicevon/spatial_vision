@@ -35,70 +35,37 @@ class TestAuditP0Fixes(unittest.TestCase):
         )
         self.aligner = WorldDatumAligner(marker_size_mm=50.0)
 
-    def test_align_to_scara_world_with_real_tag(self):
-        """测试使用真实存在的 Tag 28 对齐 X 轴，验证其成功旋转并消除 Y 偏移"""
-        # 构造包含 Tag 0 (原点) 与 Tag 28 (位于 (100, 100, 0)) 的位姿字典
+    def test_anchor_to_absolute_world_with_real_tag(self):
+        """测试使用世界锚点对齐 X 轴，验证其成功旋转并消除 Y 偏移"""
         tag_poses = {
             0: np.eye(4, dtype=np.float64),
-            28: np.array([
+            1: np.array([
                 [1.0, 0.0, 0.0, 100.0],
                 [0.0, 1.0, 0.0, 100.0],
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0]
             ], dtype=np.float64)
         }
+        anchors = {
+            0: {"xyz_mm": [0.0, 0.0, 0.0], "known": [True, True, True]},
+            1: {"xyz_mm": [141.421356, 0.0, 0.0], "known": [True, True, True]},
+        }
 
-        aligned_map = self.aligner.align_to_scara_world(
+        aligned_map = self.aligner.anchor_to_absolute_world(
             tag_poses,
-            origin_tag_id=0,
-            x_align_tag_id=28
+            anchors,
         )
 
         self.assertIn(0, aligned_map["tags"])
-        self.assertIn(28, aligned_map["tags"])
-        self.assertEqual(aligned_map["origin_tag_id"], 0)
-        self.assertEqual(aligned_map["x_axis_align_tag_id"], 28)
+        self.assertIn(1, aligned_map["tags"])
 
-        # 原点位置必须为 (0, 0, 0)
         p0 = aligned_map["tags"][0]["position_mm"]
         self.assertAlmostEqual(p0[0], 0.0, places=1)
         self.assertAlmostEqual(p0[1], 0.0, places=1)
 
-        # 对齐后的 Tag 28 其 Y 坐标必须被旋转校正为接近 0.0 (严密处于 +X 轴)
-        p28 = aligned_map["tags"][28]["position_mm"]
-        self.assertGreater(p28[0], 100.0, "旋转到 +X 轴后，X 坐标应大于等于 100mm")
-        self.assertAlmostEqual(p28[1], 0.0, places=1, msg="X 轴对齐后 Tag 28 的 Y 偏差必须严格趋近于 0")
-
-        # 检查标记
-        self.assertTrue(aligned_map["tags"][0]["is_origin"])
-        self.assertTrue(aligned_map["tags"][0]["is_dynamic_yaw"])
-        self.assertFalse(aligned_map["tags"][28]["is_origin"])
-        self.assertFalse(aligned_map["tags"][28]["is_dynamic_yaw"])
-
-    def test_align_to_scara_world_fallback_when_x_tag_missing(self):
-        """测试当指定的 X 轴标靶缺失时，系统自动降级使用最远端刚体标靶而非静默跳过"""
-        # 构造包含 Tag 0、Tag 18 (较远) 的位姿，但未包含 Tag 1
-        tag_poses = {
-            0: np.eye(4, dtype=np.float64),
-            18: np.array([
-                [1.0, 0.0, 0.0, 200.0],
-                [0.0, 1.0, 0.0, 200.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0]
-            ], dtype=np.float64)
-        }
-
-        # 传入现场不存在的 Tag 1
-        aligned_map = self.aligner.align_to_scara_world(
-            tag_poses,
-            origin_tag_id=0,
-            x_align_tag_id=1
-        )
-
-        # 验证自适应降级至候选远端标靶 Tag 18
-        self.assertEqual(aligned_map["x_axis_align_tag_id"], 18)
-        p18 = aligned_map["tags"][18]["position_mm"]
-        self.assertAlmostEqual(p18[1], 0.0, places=1, msg="自适应降级后 Tag 18 的 Y 坐标亦应被校正为 0")
+        p1 = aligned_map["tags"][1]["position_mm"]
+        self.assertGreater(p1[0], 100.0)
+        self.assertAlmostEqual(p1[1], 0.0, places=1)
 
     def test_tag_localizer_excludes_tag0_from_pnp(self):
         """测试 TagLocalizer 绝对排除 Tag 0 (动态标靶) 进入静态 PnP 点对"""

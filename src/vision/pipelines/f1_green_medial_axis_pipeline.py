@@ -30,7 +30,7 @@ from src.vision.pipelines.registry import PipelineRegistry
 
 
 @PipelineRegistry.register("feng_green_axis", "算法 F1: 冯氏寻找法 (Feng's Green Axis)")
-class FengGreenAxisPipeline(BaseAsparagusPipeline):
+class GreenMedialAxisPipeline(BaseAsparagusPipeline):
     """算法 F1：冯氏寻找法 —— 纯 HSV 色彩分割的单层芦笋主干定位流水线"""
 
     name = "算法 F1: 冯氏寻找法 (Feng's Green Axis)"
@@ -790,7 +790,7 @@ class FengGreenAxisPipeline(BaseAsparagusPipeline):
                 robot_r = s["yaw"]
 
             targets.append(AsparagusTarget(
-                id=rank + 1,
+                target_id=rank + 1,
                 center_px=(mid_u, mid_v),
                 length_px=s["len_px"],
                 diam_px=s["diam_px"],
@@ -800,9 +800,9 @@ class FengGreenAxisPipeline(BaseAsparagusPipeline):
                 contour=s["contour"],
                 length_mm=round(s["len_mm"], 1),
                 diam_mm=round(s["diam_mm"], 1),
-                grip_x=round(grip_x, 1),
-                grip_y=round(grip_y, 1),
-                grip_z=round(grip_z, 1),
+                grip_cam_x=round(grip_x, 1),
+                grip_cam_y=round(grip_y, 1),
+                grip_cam_z=round(grip_z, 1),
                 z_top=0.0,
                 rel_height_mm=0.0,
                 robot_x=round(robot_x, 1),

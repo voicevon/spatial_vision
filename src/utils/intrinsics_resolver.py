@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-系统配置安全守卫与动态防呆校验器 (ConfigGuard)
+相机内参自适应解析与系统配置校验器 (IntrinsicsResolver)
 - 解决相机内参与输入图像分辨率脱节、导致空间反投影畸变的核心隐患
 - 提供多分辨率自适应线性仿射缩放 (Auto-scaling)
 - 跨配置项交叉物理校验 (机器人行程安全、深度门限合理性、单位阵回退拦截)
@@ -34,8 +34,6 @@ def load_raw_config(config_path: str = SYSTEM_CONFIG_PATH) -> Dict[str, Any]:
         return {}
 
 
-
-
 def resolve_camera_intrinsics(
     config_path: str = SYSTEM_CONFIG_PATH,
     actual_image_shape: Optional[Tuple[int, int]] = None,
@@ -46,7 +44,7 @@ def resolve_camera_intrinsics(
     自适应获取并校验相机内参 (具有防呆与分辨率自适应缩放能力)
     
     加载优先级:
-      1. 工位专属内参 (workspace_dir 下 calibration/camera_intrinsics.yaml 或 camera_intrinsics.yaml)
+      1. 工位专属内参 (workspace_dir 下 intrinsics/camera_intrinsics.yaml)
       2. 硬件在线 profile 直读 (stream_profile 句柄可用时)
       3. 系统全局配置 (config.yaml)
       4. 工业默认参考出厂值 (D435 1080P)
@@ -73,13 +71,8 @@ def resolve_camera_intrinsics(
 
     # 1. 工位沙盒专属内参 (最高优先级，单一真理源为 intrinsics/camera_intrinsics.yaml)
     if workspace_dir and os.path.exists(workspace_dir):
-        candidate_paths = [
-            os.path.join(workspace_dir, "intrinsics", "camera_intrinsics.yaml"),
-            os.path.join(workspace_dir, "calibration", "camera_intrinsics.yaml"),
-            os.path.join(workspace_dir, "camera_intrinsics.yaml")
-        ]
-        intr_path = next((p for p in candidate_paths if os.path.exists(p)), None)
-        if intr_path:
+        intr_path = os.path.join(workspace_dir, "intrinsics", "camera_intrinsics.yaml")
+        if os.path.exists(intr_path):
             try:
                 ws_cfg = load_raw_config(intr_path)
                 if ws_cfg:
@@ -94,10 +87,10 @@ def resolve_camera_intrinsics(
                         cx = float(ws_cfg.get("cx", cx))
                         cy = float(ws_cfg.get("cy", cy))
 
-                    ref_w = int(ws_cfg.get("width", ws_cfg.get("image_width", ref_w)))
-                    ref_h = int(ws_cfg.get("height", ws_cfg.get("image_height", ref_h)))
+                    ref_w = int(ws_cfg.get("width", ref_w))
+                    ref_h = int(ws_cfg.get("height", ref_h))
                     
-                    dist_raw = ws_cfg.get("dist_coeffs") or ws_cfg.get("dist") or ws_cfg.get("distortion")
+                    dist_raw = ws_cfg.get("dist_coeffs")
                     if dist_raw is not None and isinstance(dist_raw, (list, tuple)):
                         dist = np.array(list(dist_raw)[:5], dtype=np.float64).reshape((5, 1))
 
@@ -134,13 +127,13 @@ def resolve_camera_intrinsics(
             fy = float(cam_col.get("fy", fy))
             cx = float(cam_col.get("cx", cx))
             cy = float(cam_col.get("cy", cy))
-            dist_raw = cam_col.get("dist_coeffs") or cam_col.get("dist") or cam_col.get("distortion")
+            dist_raw = cam_col.get("dist_coeffs")
             if dist_raw is not None and isinstance(dist_raw, (list, tuple)):
                 dist = np.array(list(dist_raw)[:5], dtype=np.float64).reshape((5, 1))
             metadata["source"] = "config_yaml"
             metadata["base_resolution"] = (ref_h, ref_w)
 
-    # 3. 图像实际尺寸比对与自适应等比缩放
+    # 4. 图像实际尺寸比对与自适应等比缩放
     if actual_image_shape is not None:
         act_h, act_w = actual_image_shape[:2]
         metadata["actual_resolution"] = (act_h, act_w)
@@ -167,7 +160,7 @@ def resolve_camera_intrinsics(
             metadata["scale_factor"] = (scale_x + scale_y) / 2.0
             ref_w, ref_h = act_w, act_h
 
-        # 4. 主点中心度合理性断言 (Sanity Check)
+        # 5. 主点中心度合理性断言 (Sanity Check)
         if not (0.30 * act_w <= cx <= 0.70 * act_w) or not (0.30 * act_h <= cy <= 0.70 * act_h):
             err_msg = (f"[CRITICAL] 相机主点 ({cx:.1f}, {cy:.1f}) 严重偏离图像几何中心 ({act_w//2}, {act_h//2})！"
                        f"存在严重的内参或分辨率错配风险！")

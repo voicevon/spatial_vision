@@ -3,10 +3,10 @@
 通信与协议解析层 (Communication & Protocol)
 
 评审 #2 修正：严格分离传输接口与 Marlin 协议语义：
-  - ITransceiver    : 纯传输抽象接口，仅定义字节级 send/readline，
+  - AbstractTransceiver    : 纯传输抽象接口，仅定义字节级 send/readline，
                       不包含任何 Marlin ok/协议判断逻辑。
   - SerialTransceiver: 基于 pyserial 的物理串口实现。
-  - MarlinProtocolHandler: 包装 ITransceiver，承担 ok 握手等待、
+  - MarlinProtocolHandler: 包装 AbstractTransceiver，承担 ok 握手等待、
                             超时控制，与具体传输方式解耦。
   - MarlinProtocolParser : 纯静态文本解析器，解析 M114/M119 回显。
 """
@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 1. 纯传输抽象接口 ITransceiver
+# 1. 纯传输抽象接口 AbstractTransceiver
 #    职责：字节级收发，不含任何 Marlin 协议语义。
 # ==============================================================================
-class ITransceiver(ABC):
+class AbstractTransceiver(ABC):
     """纯传输层抽象接口。
 
     实现类只负责"把字节发出去、把字节读回来"，
@@ -63,7 +63,7 @@ class ITransceiver(ABC):
 # ==============================================================================
 # 2. 物理串口实现 SerialTransceiver
 # ==============================================================================
-class SerialTransceiver(ITransceiver):
+class SerialTransceiver(AbstractTransceiver):
     """基于 pyserial 的物理串口收发器。
 
     包含 DTR 复位等待、自动缓冲清空，不含任何协议解析。
@@ -151,21 +151,21 @@ class SerialTransceiver(ITransceiver):
 
 # ==============================================================================
 # 3. Marlin 协议处理器 MarlinProtocolHandler
-#    职责：包装 ITransceiver，承担 ok 握手等待与超时控制。
-#    [评审 #2] ok 等待属于 Marlin 协议语义，不放在 ITransceiver 中。
+#    职责：包装 AbstractTransceiver，承担 ok 握手等待与超时控制。
+#    [评审 #2] ok 等待属于 Marlin 协议语义，不放在 AbstractTransceiver 中。
 # ==============================================================================
 class MarlinProtocolHandler:
     """Marlin 协议处理器：包装纯传输层，提供 send_and_wait 语义。
 
-    将 ok 握手判定逻辑集中在此处，ITransceiver 实现类无需知道 Marlin 协议。
+    将 ok 握手判定逻辑集中在此处，AbstractTransceiver 实现类无需知道 Marlin 协议。
     """
 
-    def __init__(self, transceiver: ITransceiver) -> None:
+    def __init__(self, transceiver: AbstractTransceiver) -> None:
         self._tx = transceiver
         self.on_send = None
 
     @property
-    def transceiver(self) -> ITransceiver:
+    def transceiver(self) -> AbstractTransceiver:
         return self._tx
 
     def send_and_wait(

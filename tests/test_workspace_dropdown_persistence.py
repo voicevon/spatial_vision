@@ -8,10 +8,10 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.workspace.workspace_manager import WorkspaceManager
-import tools.capture.capture_wizard as capture_wizard_mod
+import tools.capture.app as capture_wizard_mod
 import tools.spatial_mapping_studio.app as mapping_studio_mod
 import tools.asparagus_pose_studio.data_io as asparagus_io_mod
-from tools.capture.capture_wizard import CaptureWizard
+from tools.capture.app import ImageCaptureApp
 from tools.spatial_mapping_studio.app import SpatialMappingStudioApp
 from tools.asparagus_pose_studio import AsparagusPoseStudioApp
 
@@ -38,20 +38,20 @@ class TestWorkspaceDropdownPersistence(unittest.TestCase):
         self.ws_c = self.mgr.create_workspace(alias='工位C')
         for ws in (self.ws_a, self.ws_b, self.ws_c):
             with open(ws.whitelist_path, 'w', encoding='utf-8') as f:
-                f.write('tag_default_size_mm: 50.0\nwhitelist: [0, 1, 2]\n')
+                f.write('tag_default_size_mm: 50.0\ntags:\n  0: {}\n  1: {}\n  2: {}\n')
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
-    @patch('tools.capture.capture_wizard.CameraService')
-    @patch('tools.capture.capture_wizard.WorkspaceManager')
+    @patch('tools.capture.app.CameraService')
+    @patch('tools.capture.app.WorkspaceManager')
     def test_capture_wizard_persists_workspace(self, mock_ws_mgr_cls, mock_cam_service):
         mock_ws_mgr_cls.return_value = self.mgr
         mock_cam = MagicMock()
         mock_cam.start.return_value = True
         mock_cam_service.return_value = mock_cam
 
-        wizard = CaptureWizard()
+        wizard = ImageCaptureApp()
         wizard.switch_workspace(self.ws_b.workspace_id)
         self.assertEqual(wizard.current_workspace_id, self.ws_b.workspace_id)
         self.assertEqual(self.mgr.get_current_workspace_id(), self.ws_b.workspace_id)
@@ -74,8 +74,8 @@ class TestWorkspaceDropdownPersistence(unittest.TestCase):
         self.assertEqual(self.mgr.get_current_workspace_id(), self.ws_a.workspace_id)
 
     @patch('tools.asparagus_pose_studio.app.WorkspaceManager')
-    @patch('tools.capture.capture_wizard.CameraService')
-    @patch('tools.capture.capture_wizard.WorkspaceManager')
+    @patch('tools.capture.app.CameraService')
+    @patch('tools.capture.app.WorkspaceManager')
     @patch('tools.spatial_mapping_studio.app.WorkspaceManager')
     def test_cross_tool_workspace_persistence_handoff(self, mock_studio_ws_cls, mock_cap_ws_cls, mock_cam_service, mock_aspar_ws_cls):
         mock_cap_ws_cls.return_value = self.mgr
@@ -86,7 +86,7 @@ class TestWorkspaceDropdownPersistence(unittest.TestCase):
         mock_cam_service.return_value = mock_cam
 
         # 1. 采集向导中切换至工位 B
-        wiz = CaptureWizard()
+        wiz = ImageCaptureApp()
         wiz.switch_workspace(self.ws_b.workspace_id)
         self.assertEqual(self.mgr.get_current_workspace_id(), self.ws_b.workspace_id)
 

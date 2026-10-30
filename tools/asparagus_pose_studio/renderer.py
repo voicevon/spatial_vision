@@ -243,16 +243,16 @@ class AsparagusPoseStudioRenderer:
         left_x = m["L"] + tw_title + int(20 * m["s"])
 
         # 地图下拉按钮 (紧靠 Logo 右侧)
-        sc_w = int(170 * m["s"])
-        workspace_rect = (left_x, r1_y1, left_x + sc_w, r1_y2)
+        active_ws_w = int(170 * m["s"])
+        workspace_rect = (left_x, r1_y1, left_x + active_ws_w, r1_y2)
         app_state._workspace_rect = workspace_rect
-        is_sc_open = (app_state.active_dropdown == "WORKSPACE_DROPDOWN")
+        is_active_ws_open = (app_state.active_dropdown == "WORKSPACE_DROPDOWN")
         draw_dropdown_button(
             canvas, workspace_rect, f"地图: {app_state.current_workspace_name}",
-            is_sc_open, app_state.mouse_pos, font_size=m["fs_sub"]
+            is_active_ws_open, app_state.mouse_pos, font_size=m["fs_sub"]
         )
         buttons.append((workspace_rect, ("toggle_dd", "WORKSPACE_DROPDOWN")))
-        left_x += sc_w + int(10 * m["s"])
+        left_x += active_ws_w + int(10 * m["s"])
 
         # 算法下拉按钮 (紧随地图右侧)
         pipe_w = int(210 * m["s"])
@@ -373,15 +373,15 @@ class AsparagusPoseStudioRenderer:
         )
 
         # 8. 悬浮 Toast
-        if app_state._toast_msg and time.time() < app_state._toast_until:
-            (tw, th), _ = measure_text(app_state._toast_msg, font_size=m["fs_body"])
+        if app_state._toast and time.time() < app_state._toast_until:
+            (tw, th), _ = measure_text(app_state._toast, font_size=m["fs_body"])
             tx, ty = (W - tw) // 2, H - int(76 * m["s"])
             pad = int(10 * m["s"])
             cv2.rectangle(canvas, (tx - pad, ty - int(6 * m["s"])),
                           (tx + tw + pad, ty + th + int(8 * m["s"])), (40, 34, 26), -1)
             cv2.rectangle(canvas, (tx - pad, ty - int(6 * m["s"])),
                           (tx + tw + pad, ty + th + int(8 * m["s"])), GuiTheme.WARN, 1)
-            draw_text(canvas, app_state._toast_msg, (tx, ty), m["fs_body"], GuiTheme.WARN, bold=True)
+            draw_text(canvas, app_state._toast, (tx, ty), m["fs_body"], GuiTheme.WARN, bold=True)
 
         # 9. 置顶弹出下拉框
         if app_state.active_dropdown == "WORKSPACE_DROPDOWN" and app_state._workspace_rect:
@@ -481,7 +481,7 @@ class AsparagusPoseStudioRenderer:
             mode_txt = (
                 f"{'3D 完整链路' if app_state.mode == '3d' else '2D 预览'} — "
                 f"提取前 {len(app_state.targets)} 位目标 "
-                f"(已高亮目标 #{app_state.targets[app_state.sel_target].id})"
+                f"(已高亮目标 #{app_state.targets[app_state.sel_target].target_id})"
             )
             mode_col = GuiTheme.OK if app_state.mode == "3d" else GuiTheme.WARN
         else:
@@ -588,12 +588,12 @@ class AsparagusPoseStudioRenderer:
             cv2.rectangle(canvas, (x1 + 4, ry1), (x2 - 4, ry2), bg_col, -1)
             cv2.rectangle(canvas, (x1 + 4, ry1), (x2 - 4, ry2), border_col, 2 if is_sel else 1)
 
-            badge = "#1最优" if is_top else f"#{t.id}候选"
+            badge = "#1最优" if is_top else f"#{t.target_id}候选"
             badge_col = (0, 255, 120) if is_sel else ((240, 180, 40) if is_top else GuiTheme.TEXT_SUB)
             draw_text(canvas, f"{badge} D:{t.diam_mm} L:{int(t.length_mm)}mm",
                       (x1 + int(8 * m["s"]), ry1 + int(5 * m["s"])), m["fs_small"], badge_col, bold=True)
 
-            h_str = f"+{t.rel_height_mm}mm" if t.rel_height_mm > 0 else (f"Z:{int(t.grip_z)}" if t.grip_z > 0 else "--")
+            h_str = f"+{t.rel_height_mm}mm" if t.rel_height_mm > 0 else (f"Z:{int(t.grip_cam_z)}" if t.grip_cam_z > 0 else "--")
             draw_text(canvas, f"方向:{t.yaw_deg}° 凸起:{h_str}",
                       (x1 + int(8 * m["s"]), ry1 + int(23 * m["s"])), m["fs_small"],
                       GuiTheme.WHITE if is_sel else GuiTheme.TEXT_SUB)
@@ -618,7 +618,7 @@ class AsparagusPoseStudioRenderer:
 
         if app_state.targets and 0 <= app_state.sel_target < len(app_state.targets):
             t = app_state.targets[app_state.sel_target]
-            title = f"抓取位姿详情 (目标 #{t.id} · {t.grade}级品)"
+            title = f"抓取位姿详情 (目标 #{t.target_id} · {t.grade}级品)"
             draw_text(canvas, title, (x1 + int(12 * m["s"]), gy1 + int(8 * m["s"])),
                       m["fs_small"], GuiTheme.ACCENT, bold=True)
             

@@ -47,8 +47,8 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
     disk_calib = ws.get_image_count("calibration")
     disk_prod = ws.get_image_count("production")
     recorded_intr = ws.intrinsics_image_count
-    recorded_calib = ws.extrinsic_calib_image_count
-    recorded_prod = ws.prod_image_count
+    recorded_calib = ws.calibration_image_count
+    recorded_prod = ws.production_image_count
 
     img_synced = (disk_intr == recorded_intr and disk_calib == recorded_calib and disk_prod == recorded_prod)
     if not img_synced:

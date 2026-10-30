@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-isolate_wheels_debug 视图渲染器 (WheelDebugRenderer)
+isolate_wheels_debug 视图渲染器 (IsolationWheelDebugRenderer)
 =====================================================
 纯粹负责 1280 × 760 逻辑画布上的所有 OpenCV 矢量图元、控件外框、状态指示灯与富文本绘制。
 """
@@ -30,7 +30,7 @@ from tools.isolate_wheels_debug.ui_layout import (
 )
 
 
-class WheelDebugRenderer:
+class IsolationIsolationWheelDebugRenderer:
     """分离轮调试台纯渲染器"""
 
     @staticmethod

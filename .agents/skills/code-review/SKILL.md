@@ -51,7 +51,7 @@ Evaluate code against the following dimensions:
 ### E. 命名审查原则 (严格对齐 AGENTS.md)
 - **严禁擅自修改**：任何文件名、类名、函数名、变量名优化，严禁直接在代码中重命名或代用户做主；
 - **提供 3~5 候选**：针对待优化命名，必须列出 3 至 5 个备选方案并附带推荐理由与侧重点；
-- **交互式点选确认**：必须使用 `ask_question` 工具以单选/多选交互式选择题呈现，经用户明确点选确认后方可实施修改。
+- **交互式点选确认与源码链接**：必须使用 `ask_question` 工具以单选/多选交互式选择题呈现，且**在题干及交互回复中必须直接附带可点击的代码跳转链接**（`[name](file:///d:/Software/asp_flux/spatial_vision/path/to/file.py#L123)`），经用户明确点选确认后方可实施修改。
 
 ## 3. Output Format
 

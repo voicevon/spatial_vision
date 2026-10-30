@@ -5,8 +5,8 @@ Isolator WHEELS 调试视窗 (flux_isolate_wheels 分离轮 ESP32 MQTT 调试 GU
 ========================================================================
 协议依据: flux_isolate_wheels/doc/通讯协议.md (v1.3, 2026-09-28)
 架构重构:
-  - 接入 src.control.isolate_wheels_controller.IsolateWheelsController 统一控制中枢
-  - 视图逻辑委托给 tools.isolate_wheels_debug.renderer.WheelDebugRenderer
+  - 接入 src.control.isolation_wheel_controller.IsolationWheelController 统一控制中枢
+  - 视图逻辑委托给 tools.isolate_wheels_debug.renderer.IsolationWheelDebugRenderer
   - 布局与几何常数提取至 tools.isolate_wheels_debug.ui_layout
 """
 
@@ -21,14 +21,14 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src.control.isolate_wheels_controller import (
-    IsolateWheelsController,
+from src.control.isolation_wheel_controller import (
+    IsolationWheelController,
     BROKER_HOST, BROKER_PORT, TOPIC_PREFIX, DEFAULT_DEVID,
     LOAD_SPEED_OPTS,
 )
 from src.ui.base_cv_app import BaseCvApp
 from src.utils.logger import get_logger
-from tools.isolate_wheels_debug.renderer import WheelDebugRenderer
+from tools.isolate_wheels_debug.renderer import IsolationIsolationWheelDebugRenderer
 from tools.isolate_wheels_debug.ui_layout import (
     LOGIC_W, LOGIC_H,
     COLOR_BG, COLOR_PANEL, COLOR_BORDER, COLOR_BORDER_HL,
@@ -50,7 +50,7 @@ from tools.isolate_wheels_debug.ui_layout import (
 log = get_logger("flux_vision.tools.isolate_wheels_debug.app")
 
 
-class IsolateWheelsDebuggerApp(BaseCvApp):
+class IsolationWheelDebugApp(BaseCvApp):
     """分离轮 MQTT 调试主应用 (控制器 + 视图桥接)"""
 
     # 导出颜色与布局常量以保持对测试和外部的 100% 兼容
@@ -77,8 +77,8 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         )
 
         # 核心控制中枢
-        self.controller = IsolateWheelsController()
-        self.renderer = WheelDebugRenderer()
+        self.controller = IsolationWheelController()
+        self.renderer = IsolationIsolationWheelDebugRenderer()
 
         # UI 交互状态
         self.log_scroll: Optional[int] = None
@@ -147,7 +147,7 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         # 0. 弹层拦截
         if self.popup_speed:
             spx, spy, spw, sph = speed_popup_rect()
-            if WheelDebugRenderer.pt_in(x, y, (spx, spy, spw, sph)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, (spx, spy, spw, sph)):
                 row = (y - spy - 4) // SPEED_POPUP_ROW_H
                 if 0 <= row < len(LOAD_SPEED_OPTS):
                     self.load_speed = float(LOAD_SPEED_OPTS[row])
@@ -157,7 +157,7 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
 
         if self.popup_col >= 0:
             px, py, pw, ph = angle_popup_rect(self.popup_col)
-            if WheelDebugRenderer.pt_in(x, y, (px, py, pw, ph)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, (px, py, pw, ph)):
                 row = (y - py - 4) // POPUP_ROW_H
                 if 0 <= row < len(MULTI_ANGLE_OPTS):
                     chosen = float(MULTI_ANGLE_OPTS[row])
@@ -172,13 +172,13 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
             return
 
         # 1. 顶栏按钮
-        if WheelDebugRenderer.pt_in(x, y, BTN_CONNECT):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_CONNECT):
             self.connect_broker()
             return
-        if WheelDebugRenderer.pt_in(x, y, BTN_DISCONNECT):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_DISCONNECT):
             self.disconnect_broker()
             return
-        if WheelDebugRenderer.pt_in(x, y, BTN_QUIT):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_QUIT):
             self._running = False
             return
 
@@ -186,44 +186,44 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
         if DEV_CHIP_Y <= y <= DEV_CHIP_Y + DEV_CHIP_H:
             dev_ids = list(self.controller.devices.keys()) or [self.controller.selected_devid]
             for i in range(min(len(dev_ids), DEV_CHIP_MAX)):
-                if WheelDebugRenderer.pt_in(x, y, device_chip_rect(i)):
+                if IsolationIsolationWheelDebugRenderer.pt_in(x, y, device_chip_rect(i)):
                     self.controller.selected_devid = dev_ids[i]
                     return
 
         # 3. 模式切换 Tab
-        if WheelDebugRenderer.pt_in(x, y, TAB_MULTI):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, TAB_MULTI):
             self.motor_mode = "multi"
             return
-        if WheelDebugRenderer.pt_in(x, y, TAB_SINGLE):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, TAB_SINGLE):
             self.motor_mode = "single"
             return
 
         # 4. 8 通道交互
         for col in range(8):
             idx = col
-            if WheelDebugRenderer.pt_in(x, y, col_header_rect(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_header_rect(col)):
                 self.motor_sel = idx + 1
                 return
-            if WheelDebugRenderer.pt_in(x, y, col_count_minus(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_count_minus(col)):
                 self.counts[idx] = max(0, self.counts[idx] - 1)
                 return
-            if WheelDebugRenderer.pt_in(x, y, col_count_plus(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_count_plus(col)):
                 self.counts[idx] = min(9, self.counts[idx] + 1)
                 return
-            if WheelDebugRenderer.pt_in(x, y, col_angle_box(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_angle_box(col)):
                 self.popup_col = col
                 self.popup_speed = False
                 if self.motor_mode == "single":
                     self.motor_sel = idx + 1
                 return
-            if WheelDebugRenderer.pt_in(x, y, col_angle_minus(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_angle_minus(col)):
                 if self.motor_mode == "multi":
                     self.multi_angles[idx] = max(-360.0, round(self.multi_angles[idx] - 22.5, 1))
                 else:
                     self.motor_sel = idx + 1
                     self.motor_angle = max(22.5, round(self.motor_angle - 22.5, 1))
                 return
-            if WheelDebugRenderer.pt_in(x, y, col_angle_plus(col)):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, col_angle_plus(col)):
                 if self.motor_mode == "multi":
                     self.multi_angles[idx] = min(360.0, round(self.multi_angles[idx] + 22.5, 1))
                 else:
@@ -232,35 +232,35 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
                 return
 
         # 5. 机架底部操作条
-        if WheelDebugRenderer.pt_in(x, y, BTN_CLEAR_COUNTS):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_CLEAR_COUNTS):
             self.counts = [0] * 8
             self.set_toast("8 托架数量已清零。")
             return
-        if WheelDebugRenderer.pt_in(x, y, BTN_RESET_ANGLES):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_RESET_ANGLES):
             self.multi_angles = [0.0] * 8
             self.motor_angle = 90.0
             self.set_toast("所有电机角度已归零/重置。")
             return
-        if WheelDebugRenderer.pt_in(x, y, BTN_SEND_LOAD):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_SEND_LOAD):
             self.send_load()
             return
-        if WheelDebugRenderer.pt_in(x, y, BOX_LOAD_SPEED):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BOX_LOAD_SPEED):
             self.popup_speed = not self.popup_speed
             self.popup_col = -1
             return
         if self.motor_mode == "single":
-            if WheelDebugRenderer.pt_in(x, y, BTN_DIR_FWD):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_DIR_FWD):
                 self.motor_dir = 1
                 return
-            if WheelDebugRenderer.pt_in(x, y, BTN_DIR_REV):
+            if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_DIR_REV):
                 self.motor_dir = 0
                 return
-        if WheelDebugRenderer.pt_in(x, y, BTN_SEND_MOTOR):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_SEND_MOTOR):
             self.send_motor_cmd()
             return
 
         # 6. 日志清空按钮
-        if WheelDebugRenderer.pt_in(x, y, BTN_CLEAR_LOG):
+        if IsolationIsolationWheelDebugRenderer.pt_in(x, y, BTN_CLEAR_LOG):
             with self.controller._lock:
                 self.controller.log_lines.clear()
             self.log_scroll = None
@@ -329,5 +329,5 @@ class IsolateWheelsDebuggerApp(BaseCvApp):
 
 
 if __name__ == "__main__":
-    app = IsolateWheelsDebuggerApp()
+    app = IsolationWheelDebugApp()
     app.run()

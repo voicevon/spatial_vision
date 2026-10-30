@@ -176,19 +176,19 @@ class MappingRenderer(MappingFrameListMixin, MappingCenterViewMixin, MappingInsp
         bx = 16 + logo_w + 20
 
         # 0. 选择工位下拉框 (首要核心位置)
-        sc_w = 145
-        cur_sc_label = getattr(app, "current_workspace_name", "默认工位")
-        is_sc_open = (app.active_dropdown == "WORKSPACE_DROPDOWN")
-        draw_dropdown_button(canvas, (bx, btn_y_top, bx + sc_w, btn_y_bot), f"工位: {cur_sc_label}",
-                             is_open=is_sc_open, mouse_pos=(mx, my),
+        active_ws_w = 145
+        cur_active_ws_label = getattr(app, "current_workspace_name", "默认工位")
+        is_active_ws_open = (app.active_dropdown == "WORKSPACE_DROPDOWN")
+        draw_dropdown_button(canvas, (bx, btn_y_top, bx + active_ws_w, btn_y_bot), f"工位: {cur_active_ws_label}",
+                             is_open=is_active_ws_open, mouse_pos=(mx, my),
                              theme_color=(0, 255, 180))
         app.dropdown_boxes["WORKSPACE_DROPDOWN"] = {
-            "rect": (bx, btn_y_top, bx + sc_w, btn_y_bot),
+            "rect": (bx, btn_y_top, bx + active_ws_w, btn_y_bot),
             "options": getattr(app, "workspace_options", []),
             "active_key": getattr(app, "current_workspace_id", "")
         }
-        app.gui_buttons.append(("TOGGLE_WORKSPACE_DROPDOWN", (bx, btn_y_top, bx + sc_w, btn_y_bot), "WORKSPACE_DROPDOWN"))
-        bx += sc_w + 5
+        app.gui_buttons.append(("TOGGLE_WORKSPACE_DROPDOWN", (bx, btn_y_top, bx + active_ws_w, btn_y_bot), "WORKSPACE_DROPDOWN"))
+        bx += active_ws_w + 5
 
         # 1. 全局全量超精提取 (清空旧角点并从头重提取)
         ext_w = 85

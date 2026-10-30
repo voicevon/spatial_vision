@@ -19,7 +19,7 @@ try:
 except ImportError:
     serial = None
 
-from src.utils.config_guard import load_raw_config
+from src.utils.intrinsics_resolver import load_raw_config
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

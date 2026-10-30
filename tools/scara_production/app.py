@@ -112,7 +112,7 @@ class ScaraProductionApp(BaseCvApp):
         # 1. 若当前无检测物料，生成一个模拟进料测试样本
         if not self.detected_targets:
             t = AsparagusTarget(
-                id=self._sim_target_seq,
+                target_id=self._sim_target_seq,
                 center_px=(320.0, 240.0),
                 length_px=200.0,
                 diam_px=15.0,
@@ -122,7 +122,7 @@ class ScaraProductionApp(BaseCvApp):
                 contour=np.zeros((10, 1, 2)),
                 length_mm=190.0,
                 diam_mm=13.5,
-                grip_x=0.0, grip_y=0.0, grip_z=500.0, z_top=480.0,
+                grip_cam_x=0.0, grip_cam_y=0.0, grip_cam_z=500.0, z_top=480.0,
                 rel_height_mm=25.0,
                 robot_x=float(np.random.uniform(80.0, 180.0)),
                 robot_y=float(np.random.uniform(150.0, 260.0)),
@@ -151,12 +151,12 @@ class ScaraProductionApp(BaseCvApp):
             # 确认落料完成
             self.dispatcher.confirm_placed(slot.slot_index)
             self.total_picked_count += 1
-            self._append_log(f"成功抓取 #{target.id}({target.grade}级) -> 落入槽位 #{slot.slot_index + 1}[{slot.name}]")
-            self.set_toast(f"已执行抓取: 物料#{target.id} -> 槽位#{slot.slot_index + 1}", duration=2.0)
+            self._append_log(f"成功抓取 #{target.target_id}({target.grade}级) -> 落入槽位 #{slot.slot_index + 1}[{slot.name}]")
+            self.set_toast(f"已执行抓取: 物料#{target.target_id} -> 槽位#{slot.slot_index + 1}", duration=2.0)
             self.detected_targets.clear()
         elif target and not slot:
-            self._append_log(f"物料 #{target.id} 无可用槽位 (所有匹配槽已满溢！)")
-            self.set_toast("⚠️ 槽位满溢报警：请清理满载料槽或按 [R] 复位！", sticky=True)
+            self._append_log(f"物料 #{target.target_id} 无可用槽位 (所有匹配槽已满溢！)")
+            self.set_toast("⚠️ 槽位满溢报警：请清理满载料槽或按 [R] 复位！")
             self.auto_running = False
         else:
             self._append_log("当前无可用抓取物料")
@@ -191,7 +191,7 @@ class ScaraProductionApp(BaseCvApp):
             return True
         return False
 
-    def on_mouse_click(self, x: int, y: int, button: int):
+    def on_click(self, x: int, y: int):
         for rect, action in reversed(self._buttons):
             x1, y1, x2, y2 = rect
             if x1 <= x <= x2 and y1 <= y <= y2:
@@ -206,6 +206,10 @@ class ScaraProductionApp(BaseCvApp):
                 return
 
     # ------------------------------ 渲染逻辑 ------------------------------
+    def on_tick(self) -> None:
+        if self.auto_running:
+            self.trigger_production_cycle()
+
     def render(self) -> np.ndarray:
         W, H = self.win_mgr.canvas_w, self.win_mgr.canvas_h
         s = min(W / BASE_W, H / BASE_H)
@@ -295,7 +299,7 @@ class ScaraProductionApp(BaseCvApp):
             cv2.ellipse(canvas, (cx, cy), (int(90 * s), int(12 * s)), t.robot_r, 0, 360, (0, 255, 120), -1)
             # 抓取中心十字
             cv2.drawMarker(canvas, (cx, cy), (0, 255, 255), cv2.MARKER_CROSS, int(20 * s), 2)
-            draw_text(canvas, f"#{t.id} 拾取点 ({t.robot_x:.1f}, {t.robot_y:.1f}) R:{t.robot_r:.1f}°",
+            draw_text(canvas, f"#{t.target_id} 拾取点 ({t.robot_x:.1f}, {t.robot_y:.1f}) R:{t.robot_r:.1f}°",
                       (cx - int(70 * s), cy - int(25 * s)), int(12 * s), GuiTheme.GOLD, bold=True)
         else:
             draw_text(canvas, "皮带待料中 / 等待下一批物料进入检测区...",
@@ -360,10 +364,6 @@ class ScaraProductionApp(BaseCvApp):
         toast = self._toast if self._toast and time.time() < self._toast_until else "快捷键: [SPACE] 启动/暂停自动生产 | [S] 单拍测试 | [R] 换箱清零 | [X] 退出"
         draw_text(canvas, toast, (int(16 * s), bottom_y + int(7 * s)), int(12 * s), GuiTheme.ACCENT if self._toast else GuiTheme.TEXT_MUTED)
 
-        # 自动节拍轮询
-        if self.auto_running:
-            time.sleep(0.05)
-            self.trigger_production_cycle()
 
         return canvas
 

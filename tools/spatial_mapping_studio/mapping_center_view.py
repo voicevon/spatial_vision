@@ -215,7 +215,7 @@ class MappingCenterViewMixin:
         if len(obj_pts) >= 1:
             obj_flat = np.concatenate(obj_pts, axis=0)
             img_flat = np.concatenate(img_pts, axis=0)
-            rvec, tvec, success = app.pnp_solver.solve_pnp(obj_flat, img_flat)
+            success, rvec, tvec = app.pnp_solver.solve_point_cloud_pnp(obj_flat, img_flat)
 
         # 若当前无足够有效点 (如标靶全被剔除)，尝试复用 meta 缓存的相机外参
         if not success and meta is not None:
@@ -233,8 +233,8 @@ class MappingCenterViewMixin:
             T_c_w[:3, :3] = R_c_w
             T_c_w[:3, 3] = tvec.flatten()
 
-            ba_is_3d = ba_mode in ("3d_prism", "3d_pyramid", "3d")
-            obs_is_3d = obs_mode in ("3d_prism", "3d_pyramid", "3d")
+            ba_is_3d = ba_mode in ("3d_prism", "3d_pyramid")
+            obs_is_3d = obs_mode in ("3d_prism", "3d_pyramid")
             need_3d = (ba_is_3d or obs_is_3d)
             ba_shape = "pyramid" if ba_mode == "3d_pyramid" else "prism"
             obs_shape = "pyramid" if obs_mode == "3d_pyramid" else "prism"
@@ -281,9 +281,9 @@ class MappingCenterViewMixin:
                         c_arr = np.array(obs["corners"], dtype=np.float64).reshape((4, 2))
                         is_kept = obs.get("keep", True) and not is_frame_excluded
                         # 仅在有效保留且 obs_mode=='3d' 下才计算并显示实测蓝色棱柱
-                        if is_kept and obs_mode == "3d":
+                        if is_kept and obs_is_3d:
                             # 传入地图理论法向, 消除 IPPE 平面二义性 180° 翻转
-                            succ_single, obs_r, obs_t = app.pnp_solver.solve_single_tag_pnp(
+                            succ_single, obs_r, obs_t = app.pnp_solver.solve_planar_tag_pnp(
                                 c_arr, expected_z_cam=T_c_t[:3, :3][:, 2])
 
                     # 如果既不画理论绿色棱柱，也不画实测蓝色棱柱，跳过
@@ -334,11 +334,14 @@ class MappingCenterViewMixin:
                                 ref_pos = (T_ref_w @ np.array([pw[0], pw[1], pw[2], 1.0], dtype=np.float64))[:3].tolist()
                             ref_frame = coord_mgr.get_frame(ref_fid)
                             if ref_frame and getattr(ref_frame, "calibration_spec", None):
-                                ref_tags = ref_frame.calibration_spec.get("reference_tags", {})
-                                if tid in ref_tags or str(tid) in ref_tags:
-                                    nom_pos = ref_tags.get(tid) or ref_tags.get(str(tid))
-                                    if nom_pos is not None and ref_pos is not None:
-                                        nom_err = float(np.linalg.norm(np.array(ref_pos[:3]) - np.array(nom_pos[:3])))
+                                ref_ids = [int(x) for x in ref_frame.calibration_spec.get("reference_tag_ids", [])]
+                                anchor_tags = getattr(getattr(app, "ba_runner", None), "anchor_tags", None) or {}
+                                if tid in ref_ids and tid in anchor_tags:
+                                    coords = anchor_tags[tid].get("xyz_mm")
+                                    if coords and len(coords) >= 3 and None not in coords[:3]:
+                                        nom_pos = coords[:3]
+                                        if ref_pos is not None:
+                                            nom_err = float(np.linalg.norm(np.array(ref_pos[:3]) - np.array(nom_pos[:3])))
 
                     app.visualizer.render_tag_dual_prisms(
                         img=disp_frame,
@@ -394,10 +397,10 @@ class MappingCenterViewMixin:
         # 5. 若处于病因切片诊断模式，叠加视野内预测但实测漏检的标靶框 (橙黄色矩形与 Tag 标注)
         if getattr(app, "show_frame_diagnostics", False):
             diag = getattr(app.data_mgr, "current_diagnostics", {})
-            missing = diag.get("missing_projected_tags", []) or diag.get("missing_theoretical_tags", [])
+            missing = diag.get("missing_theoretical_tags", [])
             for m in missing:
                 tid = m.get("tag_id")
-                c_pts = m.get("proj_corners") or m.get("predicted_corners")
+                c_pts = m.get("proj_corners")
                 if c_pts is not None and len(c_pts) == 4:
                     pts_i = np.array(c_pts, dtype=np.int32)
                     cv2.polylines(disp_frame, [pts_i], isClosed=True, color=(0, 140, 255), thickness=2, lineType=cv2.LINE_AA)

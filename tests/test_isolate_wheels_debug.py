@@ -16,7 +16,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from tools.isolate_wheels_debug.app import (
-    IsolateWheelsDebuggerApp, LOGIC_W, LOGIC_H,
+    IsolationWheelDebugApp, LOGIC_W, LOGIC_H,
     DEV_CHIP_X0, DEV_CHIP_Y, DEV_CHIP_W, DEV_CHIP_H, DEV_CHIP_STEP,
     BTN_CLEAR_COUNTS, BTN_SEND_LOAD, BTN_QUIT,
     BTN_DIR_FWD, BTN_DIR_REV,
@@ -50,7 +50,7 @@ class _FakeClient:
 class TestIsolateWheelsDebug(unittest.TestCase):
 
     def setUp(self):
-        self.app = IsolateWheelsDebuggerApp(settings_file=os.path.join(
+        self.app = IsolationWheelDebugApp(settings_file=os.path.join(
             tempfile.mkdtemp(prefix="test_wheels_"), "gui_settings.json"))
 
     # ---------- MQTT 消息路由 ----------

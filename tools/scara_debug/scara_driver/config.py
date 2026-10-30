@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 集中式硬件配置层 (Configuration)
-LoaderConfig 汇总所有机械臂几何参数、电气映射与运动约束，
+ScaraRobotConfig 汇总所有机械臂几何参数、电气映射与运动约束，
 作为整个系统的唯一配置真相来源 (Single Source of Truth)。
 """
 
@@ -12,7 +12,7 @@ from .models import Pose, JointAngles
 
 
 @dataclass
-class LoaderConfig:
+class ScaraRobotConfig:
     """Flux Loader (SCARA) 机械臂集中式硬件配置。
 
     所有字段均为可变属性，支持在运行时通过工厂方法或直接赋值覆盖。

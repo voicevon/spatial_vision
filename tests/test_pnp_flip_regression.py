@@ -59,7 +59,7 @@ class TestPnPPriorDisambiguation(unittest.TestCase):
                             self.rng, self.solver, tilt, az, dist=dist,
                             noise_px=noise, yaw_deg=yaw, obj=obj_true)
                         z_true_cam = R_true[:, 2]  # 真值法向 (相机系)
-                        ok1, r1, _ = self.solver.solve_single_tag_pnp(
+                        ok1, r1, _ = self.solver.solve_planar_tag_pnp(
                             c, expected_z_cam=z_true_cam)  # 带先验
                         if ok1 and float(cv2.Rodrigues(r1)[0][:, 2] @ z_true_cam) < 0:
                             fails_prior += 1

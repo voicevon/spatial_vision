@@ -25,7 +25,7 @@ class GalleryPageRenderer:
     def __init__(self, parent_renderer: Any):
         self.r = parent_renderer
 
-    def render_intrinsics_images(self, canvas: np.ndarray, state: HubState, ws: Any):
+    def render_intrinsics_images(self, canvas: np.ndarray, state: HubState, active_ws: Any):
         """页签: 【相机&内参】工位相机硬件原位配置、内参参数看板与标定图集 (x: 340~960, y: 50~670)"""
         from tools.workspace_hub.hub_renderer import (
             INTR_BTN_REFRESH_DEV, INTR_BTN_EDIT_CONFIG, INTR_BTN_CAPTURE, INTR_BTN_CALIB
@@ -43,12 +43,12 @@ class GalleryPageRenderer:
         cv2.rectangle(canvas, (hw_bar_x, hw_bar_y), (hw_bar_x + hw_bar_w, hw_bar_y + hw_bar_h), (24, 30, 40), -1)
         cv2.rectangle(canvas, (hw_bar_x, hw_bar_y), (hw_bar_x + hw_bar_w, hw_bar_y + hw_bar_h), (45, 58, 78), 1)
 
-        cam_type = getattr(ws, "camera_type", "realsense") or "realsense"
-        cam_serial = getattr(ws, "camera_serial", "") or ""
-        res_str = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
+        cam_type = getattr(active_ws, "camera_type", "realsense") or "realsense"
+        cam_serial = getattr(active_ws, "camera_serial", "") or ""
+        res_str = getattr(active_ws, "resolution_str", "1920x1080") or "1920x1080"
 
         # 判断工位硬件是否已因存在历史图像而锁定单一真理源 (基于内存缓存，杜绝渲染帧高频磁盘 I/O)
-        is_locked = ws.is_hardware_locked if ws else False
+        is_locked = active_ws.is_hardware_locked if active_ws else False
 
         # ---------------- 行 1: 相机设备与序列号 (相机占一行) ----------------
         draw_text(canvas, "相机设备:", (hw_bar_x + 14, hw_bar_y + 11), font_size=12, color=(0, 240, 220), bold=True)
@@ -87,7 +87,7 @@ class GalleryPageRenderer:
         cv2.rectangle(canvas, (intr_bar_x, intr_bar_y), (intr_bar_x + intr_bar_w, intr_bar_y + intr_bar_h), (20, 25, 34), -1)
         cv2.rectangle(canvas, (intr_bar_x, intr_bar_y), (intr_bar_x + intr_bar_w, intr_bar_y + intr_bar_h), (38, 48, 64), 1)
 
-        intr_data = ws.load_camera_intrinsics() if ws else None
+        intr_data = active_ws.load_camera_intrinsics() if active_ws else None
         has_custom_intr = bool(intr_data and intr_data.get("calibrated", False))
 
         # 状态标牌
@@ -133,19 +133,19 @@ class GalleryPageRenderer:
             purpose="intrinsics",
         )
 
-    def render_calib_images(self, canvas: np.ndarray, state: HubState, sc: Any):
+    def render_calib_images(self, canvas: np.ndarray, state: HubState, active_ws: Any):
         """页签: 外参建图图集 - 当前选中工位的 AprilTag 采样图集 (x: 340~960, y: 50~670)"""
         self.render_gallery_page(
             canvas, state, "",
-            state.gallery.current_images, state.gallery.selected_image_idx, state.gallery.image_grid_offset,
+            state.gallery.calib_images, state.gallery.selected_calib_image_idx, state.gallery.calib_grid_offset,
             empty_hint="当前工位尚未采集外参建图照片！",
             is_calib=True,
             purpose="calibration",
         )
 
-    def render_prod_images(self, canvas: np.ndarray, state: HubState, sc: Any):
+    def render_prod_images(self, canvas: np.ndarray, state: HubState, active_ws: Any):
         """页签: 生产采样图集 - 生产现场工件与在席质检采样 (x: 340~960, y: 50~670)"""
-        if not state.gallery.prod_images and sc and os.path.isdir(sc.prod_raw_images_dir):
+        if not state.gallery.prod_images and active_ws and os.path.isdir(active_ws.prod_raw_images_dir):
             state.gallery.load_prod_images()
         prod_images = state.gallery.prod_images
         prod_idx = state.gallery.selected_prod_image_idx
@@ -236,7 +236,7 @@ class GalleryPageRenderer:
             if is_cur:
                 cv2.rectangle(canvas, (x, y), (x + 4, y + self.r.GRID_CELL_H), (0, 255, 180), -1)
 
-    def render_expanded_photo_preview(self, canvas: np.ndarray, state: HubState, sc: Any):
+    def render_expanded_photo_preview(self, canvas: np.ndarray, state: HubState, active_ws: Any):
         """全宽自适应大图视口 (按 F 键展开，横跨中间和右侧，x: 340~960)"""
         box_x, box_y, box_w, box_h = 340, 50, 620, 620
         cv2.rectangle(canvas, (box_x, box_y), (box_x + box_w, box_y + box_h), (16, 20, 26), -1)

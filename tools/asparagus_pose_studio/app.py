@@ -23,9 +23,9 @@ from src.vision.asparagus_analyzer import AsparagusAnalyzer
 from src.vision.pipelines import PipelineRegistry, BaseAsparagusPipeline, PipelineResult
 
 from src.ui.base_cv_app import BaseCvApp
-from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
+from src.ui.canvas_viewport_interactor import CanvasViewportInteractor
 from tools.asparagus_pose_studio.data_io import (
-    APP_ID, BASE_H, BASE_W, DEFAULT_DIR, REPORT_DIR, WINDOW_KEY,
+    APP_ID, BASE_H, BASE_W, DEFAULT_DIR, WINDOW_KEY,
     load_system_config, scan_samples,
     load_studio_settings, save_studio_settings
 )
@@ -101,7 +101,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
         self._init_pipeline()
 
         # 视口平移与无级缩放交互控制器 (自适应双排工具栏顶部高度 86)
-        self.viewport = MappingViewportInteractor(top_bar_h=86, bottom_bar_h=46, win_w=BASE_W, win_h=BASE_H)
+        self.viewport = CanvasViewportInteractor(top_bar_h=86, bottom_bar_h=46, win_w=BASE_W, win_h=BASE_H)
 
         # 交互与事件映射
         self.mouse_pos = (-1, -1)
@@ -176,7 +176,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
         opts = []
         for s in self.workspace_mgr.list_workspaces():
             status = f"RMSE: {s.global_rmse_px:.2f}px" if s.ba_solved else "未平差"
-            opts.append((s.workspace_id, f"{s.name} ({s.extrinsic_calib_image_count}帧, {status})"))
+            opts.append((s.workspace_id, f"{s.name} ({s.calibration_image_count}帧, {status})"))
         return opts
 
     @property
@@ -508,13 +508,6 @@ class AsparagusPoseStudioApp(BaseCvApp):
     def set_toast(self, msg: str, sticky: bool = False, duration: float = 2.2):
         super().set_toast(msg, duration=(3600.0 if sticky else duration))
 
-    @property
-    def _toast_msg(self) -> str:
-        return self._toast
-
-    @_toast_msg.setter
-    def _toast_msg(self, msg: Optional[str]):
-        self._toast = msg or ""
 
     def hit_test(self, x: int, y: int) -> Optional[Tuple[str, Any]]:
         for rect, action in reversed(self._buttons):

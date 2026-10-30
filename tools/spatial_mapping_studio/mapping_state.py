@@ -181,8 +181,8 @@ class MappingDataManager(MappingDataActionsMixin):
     def super_extractor(self):
         """惰性装载工序 3 工业级超精重提取引擎"""
         if self._super_extractor is None:
-            from src.calibration.tag_super_extractor import TagSuperExtractor
-            self._super_extractor = TagSuperExtractor(
+            from src.calibration.offline_tag_extractor import OfflineTagExtractor
+            self._super_extractor = OfflineTagExtractor(
                 image_dir=self.image_dir,
                 manifest_path=self.manifest_path,
                 marker_size_mm=self.marker_size_mm
@@ -347,7 +347,7 @@ class MappingDataManager(MappingDataActionsMixin):
         obj_flat = np.concatenate(obj_pts, axis=0)
         img_flat = np.concatenate(img_pts, axis=0)
 
-        rvec, tvec, success = self.pnp_solver.solve_pnp(obj_flat, img_flat)
+        success, rvec, tvec = self.pnp_solver.solve_point_cloud_pnp(obj_flat, img_flat)
         if not success:
             return 0.0, 0.0, {}, None, None, 0.0, {}
 
@@ -518,28 +518,23 @@ class MappingDataManager(MappingDataActionsMixin):
                         if np.all(p2[:, 0] >= -20) and np.all(p2[:, 0] < w + 20) and np.all(p2[:, 1] >= -20) and np.all(p2[:, 1] < h + 20):
                             missing_tags.append({
                                 "tag_id": t_int,
-                                "predicted_corners": p2.tolist(),
+                                "proj_corners": p2.tolist(),
                                 "reason": "视场内但未被快速检出 (建议按 E 超精提取)"
                             })
 
         diag_res = {
             "image": bname,
             "contrast": contrast,
-            "contrast_rms": contrast,
             "contrast_grade": "良" if contrast >= 35 else ("偏低" if contrast >= 20 else "极差"),
             "brightness": brightness,
-            "mean_intensity": brightness,
             "brightness_grade": "正常" if 60 <= brightness <= 190 else ("偏暗" if brightness < 60 else "过曝"),
             "sharpness": sharpness,
-            "laplacian_var": sharpness,
             "sharpness_grade": "清晰" if sharpness >= 100 else ("轻微模糊" if sharpness >= 50 else "严重虚焦"),
             "detected_count": len(detected_tids),
             "rejected_quads_count": rej_count,
-            "false_rejections_count": rej_count,
             "rej_small": rej_small,
             "rej_aspect": rej_aspect,
             "missing_theoretical_tags": missing_tags,
-            "missing_projected_tags": missing_tags
         }
         self.current_diagnostics = diag_res
         return diag_res

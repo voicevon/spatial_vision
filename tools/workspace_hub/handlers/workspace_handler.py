@@ -178,7 +178,7 @@ class WorkspaceHandler:
         res = audit_workspace(ws, auto_fix=True)
 
         # 刷新相册与列表数据
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.gallery.load_prod_images()
         self.state.refresh_workspaces()
 
@@ -194,7 +194,7 @@ class WorkspaceHandler:
         res = audit_all_workspaces(self.workspace_mgr, auto_fix=True)
 
         # 刷新当前选中的工位与列表视图
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.gallery.load_prod_images()
         self.state.refresh_workspaces()
 

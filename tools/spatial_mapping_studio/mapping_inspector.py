@@ -60,30 +60,30 @@ class MappingInspectorMixin:
             cy = diag_top_y + 36
 
             # 指标1：清晰度 Laplace
-            lap = diag.get("sharpness", diag.get("laplacian_var", 0.0))
+            lap = diag.get("sharpness", 0.0)
             lap_g = diag.get("sharpness_grade", "")
             put_text(canvas, f"清晰度: {lap:.1f} {lap_g}", (x + 10, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (200, 205, 215), 1, cv2.LINE_AA)
             cy += 20
 
             # 指标2：对比度 RMS
-            c_rms = diag.get("contrast", diag.get("contrast_rms", 0.0))
+            c_rms = diag.get("contrast", 0.0)
             c_g = diag.get("contrast_grade", "")
             put_text(canvas, f"对比度: {c_rms:.1f} {c_g}", (x + 10, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (200, 205, 215), 1, cv2.LINE_AA)
             cy += 20
 
             # 指标3：平均亮度 Mean
-            m_lum = diag.get("brightness", diag.get("mean_intensity", 0.0))
+            m_lum = diag.get("brightness", 0.0)
             b_g = diag.get("brightness_grade", "")
             put_text(canvas, f"亮度: {m_lum:.1f} {b_g}", (x + 10, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.34, (200, 205, 215), 1, cv2.LINE_AA)
             cy += 24
 
             # 拒检四边形候选
-            rej_c = diag.get("rejected_quads_count", diag.get("false_rejections_count", 0))
+            rej_c = diag.get("rejected_quads_count", 0)
             put_text(canvas, f"畸变/超小候选: {rej_c}个", (x + 10, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (170, 175, 185), 1, cv2.LINE_AA)
             cy += 20
 
             # 理论漏检标靶
-            missing = diag.get("missing_projected_tags", []) or diag.get("missing_theoretical_tags", [])
+            missing = diag.get("missing_theoretical_tags", [])
             if missing:
                 m_tids = ",".join([f"#{m['tag_id']}" for m in missing])
                 put_text(canvas, f"理论漏检: {len(missing)}个", (x + 10, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.36, (0, 140, 255), 1, cv2.LINE_AA)

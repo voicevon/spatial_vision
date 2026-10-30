@@ -142,7 +142,7 @@ def build_tools_catalog() -> List[ToolCardMeta]:
             subtitle="双用途 (标定/生产) 快速采集",
             category="B — 标定建图与生产验证",
             is_gui=True,
-            command=[sys.executable, "tools/capture/capture_wizard.py"],
+            command=[sys.executable, "-m", "tools.capture"],
             tag_color=COLOR_B,
             summary="交互式工业图像采集工作台，提供实时画面预览与标定/生产双用途采集路由。",
             details=[
@@ -279,7 +279,7 @@ def build_tools_catalog() -> List[ToolCardMeta]:
                 "点动与舵机控制：笛卡尔与关节角点动，支持末端夹爪开闭",
                 "工位跳转与透传：预设工位跳转、搬运节拍宏与原生 G-code 透传"
             ],
-            inputs=["MKS Base V1.6 串口 (如 COM11)", "几何参数 loader_core/config.py"],
+            inputs=["MKS Base V1.6 串口 (如 COM11)", "几何参数 scara_driver/config.py"],
             outputs=["串口 G-code 指令下发、机械臂动作执行与通信日志"],
             quick_tips="快捷键: [7] 启动 | 界面内 W/S/A/D 点动 | [G28] 回零 | [ESC] 退出"
         ),
@@ -816,12 +816,12 @@ class GuiLauncherApp:
 
     def _terminal_button_rects(self, split_x: int):
         """终端标题栏 [停止][返回] 按钮矩形 (渲染与鼠标命中共用, 返回最右为 [返回])"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         top_h = max(36, int(54 * s))
         header_h = max(36, int(46 * s))
         bw, bh = max(56, int(78 * s)), max(22, int(28 * s))
         y1 = top_h + (header_h - bh) // 2
-        rects, bx2 = [], self.canvas_w - max(8, int(14 * s))
+        rects, bx2 = [], self.win_mgr.canvas_w - max(8, int(14 * s))
         for bid in ("TERM_BACK", "TERM_STOP"):   # 从右往左排布
             bx1 = bx2 - bw
             rects.append((bid, (bx1, y1, bx2, y1 + bh)))
@@ -830,14 +830,14 @@ class GuiLauncherApp:
 
     def _terminal_body_rect(self, split_x: int):
         """终端本体区域 (标题栏之下, 状态行之上)"""
-        s = self.scale_pct / 100.0
+        s = self.win_mgr.scale_pct / 100.0
         top_h = max(36, int(54 * s))
         footer_h = max(34, int(50 * s))
         header_h = max(36, int(46 * s))
         status_h = max(20, int(24 * s))
         pad = max(2, int(4 * s))
         return (split_x + pad, top_h + header_h + pad,
-                self.canvas_w - pad, self.canvas_h - footer_h - status_h)
+                self.win_mgr.canvas_w - pad, self.win_mgr.canvas_h - footer_h - status_h)
 
     def _on_terminal_button(self, btn_id: str):
         """终端标题栏按钮: [停止] 终止子进程 / [返回] 回系统总览"""
@@ -1197,7 +1197,7 @@ class GuiLauncherApp:
         # 数据提取
         st = self.system_status
         py_ver = sys.version.split()[0]
-        cv_ver = st.get("cv_version", cv2.__version__)
+        cv_ver = st.get("opencv", cv2.__version__)
         rs_tuple = st.get("realsense", (False, "未检测", False))
         rs_ok = rs_tuple[2] if len(rs_tuple) > 2 else False
         rs_msg = rs_tuple[1] if len(rs_tuple) > 1 else str(rs_tuple)
@@ -1269,7 +1269,7 @@ class GuiLauncherApp:
             curr_y += max(3, int(5 * s))
 
             cv2.circle(canvas, (bullet_icon_x, curr_y + max(5, int(7 * s))), max(2, int(3 * s)), (180, 160, 100), -1)
-            curr_y = draw_multiline_text(canvas, f"工位标定样本: 已采集 {act_ws.extrinsic_calib_image_count} 帧原始图集",
+            curr_y = draw_multiline_text(canvas, f"工位标定样本: 已采集 {act_ws.calibration_image_count} 帧原始图集",
                                          (bullet_text_x, curr_y), max_width=bullet_w,
                                          font_size=max(9, int(12 * s)), color=(190, 205, 220), line_spacing=max(2, int(4 * s)))
             curr_y += max(3, int(5 * s))

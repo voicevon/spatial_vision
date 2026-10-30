@@ -34,7 +34,7 @@ F2_PALETTE = [(255, 120, 40), (40, 230, 240), (240, 100, 220), (80, 240, 120),
 
 
 @PipelineRegistry.register("feng_green_axis_v2", "算法 F2: 冯氏二代 (Feng's Green Axis V2)")
-class FengGreenAxisV2Pipeline(BaseAsparagusPipeline):
+class ExgrWatershedPipeline(BaseAsparagusPipeline):
     """算法 F2：冯氏二代 —— HSV 绿分割 -> 外轮廓绘制 -> 骨架分组双 BFS 中心线追踪 (独立实现)"""
 
     name = "算法 F2: 冯氏二代 (Feng's Green Axis V2)"

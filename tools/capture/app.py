@@ -57,7 +57,7 @@ except ImportError:
 log = get_logger(__name__)
 
 
-class CaptureWizard(BaseCvApp):
+class ImageCaptureApp(BaseCvApp):
     def __init__(self, output_dir: str = None, workspace_id: str = None, purpose: str = "calibration", workspace_mgr: WorkspaceManager = None):
         super().__init__(
             app_id=APP_ID,
@@ -470,7 +470,7 @@ def main():
     parser.add_argument("--dir", "--output-dir", "--output_dir", dest="dir", type=str, default=None, help="自定义保存目录路径")
     args = parser.parse_args()
 
-    wizard = CaptureWizard(output_dir=args.dir, workspace_id=args.workspace, purpose=args.purpose)
+    wizard = ImageCaptureApp(output_dir=args.dir, workspace_id=args.workspace, purpose=args.purpose)
     wizard.run()
 
 

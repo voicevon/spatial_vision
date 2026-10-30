@@ -52,7 +52,7 @@ from src.vision.tag_detector import TagDetector
 from src.devices.robot_serial import RobotSerial
 from src.ui.gui_window_manager import GuiWindowManager
 from tools.tracker.camera_controller import CameraController
-from tools.scara_debug.loader_core.config import LoaderConfig
+from tools.scara_debug.scara_driver.config import ScaraRobotConfig
 from tools.tracker.common import (
     COLOR_ACCENT, COLOR_TEXT_SUB, COL_CYAN, COL_YELLOW,
     TOOLBAR_H, fmt_point, list_serial_ports)
@@ -61,7 +61,7 @@ from tools.tracker.renderer import TrackerRenderer
 from src.utils.logger import get_logger
 
 try:
-    from src.utils.config_guard import resolve_camera_intrinsics
+    from src.utils.intrinsics_resolver import resolve_camera_intrinsics
 except ImportError:
     resolve_camera_intrinsics = None
 
@@ -142,7 +142,7 @@ class RobotOnlineTracker:
             ("tag",       "Tag 2号"),
             ("asparagus", "顶层芦笋"),
         ]
-        self.recog_tag2_on = False     # "识别 Tag 2" 乒乓开关 (默认关, 仅识别目标 Tag)
+        self.auto_recognize_on = False     # "识别 Tag 2" 乒乓开关 (默认关, 仅识别目标 Tag)
         self.show_anchors_on = False   # "显示已知 Tag" 乒乓开关 (绿=BA理论 / 蓝=实测)
         self.show_xy_plane_on = False  # "XY平面" 下拉选择状态 (False=不绘制, True=绘制 plane_z 高度平面)
         self.world_locked = False      # 世界坐标系锁定状态
@@ -439,7 +439,7 @@ class RobotOnlineTracker:
         if force_off or self.camera.pipeline_running:
             self.camera.stop()
             self._release_world_lock(silent=True)
-            self.recog_tag2_on = False
+            self.auto_recognize_on = False
             self.set_toast("相机已关闭")
             log.info("相机已关闭")
         else:
@@ -470,7 +470,7 @@ class RobotOnlineTracker:
         - "识别 Tag 2" 开关打开: 每帧仅识别 Tag 2, 已锁定时解算其世界坐标 (FR-12.6)
         - "确定世界坐标系" 流程采样在后台线程独立执行, 不走此函数
         """
-        if not (self.recog_tag2_on or self.show_anchors_on or self.show_xy_plane_on):
+        if not (self.auto_recognize_on or self.show_anchors_on or self.show_xy_plane_on):
             self.support_ids = []
             self.rmse = None
             return None
@@ -486,7 +486,7 @@ class RobotOnlineTracker:
             R_lock = (cv2.Rodrigues(self.locked_rvec)[0]
                       if (self.world_locked and self.locked_rvec is not None) else None)
             z_exp = None if R_lock is None else R_lock @ np.array([0.0, 0.0, 1.0])
-            ok2, rvec2, t2 = self.pnp_solver.solve_single_tag_pnp(c2, expected_z_cam=z_exp)
+            ok2, rvec2, t2 = self.pnp_solver.solve_planar_tag_pnp(c2, expected_z_cam=z_exp)
             if ok2:
                 self.target_rvec = rvec2
                 self.target_tvec = t2.reshape((3, 1))
@@ -552,7 +552,7 @@ class RobotOnlineTracker:
         if obj_list:
             obj = np.vstack(obj_list).astype(np.float64)
             img = np.vstack(img_list).astype(np.float64)
-            rvec, tvec, ok = self.pnp_solver.solve_pnp(obj, img)
+            ok, rvec, tvec = self.pnp_solver.solve_point_cloud_pnp(obj, img)
             if ok:
                 sol["rvec"] = rvec
                 sol["tvec"] = tvec.reshape(3)
@@ -566,7 +566,7 @@ class RobotOnlineTracker:
                 if c2 is not None:
                     # 目标 Tag 法向"朝向天空"先验: 用锚定 PnP 旋转把世界 +Z 映到相机系
                     R_wc, _ = cv2.Rodrigues(rvec)
-                    ok2, rvec2, t2 = self.pnp_solver.solve_single_tag_pnp(
+                    ok2, rvec2, t2 = self.pnp_solver.solve_planar_tag_pnp(
                         c2, expected_z_cam=R_wc @ np.array([0.0, 0.0, 1.0]))
                     if ok2:
                         p_cam = t2.reshape(3)                      # 目标 Tag 中心 (相机系)
@@ -708,7 +708,7 @@ class RobotOnlineTracker:
             tip = (f" | 第{converged_at}帧提前收敛(<{self.LOCK_CONVERGE_MM:g}mm)"
                    if converged_at else "")
             self.lock_info = f"{len(rmses)}帧均值 | RMSE {np.mean(rmses):.2f}px{tip}"
-            self.recog_tag2_on = True  # 锁定后自动开启"识别 Tag 2"
+            self.auto_recognize_on = True  # 锁定后自动开启"识别 Tag 2"
             self.set_toast(f"世界坐标系零点已确定并锁定 ({self.lock_info}), "
                            f"已自动开启识别 Tag {self.target_tag_id}")
         finally:
@@ -869,7 +869,7 @@ class RobotOnlineTracker:
         label = dict(self.target_options).get(kind, kind)
         self.target_kind = kind
         self.measured = None
-        self.recog_tag2_on = False
+        self.auto_recognize_on = False
         self.support_ids = []
         self._save_viewer_state()
         if kind == "asparagus":
@@ -902,9 +902,9 @@ class RobotOnlineTracker:
                 self.add_track_log("M84 发送失败 (无 ok 应答)", "err")
                 self.set_toast("M84 发送失败 (无 ok 应答), 详见终端日志", True)
                 return
-            # 机械零位的绝对坐标 (单一来源 LoaderConfig.home_pose = X0 Y600 Z80, R=90°→E 轴);
+            # 机械零位的绝对坐标 (单一来源 ScaraRobotConfig.home_pose = X0 Y600 Z80, R=90°→E 轴);
             # 声明"当前位置=机械零位绝对坐标", 绝非把当前位当 (0,0,0)
-            hp = LoaderConfig().home_pose
+            hp = ScaraRobotConfig().home_pose
             g92_cmd = f"G92 X{hp.x:.2f} Y{hp.y:.2f} Z{hp.z:.2f} E{hp.r:.2f}"
             self.add_track_log(f"发送: {g92_cmd}", "cmd")
             if not self.robot.send_gcode(g92_cmd, timeout=3.0):
@@ -1180,13 +1180,13 @@ class RobotOnlineTracker:
             self.set_toast("已显示已知 Tag 位置 (绿=BA理论 / 蓝=实测)" if self.show_anchors_on
                            else "已知 Tag 位置显示已关闭")
         elif btn_id == "TOGGLE_RECOG":
-            if not self.recog_tag2_on and self.target_kind == "asparagus":
+            if not self.auto_recognize_on and self.target_kind == "asparagus":
                 self.set_toast("顶层芦笋识别需 RealSense 深度流接入, 功能开发中", True)
                 return
-            self.recog_tag2_on = not self.recog_tag2_on
-            if not self.recog_tag2_on:
+            self.auto_recognize_on = not self.auto_recognize_on
+            if not self.auto_recognize_on:
                 self.support_ids = []
-            self.set_toast("连续识别已开启 (逐帧解算目标世界坐标)" if self.recog_tag2_on
+            self.set_toast("连续识别已开启 (逐帧解算目标世界坐标)" if self.auto_recognize_on
                            else "连续识别已关闭 (纯预览)")
         elif btn_id == "TOGGLE_LOCK":
             self.toggle_world_lock()
@@ -1259,12 +1259,12 @@ class RobotOnlineTracker:
                     else:
                         # 实时叠加直接画在原始帧上 (帧坐标), 再与工具栏拼合, 保证与画面内容对齐
                         # (连续识别/连续跟踪/单次识别请求时也需解算, 保证目标实测坐标最新)
-                        if (self.recog_tag2_on or self.show_anchors_on
+                        if (self.auto_recognize_on or self.show_anchors_on
                                 or self.show_xy_plane_on or self.track_armed
                                 or self.recog_once_requested):
                             t_prev = self.measured_time
                             det = self.solve_frame(frame)
-                            if det is not None and (self.recog_tag2_on or self.show_anchors_on
+                            if det is not None and (self.auto_recognize_on or self.show_anchors_on
                                                     or self.show_xy_plane_on):
                                 self.renderer.draw_overlay(frame, det)
                                 self.renderer.draw_xy_plane_overlay(frame, det)

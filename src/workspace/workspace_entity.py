@@ -35,15 +35,15 @@ class Workspace:
     camera_type: str = "realsense"         # 绑定相机类型: 'realsense' (默认), 'usb', 'mock'
     camera_serial: str = ""                # 采集相机硬件序列号或设备索引
     valid_tag_ids: List[int] = field(default_factory=list)
-    origin_tag_id: int = 0
-    x_axis_tag_id: int = 28
+
+
     camera_resolution: List[int] = field(default_factory=lambda: [1920, 1080])  # 工位锁定的标准相机物理分辨率 [宽, 高]
 
     # 状态与指标
-    extrinsic_calib_image_count: int = 0   # 外参建图图片数
-    prod_image_count: int = 0              # 生产采图数
+    calibration_image_count: int = 0       # 外参建图图片数
+    production_image_count: int = 0        # 生产采图数
     intrinsics_image_count: int = 0        # 相机内参标定图片数
-    active_image_count: int = 0            # 标定有效帧数
+    calibration_active_image_count: int = 0  # 标定有效帧数
     ba_solved: bool = False
     global_rmse_px: float = 0.0
 
@@ -98,7 +98,7 @@ class Workspace:
     @property
     def total_image_count(self) -> int:
         """工位全量业务照片总数 (基于内存缓存指标: 内参 + 外参 + 生产)"""
-        return self.intrinsics_image_count + self.extrinsic_calib_image_count + self.prod_image_count
+        return self.intrinsics_image_count + self.calibration_image_count + self.production_image_count
 
     @property
     def is_hardware_locked(self) -> bool:
@@ -182,55 +182,55 @@ class Workspace:
 
     # ------------------------------ 外参建图标定专区 (calibration/) ------------------------------
     @property
-    def calibration_dir(self) -> str:
+    def calib_dir(self) -> str:
         """【图集二】外参建图与空间标定业务专区根目录"""
         return os.path.join(self.workspace_dir, "calibration")
 
     @property
     def calib_raw_images_dir(self) -> str:
         """【图集二】外参建图原始图像存储目录 (Tag 空间标靶照片)"""
-        return os.path.join(self.calibration_dir, "raw_images")
+        return os.path.join(self.calib_dir, "raw_images")
 
     @property
     def calib_manifest_path(self) -> str:
         """标定观测清单 (tag_observations.yaml) 路径"""
-        return os.path.join(self.calibration_dir, "tag_observations.yaml")
+        return os.path.join(self.calib_dir, "tag_observations.yaml")
 
     @property
     def calib_reports_dir(self) -> str:
         """标定质检单与盲测体检报告目录"""
-        return os.path.join(self.calibration_dir, "reports")
+        return os.path.join(self.calib_dir, "reports")
 
     @property
     def calib_visualized_dir(self) -> str:
         """标定残差场与特征图示化标注目录"""
-        return os.path.join(self.calibration_dir, "visualized")
+        return os.path.join(self.calib_dir, "visualized")
 
     @property
     def raw_map_path(self) -> str:
         """【标定业务资产】阶段一自由平差相对几何底图缓存 (位于 calibration/ 下)"""
-        return os.path.join(self.calibration_dir, "tags_map_raw.yaml")
+        return os.path.join(self.calib_dir, "tags_map_raw.yaml")
 
     # ------------------------------ 生产业务专区 (production/) ------------------------------
     @property
-    def production_dir(self) -> str:
+    def prod_dir(self) -> str:
         """【图集三】生产业务专区根目录"""
         return os.path.join(self.workspace_dir, "production")
 
     @property
     def prod_raw_images_dir(self) -> str:
         """【图集三】生产现场原始采样图像存储目录"""
-        return os.path.join(self.production_dir, "raw_images")
+        return os.path.join(self.prod_dir, "raw_images")
 
     @property
     def prod_reports_dir(self) -> str:
         """生产执行质检单与在线盲测报告目录"""
-        return os.path.join(self.production_dir, "reports")
+        return os.path.join(self.prod_dir, "reports")
 
     @property
     def prod_results_dir(self) -> str:
         """生产分拣位姿、点云或中间诊断数据目录"""
-        return os.path.join(self.production_dir, "results")
+        return os.path.join(self.prod_dir, "results")
 
     # ------------------------------ 多用途通用辅助 ------------------------------
     def get_raw_images_dir(self, purpose: str = "calibration") -> str:
@@ -293,13 +293,13 @@ class Workspace:
         calib_files = []
         for ext in img_exts:
             calib_files.extend(glob.glob(os.path.join(self.calib_raw_images_dir, ext)))
-        self.extrinsic_calib_image_count = len(calib_files)
+        self.calibration_image_count = len(calib_files)
 
         # 2. 生产采样图片数
         prod_files = []
         for ext in img_exts:
             prod_files.extend(glob.glob(os.path.join(self.prod_raw_images_dir, ext)))
-        self.prod_image_count = len(prod_files)
+        self.production_image_count = len(prod_files)
 
         # 3. 相机内参标定图片数
         intr_files = []
@@ -323,13 +323,13 @@ class Workspace:
                             tag_id = t.get("tag_id")
                             if tag_id is not None:
                                 seen_tags.add(int(tag_id))
-                self.active_image_count = active_count
+                self.calibration_active_image_count = active_count
                 self.valid_tag_ids = sorted(list(seen_tags))
             except Exception as e:
                 log.debug(f"[WS] 解析标定清单失败 {self.workspace_id}: {e}")
-                self.active_image_count = 0
+                self.calibration_active_image_count = 0
         else:
-            self.active_image_count = 0
+            self.calibration_active_image_count = 0
             self.valid_tag_ids = []
 
         # 5. BA 平差解算状态及指标
@@ -370,15 +370,15 @@ class Workspace:
             "camera_serial": self.camera_serial,
             "camera_resolution": list(self.resolution),
             "status": {
-                "extrinsic_calib_image_count": self.extrinsic_calib_image_count,
-                "prod_image_count": self.prod_image_count,
+                "calibration_image_count": self.calibration_image_count,
+                "production_image_count": self.production_image_count,
                 "intrinsics_image_count": self.intrinsics_image_count,
-                "active_image_count": self.active_image_count,
+                "calibration_active_image_count": self.calibration_active_image_count,
                 "ba_solved": self.ba_solved,
                 "global_rmse_px": self.global_rmse_px,
                 "valid_tag_ids": self.valid_tag_ids,
-                "origin_tag_id": self.origin_tag_id,
-                "x_axis_tag_id": self.x_axis_tag_id,
+
+
             },
             "production": self.production,
         }
@@ -418,15 +418,15 @@ class Workspace:
         production = meta.get("production", {})
 
         status = meta.get("status", {})
-        extrinsic_calib_image_count = status.get("extrinsic_calib_image_count", 0)
-        prod_image_count = status.get("prod_image_count", 0)
+        calibration_image_count = status.get("calibration_image_count", 0)
+        production_image_count = status.get("production_image_count", 0)
         intrinsics_image_count = status.get("intrinsics_image_count", 0)
-        active_image_count = status.get("active_image_count", 0)
+        calibration_active_image_count = status.get("calibration_active_image_count", 0)
         ba_solved = status.get("ba_solved", False)
         global_rmse_px = status.get("global_rmse_px", 0.0)
         valid_tag_ids = status.get("valid_tag_ids", [])
-        origin_tag_id = status.get("origin_tag_id", 0)
-        x_axis_tag_id = status.get("x_axis_tag_id", 28)
+
+
 
         ws = cls(
             workspace_id=ws_id,
@@ -438,15 +438,15 @@ class Workspace:
             camera_type=camera_type,
             camera_serial=camera_serial,
             camera_resolution=camera_resolution,
-            extrinsic_calib_image_count=extrinsic_calib_image_count,
-            prod_image_count=prod_image_count,
+            calibration_image_count=calibration_image_count,
+            production_image_count=production_image_count,
             intrinsics_image_count=intrinsics_image_count,
-            active_image_count=active_image_count,
+            calibration_active_image_count=calibration_active_image_count,
             ba_solved=ba_solved,
             global_rmse_px=global_rmse_px,
             valid_tag_ids=valid_tag_ids,
-            origin_tag_id=origin_tag_id,
-            x_axis_tag_id=x_axis_tag_id,
+
+
             production=production,
         )
 
@@ -454,7 +454,7 @@ class Workspace:
             force_refresh
             or not status
             or (ba_solved and global_rmse_px <= 1e-6)
-            or (active_image_count == 0 and os.path.exists(manifest_path))
+            or (calibration_active_image_count == 0 and os.path.exists(manifest_path))
         )
         if needs_heal:
             ws.refresh_stats()

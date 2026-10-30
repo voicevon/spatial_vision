@@ -8,7 +8,7 @@
 2. 工位 workspace_meta.yaml 准确持久化与加载硬件规格
 3. WorkspaceManager.create_workspace 支持指定相机类型与规格
 4. WorkspaceManager.bind_workspace_camera 具备原子写穿更新能力
-5. CaptureWizard 载入工位时完全受工位硬件参数驱动
+5. ImageCaptureApp 载入工位时完全受工位硬件参数驱动
 """
 
 import os
@@ -20,8 +20,8 @@ import yaml
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.workspace.workspace_manager import WorkspaceManager, Workspace
-from tools.capture.capture_wizard import CaptureWizard
-import tools.capture.capture_wizard as wizard_mod
+from tools.capture.app import ImageCaptureApp
+import tools.capture.app as wizard_mod
 
 
 class TestWorkspaceHardwareBinding(unittest.TestCase):
@@ -95,7 +95,7 @@ class TestWorkspaceHardwareBinding(unittest.TestCase):
         )
 
         wizard_mod.GUI_SETTINGS_FILE = os.path.join(self.tmp_dir, "gui_settings.json")
-        wiz = CaptureWizard(workspace_id=ws_custom.workspace_id, output_dir=None, workspace_mgr=self.mgr)
+        wiz = ImageCaptureApp(workspace_id=ws_custom.workspace_id, output_dir=None, workspace_mgr=self.mgr)
 
         # 验证采图向导自动装载了工位的相机类型与分辨率
         self.assertEqual(wiz.camera_type, "usb")

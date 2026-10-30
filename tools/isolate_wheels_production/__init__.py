@@ -6,6 +6,6 @@ flux_vision_3d | isolate_wheels_production
 分离轮 8 通道自动分选与连续生产工作台模块。
 """
 
-from tools.isolate_wheels_production.app import IsolateWheelsProductionApp
+from tools.isolate_wheels_production.app import IsolationWheelProductionApp
 
-__all__ = ["IsolateWheelsProductionApp"]
+__all__ = ["IsolationWheelProductionApp"]

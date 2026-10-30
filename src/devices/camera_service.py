@@ -7,7 +7,7 @@
 tools/capture/capture_wizard)：
   - RealSense D435 / USB 摄像头 双物理后端统一启停与帧读取；
   - 分级回退链 (帧率/分辨率逐级降级)；
-  - 内参解析推送: RealSense 走 config_guard 标定内参 (按实际分辨率自适应)，
+  - 内参解析推送: RealSense 走 intrinsics_resolver 标定内参 (按实际分辨率自适应)，
     USB 用近似针孔模型，经 intrinsics_callback 推送给宿主 (如 tracker 刷新引擎)。
 工具层只保留 GUI 状态与业务编排，硬件操作全部委托本服务。
 """
@@ -33,7 +33,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 
 try:
-    from src.utils.config_guard import resolve_camera_intrinsics
+    from src.utils.intrinsics_resolver import resolve_camera_intrinsics
 except ImportError:
     resolve_camera_intrinsics = None
 

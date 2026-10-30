@@ -50,9 +50,9 @@ class TestWorkspaceManager(unittest.TestCase):
         """测试工位创建、目录层级与列表检索"""
         ws1 = self.mgr.create_workspace(alias="bench_a", description="工位A测试")
         self.assertTrue(os.path.isdir(ws1.workspace_dir))
-        self.assertTrue(os.path.isdir(ws1.calibration_dir))
+        self.assertTrue(os.path.isdir(ws1.calib_dir))
         self.assertTrue(os.path.isdir(ws1.calib_raw_images_dir))
-        self.assertTrue(os.path.isdir(ws1.production_dir))
+        self.assertTrue(os.path.isdir(ws1.prod_dir))
         self.assertTrue(os.path.isdir(ws1.prod_raw_images_dir))
         self.assertTrue(os.path.exists(ws1.meta_path))
         self.assertTrue(os.path.exists(ws1.whitelist_path))
@@ -160,8 +160,8 @@ class TestWorkspaceManager(unittest.TestCase):
 
         # 刷新统计
         ws.refresh_stats()
-        self.assertEqual(ws.extrinsic_calib_image_count, 2)
-        self.assertEqual(ws.prod_image_count, 1)
+        self.assertEqual(ws.calibration_image_count, 2)
+        self.assertEqual(ws.production_image_count, 1)
 
 
 if __name__ == "__main__":

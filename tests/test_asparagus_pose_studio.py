@@ -22,7 +22,6 @@ if PROJECT_ROOT not in sys.path:
 from tools.asparagus_pose_studio.data_io import (
     find_depth_pair,
     scan_samples,
-    export_gcode_file,
     load_system_config,
 )
 from tools.asparagus_pose_studio.renderer import AsparagusPoseStudioRenderer
@@ -68,19 +67,6 @@ class TestDataIO(unittest.TestCase):
             # photo2 较新，应排第一
             self.assertEqual(samples[0]["name"], "sample_test.png")
 
-    def test_export_gcode_file(self):
-        """测试 G-code 导出"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ok, path = export_gcode_file("G0 X100 Y100\nM3\n", report_dir=tmpdir)
-            self.assertTrue(ok)
-            self.assertTrue(os.path.exists(path))
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertIn("G0 X100 Y100", content)
-
-            # 空内容失败
-            ok_empty, _ = export_gcode_file("", report_dir=tmpdir)
-            self.assertFalse(ok_empty)
 
     def test_load_system_config_fallback(self):
         """测试加载不存在配置文件的缺省降级"""

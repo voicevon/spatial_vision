@@ -174,7 +174,7 @@ class TestIntrinsicsCalibratorAndGallery(unittest.TestCase):
             hub_state.gallery.save_capture_frame(dummy_img, purpose="production")
 
             self.assertEqual(len(hub_state.gallery.intrinsics_images), 1)
-            self.assertEqual(len(hub_state.gallery.current_images), 1)
+            self.assertEqual(len(hub_state.gallery.calib_images), 1)
             self.assertEqual(len(hub_state.gallery.prod_images), 1)
 
             # 切换到相机内参页签
@@ -195,7 +195,7 @@ class TestIntrinsicsCalibratorAndGallery(unittest.TestCase):
             self.assertTrue(del_ok)
             self.assertEqual(len(hub_state.gallery.intrinsics_images), 0)
             # 外参和生产图集不受任何影响
-            self.assertEqual(len(hub_state.gallery.current_images), 1)
+            self.assertEqual(len(hub_state.gallery.calib_images), 1)
             self.assertEqual(len(hub_state.gallery.prod_images), 1)
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)

@@ -481,11 +481,11 @@ class HubHitTester:
                 # 外参建图页签
                 if point_in_rect(mx, my, (835, 56, 110, 32)):
                     return "run_capture_calib"
-                if not state.gallery.current_images and point_in_rect(mx, my, (570, 216, 160, 36)):
+                if not state.gallery.calib_images and point_in_rect(mx, my, (570, 216, 160, 36)):
                     return "run_capture_calib"
                 cell_idx = grid_hit_test(mx, my)
                 if cell_idx is not None:
-                    return ("grid_item", state.gallery.image_grid_offset + cell_idx)
+                    return ("grid_item", state.gallery.calib_grid_offset + cell_idx)
 
         return None
 

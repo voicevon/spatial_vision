@@ -80,7 +80,7 @@ class TestTagIntegration(unittest.TestCase):
 
         # 验证坐标经过了标定矩阵变换（Z 应翻转）
         # 原始 grip_z ~ 580mm, 经过 [0,0,-1,640] 变换后 robot_z ≈ 640 - 580 = 60mm
-        self.assertAlmostEqual(top.robot_z, 640.0 - top.grip_z, delta=5.0)
+        self.assertAlmostEqual(top.robot_z, 640.0 - top.grip_cam_z, delta=5.0)
 
     def test_tag_cached_fallback(self):
         """场景 2：有 TagLocalizer + 第一帧成功 + 第二帧失败 → 使用 tag_cached"""
@@ -101,7 +101,7 @@ class TestTagIntegration(unittest.TestCase):
         self.assertEqual(targets2[0].calibration_source, "tag_cached")
 
         # 验证缓存外参仍然产生正确的坐标变换
-        self.assertAlmostEqual(targets2[0].robot_z, 640.0 - targets2[0].grip_z, delta=5.0)
+        self.assertAlmostEqual(targets2[0].robot_z, 640.0 - targets2[0].grip_cam_z, delta=5.0)
 
     def test_hand_eye_fallback(self):
         """场景 3：无 TagLocalizer + 有手工矩阵 → 使用 hand_eye"""
@@ -169,12 +169,12 @@ class TestTagIntegration(unittest.TestCase):
     def test_gcode_reflects_calibration_source(self):
         """验证 G-code 输出正确反映各标定来源"""
         base = AsparagusTarget(
-            id=1, center_px=(320.0, 240.0), length_px=200.0, diam_px=20.0,
+            target_id=1, center_px=(320.0, 240.0), length_px=200.0, diam_px=20.0,
             yaw_deg=15.0, axis_vector=(1.0, 0.0),
             box_corners=np.zeros((4, 2), dtype=np.int32),
             contour=np.zeros((1, 1, 2), dtype=np.int32),
             length_mm=180.0, diam_mm=12.0,
-            grip_x=10.0, grip_y=-5.0, grip_z=580.0,
+            grip_cam_x=10.0, grip_cam_y=-5.0, grip_cam_z=580.0,
             z_top=575.0, rel_height_mm=60.0,
             robot_x=310.0, robot_y=145.0, robot_z=60.0, robot_r=15.0,
             is_topmost=True

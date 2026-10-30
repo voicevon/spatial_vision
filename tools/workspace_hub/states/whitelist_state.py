@@ -248,10 +248,8 @@ class WhitelistState:
         if n == 0:
             ok, msg = self.update_tag_anchor(tid, None)
         else:
-            ok, msg = self.update_tag_anchor(tid, {
-                "xyz_mm": self.anchor_modal_xyz,
-                "known": self.anchor_modal_known
-            })
+            xyz_mm = [self.anchor_modal_xyz[i] if self.anchor_modal_known[i] else None for i in range(3)]
+            ok, msg = self.update_tag_anchor(tid, {"xyz_mm": xyz_mm})
         self.close_anchor_modal()
         return ok, msg
 

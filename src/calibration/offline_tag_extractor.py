@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-工序 3：离线图像质量诊断调优与超精重提取引擎 (Tag Super Extractor)
+工序 3：离线图像质量诊断调优与超精重提取引擎 (OfflineTagExtractor)
 ==============================================================================
 核心设计哲学：【彻底解耦在线采图的实时性与离线建图的极致精度】
 1. 前台采图（工序 2）：1080P @ 8fps 极速取景跟手连拍，专注构图与连通性覆盖；
@@ -51,7 +51,7 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-class TagSuperExtractor:
+class OfflineTagExtractor:
     def __init__(self,
                  image_dir: str = DEFAULT_IMAGE_DIR,
                  manifest_path: str = DEFAULT_MANIFEST_PATH,
@@ -121,7 +121,7 @@ class TagSuperExtractor:
 
         return cv2.aruco.ArucoDetector(self.dictionary, params)
 
-    def refine_corners_orthogonal(self, gray: np.ndarray, corners: np.ndarray) -> np.ndarray:
+    def normalize_corners_shape(self, corners: np.ndarray) -> np.ndarray:
         """
         保持边缘轮廓求交的高精度角点，杜绝大窗口角点漂移。
         若传入角点已由 CORNER_REFINE_CONTOUR 求解，则直接保持该正交几何交点。
@@ -232,7 +232,7 @@ class TagSuperExtractor:
             best_ch, best_corners, _ = max(candidates, key=lambda item: item[2])
 
             # 保持 CONTOUR 轮廓正交直线拟合的高精亚像素角点，杜绝大窗口角点失真
-            refined_corners = self.refine_corners_orthogonal(gray_raw, best_corners)
+            refined_corners = self.normalize_corners_shape(best_corners)
 
             # 计算精准物理度量指标
             edge_lens = [
@@ -461,7 +461,7 @@ class TagSuperExtractor:
             header_comments = (
                 "# ==============================================================================\n"
                 "# AprilTag 离线建图与 BA 平差观测数据清单 (Observations Manifest)\n"
-                "# (已由工序 3 离线图像诊断调优与超精重提取引擎 tag_super_extractor.py 深度生成)\n"
+                "# (已由工序 3 离线图像诊断调优与超精重提取引擎 offline_tag_extractor.py 深度生成)\n"
                 "# 包含四大重型武器: 16级致密网格二值化 + 局部双尺度CLAHE + 2x超分 + 0.01px亚像素精修\n"
                 "# ==============================================================================\n\n"
             )
@@ -503,7 +503,7 @@ def main():
             log.error("未指定标靶物理边长 (--marker_size) 且当前工位 tag_whitelist.yaml.tag_default_size_mm 缺失或非法.")
             sys.exit(1)
 
-    extractor = TagSuperExtractor(image_dir=args.image_dir, manifest_path=args.manifest, marker_size_mm=args.marker_size)
+    extractor = OfflineTagExtractor(image_dir=args.image_dir, manifest_path=args.manifest, marker_size_mm=args.marker_size)
     extractor.process_all_images(auto_write_manifest=True)
 
 

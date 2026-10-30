@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-分离轮步进电机与节拍控制中枢 (IsolateWheelsController)
+分离轮步进电机与节拍控制中枢 (IsolationWheelController)
 =====================================================
 负责向各类应用工台（如 isolate_wheels_debug 调试视窗、isolate_wheels_production 生产分选看板）
 提供统一、高内聚、线程安全的分离轮硬件控制与节拍调度接口：
@@ -51,7 +51,7 @@ class WheelState(str, Enum):
     UNKNOWN = "unknown"
 
 
-class IsolateWheelsController:
+class IsolationWheelController:
     """分离轮核心控制器 (线程安全)"""
 
     def __init__(
@@ -220,7 +220,7 @@ class IsolateWheelsController:
     def send_motor(
         self,
         motor: int,
-        dir: int,
+        spin_dir: int,
         angle: float,
         devid: Optional[str] = None,
         force: bool = False,
@@ -229,7 +229,7 @@ class IsolateWheelsController:
         下发单电机调试命令 (motor)
 
         :param motor: 电机编号 (1~8)
-        :param dir: 方向 (1=正转, 0=反转)
+        :param spin_dir: 方向 (1=正转, 0=反转)
         :param angle: 旋转角度 (0, 360]
         :param devid: 目标设备 ID
         :param force: 是否绕过 idle 互锁
@@ -245,14 +245,14 @@ class IsolateWheelsController:
 
         if motor < 1 or motor > 8:
             return False, f"电机编号 {motor} 越界 (1~8)", ""
-        if dir not in (0, 1):
-            return False, f"方向代码 {dir} 非法 (0=反转, 1=正转)", ""
+        if spin_dir not in (0, 1):
+            return False, f"方向代码 {spin_dir} 非法 (0=反转, 1=正转)", ""
         ang = round(float(angle), 1)
         if not (0 < ang <= 360):
             return False, f"角度 {ang}° 越界 (0, 360]", ""
 
         ang_val = int(ang) if ang == int(ang) else ang
-        payload_dict = {"cmd": "motor", "motor": int(motor), "dir": int(dir), "angle": ang_val}
+        payload_dict = {"cmd": "motor", "motor": int(motor), "dir": int(spin_dir), "angle": ang_val}
         payload = json.dumps(payload_dict, ensure_ascii=False)
         topic = f"{TOPIC_PREFIX}/{target_devid}/cmd"
 

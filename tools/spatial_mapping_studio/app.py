@@ -59,7 +59,7 @@ from src.workspace.workspace_manager import (
     load_workspace_roi_manager,
 )
 from tools.spatial_mapping_studio.mapping_state import MappingDataManager
-from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
+from src.ui.canvas_viewport_interactor import CanvasViewportInteractor
 from tools.spatial_mapping_studio.mapping_ba_runner import MappingBARunner
 from tools.spatial_mapping_studio.mapping_renderer import MappingRenderer
 from src.ui.viewport_manager import (
@@ -78,7 +78,7 @@ except ImportError:
 
 
 try:
-    from src.utils.config_guard import resolve_camera_intrinsics
+    from src.utils.intrinsics_resolver import resolve_camera_intrinsics
 except ImportError:
     resolve_camera_intrinsics = None
 
@@ -264,7 +264,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         self.is_running = True
 
         # 9. 视口几何变换与鼠标交互控制器 (Viewport Zoom & Pan)
-        self.viewport = MappingViewportInteractor(win_w=self.win_w, win_h=self.win_h)
+        self.viewport = CanvasViewportInteractor(win_w=self.win_w, win_h=self.win_h)
 
         # 10. UI 界面排版与视觉渲染器
         self.ui_renderer = MappingRenderer()
@@ -324,7 +324,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             node = root.get(APP_ID, {})
             if not isinstance(node, dict):
                 return
-            state = node.get("dropdown_state") or node.get("viewer_state") or {}
+            state = node.get("dropdown_state") or {}
             if not isinstance(state, dict):
                 return
 
@@ -349,15 +349,11 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             valid_ba = [k for k, _ in BA_VIEW_OPTIONS]
             if state.get("ba_view_mode") in valid_ba:
                 self.ba_view_mode = state["ba_view_mode"]
-            elif state.get("ba_view_mode") == "3d":
-                self.ba_view_mode = "3d_prism"
 
             # 4. 实测识别视口显示下拉 (obs_view_mode)
             valid_obs = [k for k, _ in OBS_VIEW_OPTIONS]
             if state.get("obs_view_mode") in valid_obs:
                 self.obs_view_mode = state["obs_view_mode"]
-            elif state.get("obs_view_mode") == "3d":
-                self.obs_view_mode = "3d_prism"
 
             # 5. Z 轴特殊点 / XY 平面显示下拉 (plane_z, show_xy_plane)
             if "show_xy_plane" in state:
@@ -394,7 +390,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 "plane_z": float(self.data_mgr.plane_z),
             }
             node["dropdown_state"] = state_data
-            node["viewer_state"] = state_data.copy()
+
             node["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
@@ -410,7 +406,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             return []
         opts = []
         for s in self.workspace_mgr.list_workspaces():
-            opts.append((s.workspace_id, f"{s.name} ({s.extrinsic_calib_image_count}帧)"))
+            opts.append((s.workspace_id, f"{s.name} ({s.calibration_image_count}帧)"))
         return opts
 
     @property

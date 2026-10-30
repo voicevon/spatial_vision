@@ -348,9 +348,9 @@ class HubRenderer:
             state.selected_workspace_idx,
             selected_ws.workspace_id if selected_ws else None,
             len(state.workspaces),
-            state.gallery.selected_image_idx,
-            len(state.gallery.current_images),
-            state.gallery.image_grid_offset,
+            state.gallery.selected_calib_image_idx,
+            len(state.gallery.calib_images),
+            state.gallery.calib_grid_offset,
             state.gallery.selected_prod_image_idx,
             len(state.gallery.prod_images),
             state.gallery.prod_grid_offset,
@@ -533,7 +533,7 @@ class HubRenderer:
                     ba_col = self.COLOR_DARK_GRAY
                 put_text(canvas, ba_badge, (wx + 28, wy + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.35, ba_col, 1, cv2.LINE_AA)
 
-                cnt_text = f"{ws.extrinsic_calib_image_count}帧/{ws.prod_image_count}帧"
+                cnt_text = f"{ws.calibration_image_count}帧/{ws.production_image_count}帧"
                 put_text(canvas, cnt_text, (wx + 200, wy + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (140, 160, 180), 1, cv2.LINE_AA)
 
             elif item["type"] == "frame":

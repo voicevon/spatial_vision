@@ -20,7 +20,7 @@ import logging
 from typing import Optional
 
 from .comm import MarlinProtocolHandler, MarlinProtocolParser
-from .config import LoaderConfig
+from .config import ScaraRobotConfig
 from .kinematics import ReachabilityError, ScaraKinematics
 from .models import JointAngles, LimitSwitchStatus, Pose
 from .subsystems import GripperSubsystem
@@ -42,12 +42,12 @@ class ScaraRobot:
     可被 CLI 层、工作流宏层、以及未来视觉算法直接导入使用。
 
     Example::
-        from loader_core import ScaraRobot, LoaderConfig
-        from loader_core.comm import SerialTransceiver, MarlinProtocolHandler
+        from scara_driver import ScaraRobot, ScaraRobotConfig
+        from scara_driver.comm import SerialTransceiver, MarlinProtocolHandler
 
         tx = SerialTransceiver()
         handler = MarlinProtocolHandler(tx)
-        robot = ScaraRobot(handler, LoaderConfig())
+        robot = ScaraRobot(handler, ScaraRobotConfig())
         robot.connect("COM11")
         robot.home()
         robot.move_to_pose(Pose(x=150, y=350, z=80, r=0))
@@ -56,11 +56,11 @@ class ScaraRobot:
     def __init__(
         self,
         handler: MarlinProtocolHandler,
-        config: Optional[LoaderConfig] = None,
+        config: Optional[ScaraRobotConfig] = None,
         kinematics: Optional[ScaraKinematics] = None,
     ) -> None:
         self._h = handler
-        self._cfg = config or LoaderConfig()
+        self._cfg = config or ScaraRobotConfig()
         self._kin = kinematics or ScaraKinematics(
             l1=self._cfg.l1,
             l2=self._cfg.l2,
@@ -300,7 +300,7 @@ class ScaraRobot:
         """关节独立增量点动（直接发送 G6 绕过逆解算，纯关节空间控制）。
 
         大臂与小臂分别采用独立设定的高速进给率（大臂 200°/s，小臂 500°/s，
-        见 LoaderConfig.joint_theta_jog_feedrate / joint_psi_jog_feedrate）。
+        见 ScaraRobotConfig.joint_theta_jog_feedrate / joint_psi_jog_feedrate）。
 
         Args:
             joint:     关节名称，'theta' (大臂) / 'psi' (小臂)（大小写不敏感）
@@ -360,7 +360,7 @@ class ScaraRobot:
         return self._h.send_and_wait(cmd, timeout=_MOVE_TIMEOUT)
 
     @property
-    def config(self) -> LoaderConfig:
+    def config(self) -> ScaraRobotConfig:
         return self._cfg
 
     @property

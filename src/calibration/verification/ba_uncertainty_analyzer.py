@@ -20,7 +20,7 @@ from src.utils.text_rendering import put_text
 
 log = get_logger(__name__)
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 
 def compute_3d_uncertainties(jacobian, static_tags, base_id, sigma_res_px,

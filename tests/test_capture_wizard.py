@@ -16,8 +16,8 @@ import numpy as np
 # 添加工程根目录到 sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import tools.capture.capture_wizard as wizard_mod
-from tools.capture.capture_wizard import CaptureWizard, APP_ID
+import tools.capture.app as wizard_mod
+from tools.capture.app import ImageCaptureApp, APP_ID
 from tools.capture.renderer import TOOLBAR_H
 
 
@@ -26,10 +26,10 @@ def make_wizard():
     GUI_SETTINGS_FILE 重定向后保持生效, 使测试内的 _save_viewer_state 也写入临时文件。"""
     tmp_dir = tempfile.mkdtemp(prefix="wizard_test_")
     wizard_mod.GUI_SETTINGS_FILE = os.path.join(tmp_dir, "gui_settings.json")
-    return CaptureWizard(output_dir=tmp_dir)
+    return ImageCaptureApp(output_dir=tmp_dir)
 
 
-class TestCaptureWizard(unittest.TestCase):
+class TestImageCaptureApp(unittest.TestCase):
 
     def test_toolbar_buttons_and_hit_test(self):
         """工具栏命中表: 常态按钮 id 存在且可命中; 包含工位硬件与分辨率一体化锁定卡片"""
@@ -168,7 +168,7 @@ class TestCaptureWizard(unittest.TestCase):
 
     def test_switch_purpose_three_datasets(self):
         """测试三大图集用途切换 (intrinsics / calibration / production)"""
-        wiz = CaptureWizard(output_dir=None)
+        wiz = ImageCaptureApp(output_dir=None)
         # 切换到相机内参
         wiz.switch_purpose("intrinsics")
         self.assertEqual(wiz.purpose, "intrinsics")

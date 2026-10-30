@@ -489,18 +489,6 @@ class WorldDatumAligner:
         }
         return mode, info
 
-    def _anchor_fallback_relative(self,
-                                  tag_poses: Dict[int, np.ndarray],
-                                  origin_tag_id: int,
-                                  x_align_tag_id: int,
-                                  reason: str) -> Dict[str, Any]:
-        """锚定不可行时的统一退化出口: 相对对齐 + none 模式标记"""
-        log.warning(f"[ANCHOR] 世界锚定不可行: {reason} — 退化为相对对齐！")
-        rel = self.align_to_scara_world(tag_poses, origin_tag_id, x_align_tag_id)
-        rel["anchor_mode"] = "none"
-        rel["anchor_skip_reason"] = reason
-        return rel
-
     def anchor_to_absolute_world(self,
                                  tag_poses: Dict[int, np.ndarray],
                                  anchor_input: Any,
@@ -513,15 +501,13 @@ class WorldDatumAligner:
         分阶段闭式求解相似变换 (尺度 s + 偏航 yaw + 平移 t) 将整张 BA 平差地图变换到机械臂世界坐标系:
         - full:    5/5 DoF 全部解算, 绝对世界系地图
         - partial: 仅 XY 链可解 (t_z 悬空), XY 绝对锚定 + Z 保持 BA 尺度相对坐标, 下游须按 anchor_mode 守门
-        - none:    约束不足或退化, strict=True 抛错终止, strict=False 退化为 align_to_scara_world 相对对齐
-        :param anchor_input: 新格式 {tid: {"xyz_mm","known"}} 或旧双锚点格式 (自动归一化)
-        :param strict: 是否严格模式 (平差主干默认 True, 禁止任何静默兜底)
+        - none:    约束不足或退化, 抛错终止 (禁止任何静默相对对齐兜底)
+        :param anchor_input: {tid: {"xyz_mm","known"}} 格式
+        :param strict: 兼容保留参数 (始终严格拦截，禁止任何静默兜底)
         """
         anchor_tags = self.normalize_anchor_tags(anchor_input)
         if not anchor_tags:
-            if strict:
-                raise ValueError("anchor_to_absolute_world: 锚点配置为空或字段不合法 (FR-9.6 禁止兜底)")
-            return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, "锚点配置为空或字段不合法")
+            raise ValueError("anchor_to_absolute_world: 锚点配置为空或字段不合法 (FR-9.6 禁止兜底)")
 
         # 坐标系隔离过滤: 世界基准系 (world) 对齐仅能使用属于 world 的锚点，严禁将未解算的子坐标系局部标靶混入世界系
         # 核心规约: 0~9 恒定归属 world；>=10 归属各子坐标系
@@ -541,35 +527,29 @@ class WorldDatumAligner:
 
         # P0-4 修正: 严禁在 world_anchors 为空时静默 fallback 回退到 anchor_tags，必须显式抛错拦截
         if not world_anchors:
-            if strict:
-                raise ValueError(
-                    "anchor_to_absolute_world: 未找到任何归属于世界基准系 (world) 的有效锚点 (Tag 0~9 或 frame_id='world')，"
-                    "严禁将子坐标系局部标靶作为世界真值 (FR-9.6 禁止兜底)"
-                )
-            return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, "无有效世界锚点")
+            raise ValueError(
+                "anchor_to_absolute_world: 未找到任何归属于世界基准系 (world) 的有效锚点 (Tag 0~9 或 frame_id='world')，"
+                "严禁将子坐标系局部标靶作为世界真值 (FR-9.6 禁止兜底)"
+            )
 
         active_anchors = world_anchors
 
         dof = self.evaluate_anchor_dof(active_anchors)
         if dof["mode"] == "none":
-            if strict:
-                raise ValueError(
-                    f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}"
-                    " — 请增配已知世界坐标的 tag 或放宽当前部分已知标记 (FR-9.6 禁止兜底)"
-                )
-            return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, dof["reason"])
+            raise ValueError(
+                f"锚点 DoF 约束不足 ({dof['dof_solved']}/5): {dof['reason']}"
+                " — 请增配已知世界坐标的 tag 或放宽当前部分已知标记 (FR-9.6 禁止兜底)"
+            )
 
         mode, solve = self.solve_similarity_from_anchors(tag_poses, active_anchors)
         if mode == "none":
-            if strict:
-                conflict_pairs = solve.get("conflict_pairs", [])
-                conflict_diag = format_conflict_pairs_report(conflict_pairs)
-                conflict_sec = f"\n\n{conflict_diag}" if conflict_diag else ""
-                raise ValueError(
-                    f"锚点求解退化: {solve['reason']}{conflict_sec}"
-                    "\n\n— 请检查锚点 tag 之间的已知轴距离与 XY 共线方向 (FR-9.6 禁止兜底)"
-                )
-            return self._anchor_fallback_relative(tag_poses, origin_tag_id, x_align_tag_id, solve["reason"])
+            conflict_pairs = solve.get("conflict_pairs", [])
+            conflict_diag = format_conflict_pairs_report(conflict_pairs)
+            conflict_sec = f"\n\n{conflict_diag}" if conflict_diag else ""
+            raise ValueError(
+                f"锚点求解退化: {solve['reason']}{conflict_sec}"
+                "\n\n— 请检查锚点 tag 之间的已知轴距离与 XY 共线方向 (FR-9.6 禁止兜底)"
+            )
 
         if solve.get("conflict_pairs"):
             fatal_conflicts = [
@@ -649,7 +629,7 @@ class WorldDatumAligner:
         :param anchor_tags: 用户录入的世界锚点真值表
         :param origin_tag_id: 原点标靶 ID
         :param x_align_tag_id: X 轴对齐标靶 ID
-        :param strict: 是否严格模式 (发现冲突或锚点不足时抛错，否则降级)
+        :param strict: 是否严格模式 (发现冲突或锚点不足时抛错)
         :return: 具有绝对世界坐标的完整 tags_map 生产字典
         """
         # 提取标靶 4x4 位姿矩阵 (优先使用 raw_relative_poses)
@@ -666,8 +646,8 @@ class WorldDatumAligner:
                 if isinstance(t_info, dict):
                     if "transform_matrix" in t_info:
                         tag_poses[tid] = np.array(t_info["transform_matrix"], dtype=np.float64)
-                    elif "position_mm" in t_info or "center" in t_info:
-                        pos = t_info.get("position_mm", t_info.get("center"))
+                    elif "position_mm" in t_info:
+                        pos = t_info.get("position_mm")
                         if pos is not None and len(pos) >= 3:
                             T = np.eye(4, dtype=np.float64)
                             T[:3, 3] = np.array(pos[:3], dtype=np.float64)
@@ -701,80 +681,6 @@ class WorldDatumAligner:
                 for tid, T in tag_poses.items()
             }
         return result_map
-
-    def align_to_scara_world(self,
-                             tag_poses: Dict[int, np.ndarray],
-                             origin_tag_id: int,
-                             x_align_tag_id: int) -> Dict[str, Any]:
-        """
-        通过刚体变换将地图整体平移旋转，使得：
-        1. Tag 0 的中心处于 (0.0, 0.0)
-        2. Tag 0 -> Tag 1 的水平向量严格处于 +X 轴 (Y=0, X>0)
-        """
-        aligned_map = {
-            "origin_tag_id": origin_tag_id,
-            "x_axis_align_tag_id": x_align_tag_id,
-            "tags": {}
-        }
-
-        if origin_tag_id in tag_poses:
-            p_origin = tag_poses[origin_tag_id][:3, 3].copy()
-        else:
-            p_origin = np.zeros(3)
-            log.warning(f"[WARN] 未在有效图像中检出 Tag {origin_tag_id}，将以参考标靶相对对齐！")
-
-        yaw_rad = 0.0
-        aligned_x_target_id = x_align_tag_id
-
-        if origin_tag_id in tag_poses and x_align_tag_id in tag_poses:
-            vec_x = tag_poses[x_align_tag_id][:3, 3] - p_origin
-            yaw_rad = math.atan2(vec_x[1], vec_x[0])
-            log.info(f"[+] [ALIGN] 成功锚定基准 Tag {origin_tag_id} -> Tag {x_align_tag_id}，坐标系 X 轴对齐旋转角: {-math.degrees(yaw_rad):.2f}°")
-        else:
-            # 指定对齐标靶缺失，打印显式告警
-            available_tags = [tid for tid in tag_poses.keys() if tid != origin_tag_id]
-            log.warning(f"[WARN] [ALIGN] 指定的 X 轴对齐标靶 Tag {x_align_tag_id} 不在解算标靶中 (可用静态标靶: {sorted(available_tags)})！")
-
-            # 自适应寻找候选远端标靶（水平距离最大且在有效范围内的标靶）
-            if available_tags and origin_tag_id in tag_poses:
-                candidate_dists = []
-                for tid in available_tags:
-                    dist_xy = np.linalg.norm(tag_poses[tid][:2, 3] - p_origin[:2])
-                    candidate_dists.append((dist_xy, tid))
-                candidate_dists.sort(reverse=True)
-                fallback_id = candidate_dists[0][1]
-                aligned_x_target_id = fallback_id
-                vec_x = tag_poses[fallback_id][:3, 3] - p_origin
-                yaw_rad = math.atan2(vec_x[1], vec_x[0])
-                log.warning(f"[!] [ALIGN] 自动降级使用最远端刚体标靶 Tag {fallback_id} (距离 {candidate_dists[0][0]:.1f}mm) 进行 X 轴定向校正: {-math.degrees(yaw_rad):.2f}°")
-            else:
-                log.error(f"[ERROR] [ALIGN] 无法进行世界 X 轴对齐，世界系方向将退化保持为基准标靶印刷朝向！")
-
-        aligned_map["x_axis_align_tag_id"] = aligned_x_target_id
-
-        cos_y = math.cos(-yaw_rad)
-        sin_y = math.sin(-yaw_rad)
-        R_align = np.array([
-            [cos_y, -sin_y, 0.0],
-            [sin_y,  cos_y, 0.0],
-            [0.0,    0.0,   1.0]
-        ], dtype=np.float64)
-
-        for t_id, T_w_t in tag_poses.items():
-            pos_rel = T_w_t[:3, 3] - p_origin
-            pos_aligned = R_align @ pos_rel
-            R_aligned = R_align @ T_w_t[:3, :3]
-            rpy = rot_mat_to_rpy_deg(R_aligned)
-
-            aligned_map["tags"][t_id] = {
-                "position_mm": [round(float(v), 2) for v in pos_aligned],
-                "rpy_deg": [round(float(v), 2) for v in rpy],
-                "transform_matrix": [[round(float(val), 5) for val in row] for row in np.vstack([np.hstack([R_aligned, pos_aligned.reshape(3, 1)]), [0, 0, 0, 1]])],
-                "is_origin": bool(t_id == origin_tag_id),
-                "is_dynamic_yaw": bool(t_id == origin_tag_id)
-            }
-
-        return aligned_map
 
     @staticmethod
     def format_alignment_report_markdown(report: Dict[str, Any]) -> str:

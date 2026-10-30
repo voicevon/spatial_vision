@@ -123,7 +123,7 @@ class ScaraMotionPlanner:
             src_str = "UNCALIBRATED 安全警告 (尚未执行标定，当前坐标以原点基准相对量输出)"
 
         task = ScaraPickTask(
-            target_id=getattr(target, "target_id", 1),
+            target_id=target.target_id,
             pick_x=getattr(target, "robot_x", 0.0),
             pick_y=getattr(target, "robot_y", 0.0),
             pick_z=getattr(target, "robot_z", 0.0),

@@ -150,7 +150,7 @@ def extract_tag_positions_from_map(tags_map: Dict[str, Any]) -> Dict[int, np.nda
         except (ValueError, TypeError):
             continue
         if isinstance(v, dict):
-            pos = v.get("position_mm", v.get("center"))
+            pos = v.get("position_mm")
             if pos is not None and len(pos) >= 3:
                 res[tid] = np.array(pos[:3], dtype=np.float64)
             elif "transform_matrix" in v:
@@ -210,7 +210,7 @@ def check_sub_frame_local_rigidity(
                 continue
             fid = a_entry.get("frame_id") if isinstance(a_entry, dict) else None
             if fid == frame.frame_id or (fid is None and tid in target_range):
-                coords = a_entry.get("xyz_mm") or a_entry.get("coords") or a_entry.get("position_mm")
+                coords = a_entry.get("xyz_mm")
                 if coords and len(coords) >= 3 and None not in coords[:3]:
                     nominal_tags[tid] = np.array(coords[:3], dtype=np.float64)
 
@@ -488,7 +488,7 @@ class MultiFrameMilestoneSolver:
                                 continue
                             fid = a.get("frame_id")
                             if fid == frame.frame_id or (fid is None and tid in target_range):
-                                pos = a.get("xyz_mm") or a.get("coords") or a.get("position_mm")
+                                pos = a.get("xyz_mm")
                                 if pos and len(pos) >= 3 and None not in pos[:3]:
                                     sub_anchors[str(tid)] = [float(x) for x in pos[:3]]
                     if sub_anchors:
@@ -560,19 +560,6 @@ class MultiFrameMilestoneSolver:
                 for f in coord_mgr.list_frames():
                     legal_tags.update(f.get_tag_ids())
                     if f.calibration_spec:
-                        ref_tags = f.calibration_spec.get("reference_tags", {})
-                        if isinstance(ref_tags, dict):
-                            for k in ref_tags.keys():
-                                try:
-                                    legal_tags.add(int(k))
-                                except (ValueError, TypeError):
-                                    pass
-                        elif isinstance(ref_tags, (list, set)):
-                            for k in ref_tags:
-                                try:
-                                    legal_tags.add(int(k))
-                                except (ValueError, TypeError):
-                                    pass
                         ref_tag_ids = f.calibration_spec.get("reference_tag_ids", [])
                         if isinstance(ref_tag_ids, (list, set)):
                             for k in ref_tag_ids:

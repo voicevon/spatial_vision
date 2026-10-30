@@ -26,7 +26,7 @@ def get_default_report_dir() -> str:
         return WorkspaceManager().get_current_workspace().calib_reports_dir
     except Exception:
         return os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "data", "workspaces", "default", "calibration", "reports")
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "workspaces", "default", "calibration", "reports")
         )
 
 

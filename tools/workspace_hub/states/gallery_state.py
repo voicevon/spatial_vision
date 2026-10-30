@@ -52,9 +52,9 @@ class GalleryState:
         self.intrinsics_grid_offset = 0
 
         # 2. 外参建图图集 (Tag 空间位姿标靶)
-        self.current_images: List[str] = []
-        self.selected_image_idx = 0
-        self.image_grid_offset = 0
+        self.calib_images: List[str] = []
+        self.selected_calib_image_idx = 0
+        self.calib_grid_offset = 0
 
         # 3. 生产采样图集 (工件检测采样)
         self.prod_images: List[str] = []
@@ -164,22 +164,22 @@ class GalleryState:
         self.select_intrinsics_image_at_index(new_idx)
 
     # ------------------------------ 2. 外参建图图集 ------------------------------
-    def load_current_workspace_images(self):
+    def load_calib_images(self):
         """扫描并加载当前选中工位 calibration/raw_images 目录中的所有图片"""
         ws = self.hub.get_selected_workspace()
         if not ws or not os.path.exists(ws.calib_raw_images_dir):
-            self.current_images = []
-            self.selected_image_idx = 0
-            self.image_grid_offset = 0
+            self.calib_images = []
+            self.selected_calib_image_idx = 0
+            self.calib_grid_offset = 0
             return
 
         imgs = sorted(glob.glob(os.path.join(ws.calib_raw_images_dir, "*.png")))
-        self.current_images = imgs
-        if self.current_images:
-            self.selected_image_idx = max(0, min(self.selected_image_idx, len(self.current_images) - 1))
+        self.calib_images = imgs
+        if self.calib_images:
+            self.selected_calib_image_idx = max(0, min(self.selected_calib_image_idx, len(self.calib_images) - 1))
         else:
-            self.selected_image_idx = 0
-        self.image_grid_offset = self._clamp_grid_offset(self.image_grid_offset, len(imgs))
+            self.selected_calib_image_idx = 0
+        self.calib_grid_offset = self._clamp_grid_offset(self.calib_grid_offset, len(imgs))
 
     def _clamp_grid_offset(self, offset: int, total: int) -> int:
         """限制偏移量在合理范围内，并按行对齐 (3的倍数)"""
@@ -190,33 +190,33 @@ class GalleryState:
         clamped = max(0, min(offset, max_offset))
         return (clamped // self.GRID_COLS) * self.GRID_COLS
 
-    def scroll_image_grid(self, delta_rows: int):
+    def scroll_calib_grid(self, delta_rows: int):
         """按行滚动外参卡片网格"""
-        new_offset = self.image_grid_offset + delta_rows * self.GRID_COLS
-        self.image_grid_offset = self._clamp_grid_offset(new_offset, len(self.current_images))
+        new_offset = self.calib_grid_offset + delta_rows * self.GRID_COLS
+        self.calib_grid_offset = self._clamp_grid_offset(new_offset, len(self.calib_images))
 
-    def select_image_at_index(self, idx: int):
+    def select_calib_image_at_index(self, idx: int):
         """选中外参相册指定索引的照片"""
-        if 0 <= idx < len(self.current_images):
-            self.selected_image_idx = idx
-            self._ensure_image_visible()
+        if 0 <= idx < len(self.calib_images):
+            self.selected_calib_image_idx = idx
+            self._ensure_calib_visible()
 
-    def _ensure_image_visible(self):
+    def _ensure_calib_visible(self):
         """确保当前选中的图片在外参相册网格视口内可见"""
-        idx = self.selected_image_idx
-        if idx < self.image_grid_offset:
-            self.image_grid_offset = (idx // self.GRID_COLS) * self.GRID_COLS
-        elif idx >= self.image_grid_offset + self.GRID_PAGE:
+        idx = self.selected_calib_image_idx
+        if idx < self.calib_grid_offset:
+            self.calib_grid_offset = (idx // self.GRID_COLS) * self.GRID_COLS
+        elif idx >= self.calib_grid_offset + self.GRID_PAGE:
             target_row = idx // self.GRID_COLS
-            self.image_grid_offset = (target_row - self.GRID_ROWS + 1) * self.GRID_COLS
-        self.image_grid_offset = self._clamp_grid_offset(self.image_grid_offset, len(self.current_images))
+            self.calib_grid_offset = (target_row - self.GRID_ROWS + 1) * self.GRID_COLS
+        self.calib_grid_offset = self._clamp_grid_offset(self.calib_grid_offset, len(self.calib_images))
 
-    def select_image_by_offset(self, delta: int):
+    def select_calib_image_by_offset(self, delta: int):
         """相对移动外参相册照片选择 (上一张/下一张)"""
-        if not self.current_images:
+        if not self.calib_images:
             return
-        new_idx = max(0, min(len(self.current_images) - 1, self.selected_image_idx + delta))
-        self.select_image_at_index(new_idx)
+        new_idx = max(0, min(len(self.calib_images) - 1, self.selected_calib_image_idx + delta))
+        self.select_calib_image_at_index(new_idx)
 
     # ------------------------------ 3. 生产采样图集 ------------------------------
     def load_prod_images(self):
@@ -282,7 +282,7 @@ class GalleryState:
         elif self.hub.active_tab == self.hub.TAB_PROD_IMAGES:
             return self.prod_images, self.selected_prod_image_idx, "生产图集"
         else:
-            return self.current_images, self.selected_image_idx, "外参图集"
+            return self.calib_images, self.selected_calib_image_idx, "外参图集"
 
     def delete_selected_image(self) -> bool:
         """删除当前选中的照片帧（自动根据当前页签分流）"""
@@ -327,12 +327,12 @@ class GalleryState:
                     self.selected_prod_image_idx = 0
                 self._ensure_prod_visible()
             else:
-                self.load_current_workspace_images()
-                if self.current_images:
-                    self.selected_image_idx = min(idx, len(self.current_images) - 1)
+                self.load_calib_images()
+                if self.calib_images:
+                    self.selected_calib_image_idx = min(idx, len(self.calib_images) - 1)
                 else:
-                    self.selected_image_idx = 0
-                self._ensure_image_visible()
+                    self.selected_calib_image_idx = 0
+                self._ensure_calib_visible()
 
             # 同步更新工位对象的统计
             ws = self.hub.get_selected_workspace()
@@ -432,8 +432,8 @@ class GalleryState:
             self.selected_prod_image_idx = len(self.prod_images) - 1
             self.hub.set_toast(f"生产采样照片已保存: {filename} (图集累计 {len(self.prod_images)} 帧)")
         else:
-            self.load_current_workspace_images()
-            self.selected_image_idx = len(self.current_images) - 1
-            self.hub.set_toast(f"外参建图快照已保存: {filename} (图集累计 {len(self.current_images)} 帧)")
+            self.load_calib_images()
+            self.selected_calib_image_idx = len(self.calib_images) - 1
+            self.hub.set_toast(f"外参建图快照已保存: {filename} (图集累计 {len(self.calib_images)} 帧)")
 
         return filepath

@@ -17,7 +17,7 @@ import logging
 from typing import Optional
 
 from .comm import MarlinProtocolHandler
-from .config import LoaderConfig
+from .config import ScaraRobotConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class GripperSubsystem:
     所有角度换算与 G-code 生成封装在此类内，外部以物理量（mm、开/闭状态）交互。
     """
 
-    def __init__(self, handler: MarlinProtocolHandler, config: LoaderConfig) -> None:
+    def __init__(self, handler: MarlinProtocolHandler, config: ScaraRobotConfig) -> None:
         self._h = handler
         self._cfg = config
         # 记录当前 Z 高度（内存状态，由 set_z_height 维护）
