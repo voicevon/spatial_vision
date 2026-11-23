@@ -1,43 +1,42 @@
 # 系统架构与模块职责
 
-> **文档定位**：描述 `spatial_vision` 的分层架构、模块划分与空间数据流关系。
-> **适用读者**：新成员入门、架构评审、代码走查。
-> **更新说明**：2026-10-07 依据全仓库架构审查重写；`src/utils/text_rendering` 已完成下沉解耦；其余标注“待整改”的事项以审查报告为准。
+> **定位**：描述 `spatial_vision` 的分层依赖架构、各包职责、核心数据流、配置文件写者矩阵与关键架构决策（ADR）。  
+> **读者**：开发者与 AI 编程助手。
 
 ---
 
 ## 1. 分层依赖架构
 
-系统为**模块化分层解耦**的单向 DAG 依赖（无循环依赖，utils 为最底层）：
+系统采用**单向 DAG 分层解耦**（零循环依赖，`src/utils` 为最底层，算法层严格禁止依赖 `src/ui`）：
 
 ```mermaid
 graph TD
     subgraph 基础层
-        UTILS["src/utils<br>logger / config_guard / dialog_utils / text_rendering"]
-        UI["src/ui<br>gui_components / gui_theme / viewport<br>terminal_panel / base_cv_app"]
+        UTILS["src/utils<br>logger / image_io / intrinsics_resolver / text_rendering"]
+        UI["src/ui<br>base_cv_app / gui_components / gui_theme<br>gui_window_manager / viewport_manager / terminal_panel / dialog_utils"]
     end
 
     subgraph 领域层
-        WORKSPACE["src/workspace<br>坐标系树 / ROI / 工位沙盒"]
-        VISION["src/vision<br>感知引擎 / AprilTag / 管线"]
-        CALIB["src/calibration<br>BA 平差 / 外参反推 / 验证"]
-        CONTROL["src/control<br>分拣调度"]
-        DEVICES["src/devices<br>相机 / 串口"]
+        WORKSPACE["src/workspace<br>工位沙盒 / 坐标树 / ROI / 白名单 / 审计"]
+        VISION["src/vision<br>3D 感知 / 纯 2D 多管线 / 单根测量 / AprilTag 定位"]
+        CALIB["src/calibration<br>内参标定 / 共视图 / 两阶段 BA / 基准对齐 / 验证"]
+        CONTROL["src/control<br>分拣调度 / SCARA 规划 / 分离轮 MQTT 控制"]
+        DEVICES["src/devices<br>统一相机服务 / 相机取流 / 串口驱动"]
     end
 
-    subgraph 应用层
-        TOOLS["tools/*<br>gui_launcher / workspace_hub<br>spatial_mapping_studio / scara_production ..."]
-        TESTS["tests/* (53 个测试文件)"]
+    subgraph 应用与测试层
+        TOOLS["tools/*<br>Dashboard / Workspace Hub / Mapping Studio / 生产与调试工具"]
+        TESTS["tests/*<br>unittest 自动化测试套件"]
     end
 
+    UI --> UTILS
     WORKSPACE --> UTILS
     VISION --> UTILS
+    DEVICES --> UTILS
     CALIB --> WORKSPACE
     CALIB --> UTILS
     CONTROL --> WORKSPACE
     CONTROL --> VISION
-    DEVICES --> UTILS
-    UI --> UTILS
     TOOLS --> WORKSPACE
     TOOLS --> VISION
     TOOLS --> CALIB
@@ -47,212 +46,84 @@ graph TD
     TESTS --> TOOLS
 ```
 
-> **整改说明（已解耦）**：原 `src/ui/text_rendering` 已彻底下沉至 `src/utils/text_rendering.py`，算法层（`src/vision` 及 `src/calibration/verification`）与 UI 层（`src/ui`）的逆向依赖已消除，完全符合“算法层禁止依赖 UI 层”硬约束。
+### 硬性依赖边界
+- **算法层禁止依赖 UI 层**：`src/vision`、`src/calibration`、`src/workspace`、`src/control` 严禁 `import src.ui`。跨层文字渲染已下沉至 `src/utils/text_rendering.py`。
+- **工具层禁止直连相机驱动**：`tools/*` 严禁直接 `import pyrealsense2` 或操作 `rs.sensor`，所有相机生命周期与曝光控制统一委托 `src/devices/camera_service.py`。
+- **渲染器只读隔离**：所有交互工具的 `Renderer` 仅持有状态只读引用并输出命中表，状态变更一律收口在控制器（`BaseCvApp` 子类）中。
 
 ---
 
-## 2. src 子系统与核心模块职责
+## 2. `src/` 核心包职责
 
-### 2.1 workspace — 工位与空间场景中枢 (SSOT)
-
-| 模块 | 职责 |
-| :--- | :--- |
-| `coordinate_manager.py` | **坐标树管理器**：`world` 根 + `fixed_transform`（平移+RPY）/ `tag_bound`（动标绑定）子帧；`get_transform`/`transform_points` 完成任意两帧级联变换；持久化委托至 `SceneConfigGuard` |
-| `roi_manager.py` | ROI 定义与挂载（挂载于坐标树子帧，持久化委托至 `SceneConfigGuard`） |
-| `scene_config_guard.py` | **空间几何场景安全守卫 (SSOT)**：统管 `spatial_scene.yaml` (frames 坐标树 + rois 空间物件) 的线程锁原子读写与单一写者 |
-| `workspace_manager.py` | 工位生命周期 CRUD、沙盒隔离、当前工位状态机 |
-| `tag_whitelist_manager.py` | `tag_whitelist.yaml` 唯一真理源读写（Tag 局部名义坐标） |
-| `health_auditor.py` | 数据一致性审计与自愈（含 tags_map 非法标靶清除） |
-
-> **整改说明（已解耦收敛）**：`spatial_scene.yaml` 已收敛为 `SceneConfigGuard` 单一序列化出口，coordinate_manager 与 roi_manager 统一委托原子更新；`health_auditor` 的地图自愈写回亦已统一收敛至 `ManifestRepository.save_map`，双写隐患彻底根除。
-
-### 2.2 calibration — 标定与空间平差引擎
-
-求解链分层递进（依赖方向自上而下）：
-
-```text
-covisibility_graph (共视图拓扑守门, 零外部依赖)
-  → ba_optimizer (两阶段 BA: Cauchy 鲁棒核 + MAD 粗差清洗 + 尺度基线 Gauge)
-  → world_datum_aligner (世界基准对齐 / Umeyama 相似变换)
-  → multiframe_milestone_solver (多帧编排层)
-frame_extrinsic_solver (子坐标系外参反推: 多靶配准 / 双靶定轴 / 单靶偏移)
-```
-
-- `manifest_repository.py`：观测清单仓储；
-- `verification/`：`ba_report`（数据导出）、`verification_reporter`（稳健统计体检）、`verification_visualizer` / `prism_renderer`（可视化）。
-
-### 2.3 vision — 实时视觉感知引擎
-
-| 模块 | 职责 |
-| :--- | :--- |
-| `asparagus_analyzer.py` | 芦笋感知与抓取位姿解算（见 2.9 感知数据流） |
-| `tag_localizer.py` | AprilTag 在线单帧外参定位与守门降级 |
-| `tag_detector.py` / `pnp_solver.py` | 标靶检测与 PnP 位姿求解 |
-| `pipelines/` | 14 条 2D 图像处理管线（h/f/b/c 系，管线注册表 `registry.py` 调度） |
-
-### 2.4 control — 生产调度
-
-- `sorting_dispatcher.py`：按 ROI（`role: source/...`）驱动物料分拣决策；
-- `isolate_wheels_controller.py`：隔离轮工位控制。
-
-### 2.5 devices — 硬件外设接入层
-
-- `camera_service.py`：统一相机服务（RealSense / USB 双后端）；
-- `robot_serial.py`：SCARA 串口 Marlin G-code 通信。
-
-### 2.6 ui — GUI 组件层
-
-`gui_components`（TabBar 等）、`gui_theme`（单源调色板）、`gui_window_manager`（窗口/视口/缩放）、`viewport_manager`（高 DPI 视口）、`terminal_panel`（内嵌终端）、`base_cv_app`（OpenCV 窗口基座）。
-
-### 2.7 utils — 通用基础构件
-
-`logger`（`get_logger(__name__)`）、`config_guard`（原子配置读写）、`dialog_utils`（跨平台原生对话框）、`text_rendering`（全仓统一高质量矢量中英文字体贴图渲染）。
+| 包路径 | 核心模块 | 职责摘要 |
+| :--- | :--- | :--- |
+| `src/workspace` | `workspace_entity`, `workspace_manager`, `coordinate_manager`, `roi_manager`, `scene_config_guard`, `tag_whitelist_manager`, `health_auditor` | 工位物理沙盒、三大图集路径契约、多坐标系树与 3D ROI、`spatial_scene.yaml` 原子写守卫、标靶白名单与一致性自愈。详见 [workspace_and_scene.md](workspace_and_scene.md) |
+| `src/calibration` | `solvers/`（`camera_intrinsics_calibrator`, `covisibility_graph`, `ba_optimizer`, `world_datum_aligner`, `frame_extrinsic_solver`, `multiframe_milestone_solver`）, `verification/`（`ba_uncertainty_analyzer`, `verification_reporter`, `verification_visualizer`, `prism_renderer`）, `manifest_repository`, `offline_tag_extractor`, `tag_super_extractor` | 相机内参标定、离线超精提取、共视拓扑守门、两阶段鲁棒 BA、Umeyama 世界基准对齐、子坐标系外参反推与质检报告。详见 [calibration_pipeline.md](calibration_pipeline.md) |
+| `src/vision` | `asparagus_analyzer`, `single_asparagus_measurer`, `pipelines/`（`registry`, `base_pipeline`, `f1/f2/a/b1/b2/c1/c2/h1~h6/y1`, `multi_object_separator`, `occlusion_peeler`）, `tag_detector`, `pnp_solver`, `tag_localizer` | 3D RGB-D 堆叠抓取感知、纯 2D 多管线注册与对比框架、单根芦笋几何测量、AprilTag 在线单帧自定位。详见 [vision_pipelines.md](vision_pipelines.md) |
+| `src/control` | `sorting_dispatcher`, `scara_motion_planner`, `isolation_wheel_controller` | Smart ROI 分选调度、SCARA 三段式防撞 G-code 轨迹规划、分离轮 ESP32 MQTT 线程安全控制中枢。详见 [control_and_production.md](control_and_production.md) |
+| `src/devices` | `camera_service`, `camera_streamer`, `robot_serial` | RealSense / USB 双后端统一相机服务、异步取流与连拍适配、SCARA Marlin 串口通信驱动 |
+| `src/ui` | `base_cv_app`, `gui_components`, `gui_theme`, `gui_window_manager`, `viewport_manager`, `canvas_viewport_interactor`, `terminal_panel`, `dialog_utils` | OpenCV + NumPy 工业暗色 GUI 基座（事件循环、控件、DPI 视口、内嵌终端与跨平台原生对话框） |
+| `src/utils` | `logger`, `image_io`, `intrinsics_resolver`, `text_rendering` | 幂等日志、Unicode 安全图像读写（防 Windows 中文路径崩溃）、内参单源解析、PIL TrueType 矢量文字贴图 |
 
 ---
 
-## 3. 坐标系树与空间数据流（核心）
-
-### 3.1 坐标树模型
-
-- `world` 为唯一根节点（与 `tags_map.yaml` 和标靶锚点对齐）；
-- 子坐标系为 `fixed_transform`（6-DOF 外参）或 `tag_bound`（绑定 Tag + 局部偏移）；
-- **示例（皮带机坐标系）**：原点 = Tag 11 中心（名义局部 `[0,0,0]`），方向由 Tag 11 → Tag 14 连线约束（Tag 14 名义 `[-34, 490, 0]`），名义坐标唯一真理源在 `tag_whitelist.yaml`；
-- 标定结果以 `{translation_xyz_mm, rotation_rpy_deg}`（xyz 外旋、度）存于 `spatial_scene.yaml` 的 `transform.calibrated` 节，即 `T_world_from_frame`；
-- 运行时由 `CoordinateTreeManager.get_transform` 级联求解任意两帧变换，ROI 与目标位姿据此在皮带机系 ↔ 世界系 ↔ 机械臂系间换算。
-
-### 3.2 标定到抓取的完整数据流
+## 3. 端到端空间与业务数据流
 
 ```mermaid
 flowchart LR
-    A["采图向导<br>tools/capture"] --> B["BA 平差<br>calibration/solvers/ba_optimizer"]
+    A["多视角采图<br>tools/capture"] --> B["内参标定 / BA 平差<br>src/calibration/solvers"]
     B --> C["tags_map.yaml<br>(T_world_from_tag)"]
-    C --> D["外参反推<br>frame_extrinsic_solver"]
-    D --> E["spatial_scene.yaml<br>frames 节 (坐标树)"]
-    E --> F["spatial_scene.yaml<br>rois 节 (挂载于子帧)"]
-    F --> G["sorting_dispatcher<br>control"]
-    G --> H["ScaraMotionPlanner"]
-    H --> I["robot_serial<br>Marlin G-code"]
+    C --> D["子系外参反推<br>frame_extrinsic_solver"]
+    D --> E["spatial_scene.yaml<br>frames + rois"]
+    E --> F["视觉感知 / 测量<br>src/vision"]
+    F --> G["分选调度与规划<br>src/control"]
+    G --> H["SCARA 串口 / 分离轮 MQTT<br>src/devices & control"]
 ```
 
-链条单向：采集 → 平差 → 地图 → 外参反推 → 坐标树 → ROI → 调度 → 执行，无回流。
+链条严格单向，严禁下游反向修改上游标定产物。
 
-### 3.3 配置文件写者矩阵
+---
 
-| 文件 | 唯一写者 | 备注 |
+## 4. 配置文件单一写者矩阵 (SSOT)
+
+| 配置文件 | 权威写者 | 契约说明 |
 | :--- | :--- | :--- |
-| `data/workspaces/<id>/tags_map.yaml` | `ManifestRepository.save_map` | 单一权威写者（BA 求解落盘与 health_auditor 自愈均收敛于此） |
-| `data/workspaces/<id>/spatial_scene.yaml` | `SceneConfigGuard` | 单一原子写者（含路径锁与临时文件原子重命名），消除 coordinate 与 roi 竞态 |
-| `data/workspaces/<id>/tag_whitelist.yaml` | `tag_whitelist_manager.save_workspace_tag_config` | workspace_manager 存在旁路写入口，待整改 |
-| `config/config.yaml` | `config_guard` 原子读写 | 纯系统参数，已彻底物理清除历史 anchor_tags 双源逻辑 |
+| `data/workspaces/<id>/tags_map.yaml` | `ManifestRepository.save_map` | 工位顶层空间几何地图；BA 落盘与 `health_auditor` 自愈统一收敛于此 |
+| `data/workspaces/<id>/spatial_scene.yaml` | `SceneConfigGuard` | 路径级 `RLock` + 临时文件 `os.replace` 原子落盘；`CoordinateTreeManager` 与 `RoiSpaceManager` 均委托其写入 |
+| `data/workspaces/<id>/tag_whitelist.yaml` | `tag_whitelist_manager.save_workspace_tag_config` | 标靶准入、物理边长 `tag_default_size_mm` 与世界锚点 `xyz_mm` 唯一真理源 |
+| `data/workspaces/<id>/intrinsics/camera_intrinsics.yaml` | `CameraIntrinsicsCalibrator` / `Workspace` | 工位专属相机内参矩阵 $K$、畸变系数 $D$ 与锁定物理分辨率 |
+| `config/config.yaml` | 手工配置 / 系统参数 | 仅存非空间标定类的硬件、串口、视觉默认参数 |
+| `config/gui_settings.json` | `GuiWindowManager` / 各工具 `APP_ID` 子树 | 窗口尺寸与工具偏好持久化；**单元测试必须通过临时路径或 `patch.object` 隔离，禁止污染真实文件** |
 
 ---
 
-## 4. SCARA 机械臂坐标系硬约束
+## 5. 工具链入口总览 (`tools/`)
 
-| 约束 | 取值 / 说明 |
-| :--- | :--- |
-| **机械零位绝对坐标** | `(X0, Y600, Z80, R90°)` (毫米+度)，与 SCARA 物理装配刚性绑定 |
-| **Marlin 轴映射** | SCARA R 轴 (旋转) 在 Marlin 固件中映射至 E 轴；G92 命令需写 `G92 X0.00 Y600.00 Z80.00 E90.00`，禁用 `G92 X0 Y0 Z0` |
-| **零点设置流程** | M84 (释放电机) → G92 (设零) → M114 (回读确认) 三步串行 |
-
----
-
-## 5. 感知抓取数据流
-
-```mermaid
-sequenceDiagram
-    participant D435 as RealSense D435
-    participant Analyzer as AsparagusAnalyzer
-    participant Localizer as TagLocalizer
-    participant SCARA as SCARA 机械臂
-    participant Dealer as 分发分拣机构
-
-    D435->>Analyzer: RGB + Depth 对齐帧
-    D435->>Localizer: 背景标靶图像
-    Localizer->>Analyzer: 世界坐标外参 T_cam_to_world (在线解算/缓存)
-    Analyzer->>Analyzer: 平面拟合 → 暗缝切分 → 顶层拓扑 → 位姿解算
-    Analyzer->>SCARA: 笛卡尔抓取 G-code (X, Y, Z, R)
-    SCARA->>Analyzer: 响应 ACK: DONE
-    Analyzer->>Dealer: BLE 单播品质槽位 (Target ID: 1~8)
-    Dealer->>Analyzer: 响应 ACK: RECEIVED
-```
-
-### 5.1 感知引擎 — `src/vision/asparagus_analyzer.py`
-
-| 职责 | 说明 |
-| :--- | :--- |
-| 传送带平面自标定 | 最小二乘拟合台面方程，反求相机安装倾角 |
-| 3D 高程浮凸初筛 | 以台面为 $Z=0$ 基准，滤除背景杂质 |
-| 黑帽暗缝实例切分 | 形态学 Black-Hat 结合横向结构元切开并排贴合物料 |
-| 主轴拟合与偏航角解算 | `cv2.fitLine` 求解中心轴线方向，映射夹爪角度 $R$ |
-| 顶层拓扑排序 | 按相对凸起净高锁定最顶层目标 (`is_topmost`) |
-| 抓取安全兜底 | 外参异常或高度越界（$Z \notin [5, 45]\text{ mm}$）时熔断拦截，严禁输出下探 G-code |
-
-**调用接口**：`analyze(color_bgr, depth_mm) -> List[AsparagusTarget]`
-
-### 5.2 标靶定位器 — `src/vision/tag_localizer.py`
-
-| 职责 | 说明 |
-| :--- | :--- |
-| 标靶检测 | AprilTag 16h5（CONTOUR 轮廓精修角点） |
-| 地图查询 | 匹配工位 `tags_map.yaml` 中的 3D 空间坐标 |
-| 静止标靶守门 | 至少 2 枚静止标靶才参与解算；动态/边缘标靶强制排除 |
-| PnP 解算 | `cv2.solvePnPRansac()` (SQPNP + ITERATIVE 降级) |
+| 分组 | 工具 | 启动命令 | 核心定位 |
+| :--- | :--- | :--- | :--- |
+| 总控 | Dashboard | `python tools/gui_launcher.py`（或 `./run.ps1`） | 工业总控大屏，统一调度全部工具与内嵌终端 |
+| 工位 | Workspace Hub | `python -m tools.workspace_hub` | 工位生命周期、硬件绑定、三大图集、坐标系树与 3D ROI |
+| 标定 | 采图向导 | `python -m tools.capture` | 内参/外参/生产三用途采图与语义前缀归档 |
+| 标定 | 空间建图工作站 | `python -m tools.spatial_mapping_studio` | 样本审核、两阶段 BA、残差剪枝与质检闭环 |
+| 标定 | AprilTag 图纸生成 | `python tools/generate_apriltags.py` | 生成 16h5（ID 0~29）高清标靶与 A4 排版 PDF |
+| 视觉 | 顶层抓取位姿工作室 | `python -m tools.asparagus_pose_studio` | 多根堆叠 3D/纯 2D 多管线对比与参数调试 |
+| 视觉 | 单根芦笋测量工作室 | `python -m tools.asparagus_measure_studio` | ROI 内单根芦笋绿色有效长度与 20mm 处直径测量 |
+| 生产 | SCARA 抓取生产 | `python -m tools.scara_production` | Smart ROI 进料感知、分选调度与 SCARA 闭环 |
+| 生产 | 分离轮生产工作台 | `python -m tools.isolate_wheels_production` | 8 通道分离轮自动循环出料、速度倍率与 PPM 监控 |
+| 调试 | Robot 在线跟踪 | `python -m tools.tracker` | 实时 Tag 世界坐标解算与 SCARA 联动校偏 |
+| 调试 | RealSense 诊断 | `python tools/d435_viewer.py` | D435 双流实时预览、深度探针与快照抓拍 |
+| 调试 | SCARA 机械臂调试 | `python tools/scara_debug/app.py` | 串口点动、回零/设零、舵机与 G-code 透传 |
+| 调试 | 分离轮 MQTT 调试 | `python tools/isolate_wheels_debug/app.py` | ESP32 分离轮设备发现、状态监视与单/多轴节拍调试 |
+| 调试 | NetCamera 调试 | `python tools/net_camera_debug/app.py` | 手机网络摄像机 MQTT 远程控制与 RTSP 实时拉流 |
+| 运维 | 环境诊断 | `python tools/diagnose_env.py` | 依赖库与驱动健康检查 |
 
 ---
 
-## 6. 工具链矩阵 (现行)
+## 6. 架构决策记录 (ADR)
 
-| 工具 | 路径 | 定位 |
-| :--- | :--- | :--- |
-| **Dashboard 总控** | `tools/gui_launcher.py` | 顶级控制中心，统一注册与调度全部应用 |
-| **工位中枢** | `tools/workspace_hub/` | 工位沙盒管理、白名单矩阵、一致性自愈（`python -m tools.workspace_hub`） |
-| **空间建图工作站** | `tools/spatial_mapping_studio/` | 样本审核 + 两阶段 BA 平差 + 体检闭环（现行主力建图链） |
-| **采图向导** | `tools/capture/capture_wizard.py` | 多视角交互采图 |
-| **Robot 在线跟踪** | `tools/tracker/` | 实时 Tag 世界坐标解算 + 机械臂联动 |
-| **SCARA 生产工作台** | `tools/scara_production/` | ROI 驱动分拣抓取（感知闭环待接入，当前为模拟队列） |
-| **位姿工作室** | `tools/asparagus_pose_studio/` | 抓取位姿离线验证 |
-| **隔离轮生产** | `tools/isolate_wheels_production/` | 隔离轮工位生产 |
-| **标靶图纸生成** | `tools/generate_apriltags.py` | 工业打印 16h5 标靶图纸与 A4 排版 PDF 一键生成 |
-
-> **整改说明（已清理重构）**：原 `tools/calibration/` 废弃代码已彻底物理删除；实用图纸生成能力收敛至 `tools/generate_apriltags.py`；核心超精提取引擎下沉至 `src/calibration/tag_super_extractor.py`。
-
----
-
-## 7. 测试验证体系
-
-`tests/` 共 53 个测试文件（unittest 风格，平铺）：
-
-```powershell
-python -m unittest discover -s tests -v      # 全量
-python -m unittest tests.test_ba_optimizer   # 单模块
-```
-
-| 分组 | 覆盖情况 |
-| :--- | :--- |
-| calibration/solvers | **全覆盖**（ba_optimizer / frame_extrinsic / multiframe / world_datum / covisibility 均有专测） |
-| workspace / control | 覆盖较全（manager / coordinate+roi / health_auditor / dispatcher / planner） |
-| vision | pnp_solver、tag_detector、tag_localizer、asparagus_analyzer 有测；**14 条 pipelines 无逐一测试** |
-| devices | **零覆盖**（camera_service、robot_serial 直接驱动产线硬件，待补契约测试） |
-
----
-
-## 8. 配置文件规格
-
-### 8.1 工位沙盒 (SSOT) — `data/workspaces/<workspace_id>/`
-
-| 文件 | 内容 |
-| :--- | :--- |
-| `spatial_scene.yaml` | 坐标树（frames：类型/状态/prior/calibrated/calibration_spec）+ ROI（rois：frame_id/category/role/geometry） |
-| `tags_map.yaml` | BA 输出的世界系标靶位姿 `T_world_from_tag` |
-| `tag_whitelist.yaml` | 标靶白名单与局部名义坐标（Tag 编号分段：world 占 0–9，第 k 个子系占 k*10 ~ k*10+9） |
-| `raw_images/` | 采图样本 |
-
-### 8.2 全局 `config/config.yaml`
-
-仅保留硬件、串口、视觉门限等非空间标定类参数；`calibration.anchor_tags` 全局锚点段属待清理的违规残留。
-
----
-
-*关联文档：`docs/architecture.md`*
-*文档版本: 2026-10-07 重写升级 | spatial_vision*
+### ADR-01：维持 OpenCV + NumPy 自研 GUI，不全面迁移 Tkinter
+- **结论**：核心实时视窗与交互工具维持 `BaseCvApp`（OpenCV + NumPy + PIL TrueType 贴图）架构，**不全面迁移至 Tkinter**；仅保留 `src/ui/dialog_utils.py` 调用系统原生对话框/Tkinter 处理非实时弹窗（确认框、文本输入、文件选择）。
+- **核心依据**：
+  1. **实时帧率刚性需求**：工业视觉需 30fps @ 1080P 实时叠加渲染，Tkinter 的 `NumPy → PIL → ImageTk` 管线延迟为 `cv2.imshow` 的 5~15 倍，无法满足。
+  2. **跨平台视觉一致性与沉没成本**：现有 `src/ui/` 控件与暗色主题已在 8+ 交互工具中稳定服役且像素级一致，全面重写成本与风险极高。
+  3. **未来演进路径**：若后续需要复杂富表单或 GPU 加速 UI，优先评估 DearPyGui 或 PyQt6，而非 Tkinter。

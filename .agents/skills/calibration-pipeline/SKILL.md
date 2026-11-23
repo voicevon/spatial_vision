@@ -25,7 +25,7 @@ description: Domain guide for spatial_vision camera calibration and 3D spatial m
 | 求解器模块 | 核心类 / 函数 | 职责与产物 |
 | :--- | :--- | :--- |
 | `src.calibration.solvers.camera_intrinsics_calibrator` | `CameraIntrinsicsCalibrator` | 标定板角点亚像素提取、内参矩阵 $K$ 与畸变系数 $D$ 解算、重投影误差统计 |
-| `src.calibration.ba_optimizer` | `TagBAOptimizer` | 多视角观测图残差优化，联合优化多帧相机外参与各 AprilTag 相对空间位姿 |
+| `src.calibration.solvers.ba_optimizer` | `TagBAOptimizer` | 多视角观测图残差优化，联合优化多帧相机外参与各 AprilTag 相对空间位姿 |
 | `src.calibration.solvers.world_datum_aligner` | `align_to_world_datum` | 使用 Umeyama 算法或水平面调平先验，将相对建图坐标系对齐到现场物理世界基准系 |
 
 ## 3. 常见异常与诊断排查 (Troubleshooting)
