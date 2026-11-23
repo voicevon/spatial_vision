@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-11-24 02:22:11"
+    "updated_at": "2026-11-24 02:26:17"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -174,5 +174,22 @@
       "plane_z": 200.0
     },
     "updated_at": "2026-10-05 20:34:56"
+  },
+  "asparagus_measure_studio": {
+    "scale_pct": 100,
+    "canvas_w": 1366,
+    "canvas_h": 705,
+    "updated_at": "2026-11-24 02:26:16",
+    "measure_state": {
+      "orientation": "right_to_left",
+      "diameter_offset_mm": 20.0,
+      "green_h_low": 25,
+      "green_h_high": 95,
+      "white_s_max": 65,
+      "white_v_min": 135,
+      "fallback_mm_per_px": 0.25,
+      "selected_roi_id": "",
+      "manual_roi": null
+    }
   }
 }

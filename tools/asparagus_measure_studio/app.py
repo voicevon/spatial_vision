@@ -324,24 +324,24 @@ class AsparagusMeasureStudioApp(BaseCvApp):
 
     def _start_live_camera(self) -> bool:
         ws = self.workspace_mgr.get_workspace_by_id(self.current_workspace_id)
+        cam_type = (getattr(ws, "camera_type", None) or "realsense").strip().lower()
         w, h = ws.resolution if ws else (1280, 720)
         serial = ws.camera_serial if ws else None
         try:
-            self.camera_service.start_realsense(
-                w, h, fps=30, serial=serial,
-                fallbacks=((1280, 720, 30), (640, 480, 30)),
-                enable_depth=True,
-            )
+            if cam_type == "usb":
+                self.camera_service.start_usb(w, h, fps=30, device_index=serial or 0)
+            else:
+                self.camera_service.start_realsense(
+                    w, h, fps=30, serial=serial,
+                    fallbacks=((1280, 720, 30), (640, 480, 30)),
+                    enable_depth=True,
+                )
             return True
-        except Exception as rs_err:
-            log.info("RealSense 启动失败，尝试回退 USB 摄像头: %s", rs_err)
-            try:
-                self.camera_service.start_usb(1280, 720, fps=30, device_index=0)
-                return True
-            except Exception as usb_err:
-                self.error_msg = f"实时相机启动失败: {usb_err}"
-                self.set_toast(self.error_msg, duration=4.0)
-                return False
+        except Exception as cam_err:
+            log.warning("实时相机启动失败 (%s): %s", cam_type, cam_err)
+            self.error_msg = f"实时相机启动失败: {cam_err}"
+            self.set_toast(self.error_msg, duration=4.0)
+            return False
 
     def capture_live_snapshot(self):
         if self.current_color is None:

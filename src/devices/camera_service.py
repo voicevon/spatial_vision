@@ -60,6 +60,13 @@ class CameraService:
         self.last_valid_depth = None  # 最近一帧有效对齐深度图 (float32 mm)
 
     @staticmethod
+    def _open_usb_capture(dev_idx: int) -> cv2.VideoCapture:
+        """打开 USB 摄像头；Windows 下优先使用 DirectShow 避免 MSMF 在 set(FPS/分辨率) 时卡死"""
+        if os.name == "nt" and hasattr(cv2, "CAP_DSHOW"):
+            return cv2.VideoCapture(dev_idx, cv2.CAP_DSHOW)
+        return cv2.VideoCapture(dev_idx)
+
+    @staticmethod
     def probe_available_devices() -> dict:
         """探测当前主机连接的相机硬件列表 (RealSense 设备序列号、USB 摄像头等)"""
         devices = {"realsense": [], "usb": []}
@@ -74,7 +81,7 @@ class CameraService:
                 log.debug(f"[CameraService] 探测 RealSense 异常: {e}")
         for idx in range(3):
             try:
-                cap = cv2.VideoCapture(idx)
+                cap = CameraService._open_usb_capture(idx)
                 if cap.isOpened():
                     devices["usb"].append({"name": f"USB Video Camera #{idx}", "index": idx})
                     cap.release()
@@ -144,7 +151,7 @@ class CameraService:
     def start_usb(self, width, height, fps=30, device_index=0) -> bool:
         """启动普通 USB 摄像头 (cv2.VideoCapture)，使用近似针孔内参 (未标定)"""
         dev_idx = int(device_index) if str(device_index).isdigit() else 0
-        cap = cv2.VideoCapture(dev_idx)
+        cap = self._open_usb_capture(dev_idx)
         if not cap.isOpened():
             raise RuntimeError(f"无法打开 USB 摄像头 (index={dev_idx})")
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)

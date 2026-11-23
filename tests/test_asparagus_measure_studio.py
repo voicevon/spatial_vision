@@ -109,6 +109,47 @@ class TestAsparagusMeasureStudio(unittest.TestCase):
         app.cleanup()
         mock_cam.stop.assert_called()
 
+    def test_realsense_failure_does_not_fallback_to_usb(self):
+        """RealSense 工位未连接设备时直接报错提示，不盲目回退 USB 摄像头"""
+        mock_cam = MagicMock()
+        mock_cam.is_running = False
+        mock_cam.start_realsense.side_effect = RuntimeError("未检测到 RealSense 设备")
+
+        app = AsparagusMeasureStudioApp(
+            sample_dir=self.sample_dir,
+            settings_file=self.tmp_settings,
+            camera_service=mock_cam,
+        )
+        fake_ws = MagicMock(camera_type="realsense", resolution=(1280, 720), camera_serial=None)
+        with patch.object(app.workspace_mgr, "get_workspace_by_id", return_value=fake_ws):
+            app.toggle_source_mode()
+
+        self.assertEqual(app.source_mode, "offline")
+        mock_cam.start_realsense.assert_called_once()
+        mock_cam.start_usb.assert_not_called()
+        self.assertIn("未检测到 RealSense 设备", app.error_msg)
+        app.cleanup()
+
+    def test_usb_workspace_starts_usb_camera_directly(self):
+        """USB 工位按工位绑定分辨率与设备索引直接启动 USB 相机"""
+        mock_cam = MagicMock()
+        mock_cam.is_running = False
+        mock_cam.stream_desc = "USB[#1] 1920x1080"
+
+        app = AsparagusMeasureStudioApp(
+            sample_dir=self.sample_dir,
+            settings_file=self.tmp_settings,
+            camera_service=mock_cam,
+        )
+        fake_ws = MagicMock(camera_type="usb", resolution=(1920, 1080), camera_serial="1")
+        with patch.object(app.workspace_mgr, "get_workspace_by_id", return_value=fake_ws):
+            app.toggle_source_mode()
+
+        self.assertEqual(app.source_mode, "live")
+        mock_cam.start_usb.assert_called_once_with(1920, 1080, fps=30, device_index="1")
+        mock_cam.start_realsense.assert_not_called()
+        app.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()
