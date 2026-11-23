@@ -3,7 +3,7 @@
 """
 芦笋位姿工作室 (Asparagus Pose Studio) - 数据与配置模块
 =====================================================
-负责配置加载、生产样本扫描、原始深度对齐配对以及抓取 G-code 导出。
+负责配置加载、生产样本扫描以及原始深度对齐配对。
 """
 
 import os
@@ -21,7 +21,6 @@ log = get_logger(__name__)
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
 DEFAULT_DIR = os.path.join(PROJECT_ROOT, "data", "snapshots")
-REPORT_DIR = os.path.join(PROJECT_ROOT, "reports")
 GUI_SETTINGS_FILE = os.path.join(PROJECT_ROOT, "config", "gui_settings.json")
 
 WINDOW_KEY = "AsparagusPoseStudio"   # cv2 窗口内部 key (纯 ASCII, 标题经 win32 API 动态设置)
@@ -170,21 +169,3 @@ def scan_samples(sample_dir: str) -> List[Dict[str, Any]]:
     return samples
 
 
-def export_gcode_file(gcode_text: str, report_dir: Optional[str] = None) -> Tuple[bool, str]:
-    """
-    将生成的抓取 G-code 保存至报表目录。
-    返回 (是否成功, 文件路径或错误信息)。
-    """
-    if not gcode_text:
-        return False, "无有效的 G-code 内容"
-    out_dir = report_dir or REPORT_DIR
-    try:
-        os.makedirs(out_dir, exist_ok=True)
-        filename = f"asparagus_gcode_{time.strftime('%Y%m%d_%H%M%S')}.gcode"
-        path = os.path.join(out_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(gcode_text + "\n")
-        return True, path
-    except Exception as exc:
-        log.error("G-code 导出失败: %s", exc)
-        return False, str(exc)

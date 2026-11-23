@@ -5,9 +5,9 @@
   "updated_at": "2026-09-18 07:25:11",
   "gui_launcher": {
     "scale_pct": 100,
-    "canvas_w": 1920,
+    "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:36:53"
+    "updated_at": "2026-11-24 02:26:17"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -31,16 +31,16 @@
     "updated_at": "2026-09-28 15:46:32"
   },
   "workspace_hub": {
-    "scale_pct": 120,
+    "scale_pct": 110,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:34:10",
+    "updated_at": "2026-11-24 01:21:19",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
       "updated_at": "2026-09-27 22:28:51"
     },
-    "selected_workspace_id": "20260918_220646_Only15"
+    "selected_workspace_id": "20261004_175120_workspace_2"
   },
   "hardware_config": {
     "scale_pct": 100,
@@ -52,11 +52,9 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-29 10:31:06",
+    "updated_at": "2026-11-24 01:26:11",
     "viewer_state": {
-      "camera_type": "realsense",
-      "resolution": "1920x1080",
-      "purpose": "production"
+      "purpose": "intrinsics"
     }
   },
   "asparagus_offline": {
@@ -85,7 +83,7 @@
     "scale_pct": 120,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:36:41",
+    "updated_at": "2026-11-24 01:30:30",
     "studio_state": {
       "pipeline_key": "feng_green_axis_v2",
       "selected_sample_name": "view_0009.png",
@@ -148,13 +146,13 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-09-28 08:46:13"
+    "updated_at": "2026-10-04 20:44:46"
   },
   "isolate_wheels_production": {
     "scale_pct": 100,
-    "canvas_w": 1366,
-    "canvas_h": 705,
-    "updated_at": "2026-09-29 09:33:40"
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-10-04 20:45:22"
   },
   "spatial_mapping_studio": {
     "dropdown_state": {
@@ -175,6 +173,23 @@
       "show_xy_plane": true,
       "plane_z": 200.0
     },
-    "updated_at": "2026-10-01 21:35:27"
+    "updated_at": "2026-10-05 20:34:56"
+  },
+  "asparagus_measure_studio": {
+    "scale_pct": 100,
+    "canvas_w": 1366,
+    "canvas_h": 705,
+    "updated_at": "2026-11-24 02:26:16",
+    "measure_state": {
+      "orientation": "right_to_left",
+      "diameter_offset_mm": 20.0,
+      "green_h_low": 25,
+      "green_h_high": 95,
+      "white_s_max": 65,
+      "white_v_min": 135,
+      "fallback_mm_per_px": 0.25,
+      "selected_roi_id": "",
+      "manual_roi": null
+    }
   }
 }

@@ -98,7 +98,7 @@ class TestSmartRoiAndPoseDecoupling(unittest.TestCase):
     def test_asparagus_target_pure_dto(self):
         """验证 AsparagusTarget 纯 DTO 属性与解耦"""
         t = AsparagusTarget(
-            id=1,
+            target_id=1,
             center_px=(320.0, 240.0),
             length_px=200.0,
             diam_px=20.0,
@@ -108,9 +108,9 @@ class TestSmartRoiAndPoseDecoupling(unittest.TestCase):
             contour=np.zeros((10, 1, 2)),
             length_mm=180.0,
             diam_mm=12.5,
-            grip_x=0.0,
-            grip_y=0.0,
-            grip_z=500.0,
+            grip_cam_x=0.0,
+            grip_cam_y=0.0,
+            grip_cam_z=500.0,
             z_top=480.0,
             rel_height_mm=20.0,
             robot_x=150.0,
@@ -159,7 +159,7 @@ class TestSmartRoiAndPoseDecoupling(unittest.TestCase):
     def test_pose_studio_renderer_no_gcode_artifacts(self):
         """验证 Pose Studio 渲染器中不存在 G-code 导出按钮与脏文本框"""
         dummy_target = AsparagusTarget(
-            id=1,
+            target_id=1,
             center_px=(100.0, 100.0),
             length_px=100.0,
             diam_px=10.0,
@@ -169,9 +169,9 @@ class TestSmartRoiAndPoseDecoupling(unittest.TestCase):
             contour=np.zeros((10, 1, 2)),
             length_mm=150.0,
             diam_mm=12.0,
-            grip_x=0.0,
-            grip_y=0.0,
-            grip_z=500.0,
+            grip_cam_x=0.0,
+            grip_cam_y=0.0,
+            grip_cam_z=500.0,
             z_top=480.0,
             rel_height_mm=20.0,
             grade="A",
@@ -197,7 +197,7 @@ class TestSmartRoiAndPoseDecoupling(unittest.TestCase):
             sel_target = 0
             mode = "3d"
             error = ""
-            _toast_msg = ""
+            _toast = ""
             _toast_until = 0.0
 
         canvas = np.zeros((800, 1200, 3), dtype=np.uint8)

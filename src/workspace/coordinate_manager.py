@@ -62,6 +62,9 @@ class FrameDefinition:
     rotation_rpy_deg: Optional[List[float]] = None
     # 逐轴已知掩码 [X, Y, Z, Roll, Pitch, Yaw]，True 为已知约束，False 为待解
     known_dof: Optional[List[bool]] = None
+    # 局部物理标称/先验位姿 (可缺省，用于混合约束反推)
+    prior_translation_xyz_mm: Optional[List[Any]] = None
+    prior_rotation_rpy_deg: Optional[List[Any]] = None
 
     # 外参反推标定规范 (声明如何由视觉标靶/几何约束反推该坐标系)
     calibration_spec: Optional[Dict[str, Any]] = None
@@ -202,14 +205,7 @@ class FrameDefinition:
                 known_dof = [bool(b) for b in raw_k]
 
             if not status:
-                # 兼容旧配置: 若有非空数值且不是全 0，视为 manual，否则默认 unknown
-                if t_xyz is not None and r_rpy is not None and (any(t_xyz) or any(r_rpy)):
-                    status = "manual"
-                else:
-                    status = "unknown"
-                    if t_xyz == [0.0, 0.0, 0.0] and r_rpy == [0.0, 0.0, 0.0] and not calib_metrics:
-                        t_xyz = None
-                        r_rpy = None
+                status = "unknown"
 
         return cls(
             frame_id=fid,
@@ -463,30 +459,29 @@ class CoordinateTreeManager:
 
 
         if frame.type == "tag_bound":
-            # 动标绑定类型 (支持多动标冗余跟踪与回退)
-            cand_tags = frame.get_tag_ids()
-            resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
-            R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
-            T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
-
-            if resolved_tag is None:
-                # 所有候选动标均丢失或未标定，降级输出局部偏移，并标记有效性为 False
-                return T_tag_from_frame, False
-
-            # T_world_from_tag
-            T_world_from_tag = self._tags_map[resolved_tag]
-            # 若 parent 是 world，则 T_parent_from_frame = T_world_from_tag * T_tag_from_frame
-            # 若 parent 不是 world，需要按 T_parent_from_world * T_world_from_tag * T_tag_from_frame 计算
-            if frame.parent_frame_id == "world":
-                return T_world_from_tag @ T_tag_from_frame, True
-            else:
-                T_world_from_parent, valid_p = self.get_frame_to_world(frame.parent_frame_id)
-                if not valid_p:
-                    return T_tag_from_frame, False
-                T_parent_from_world = np.linalg.inv(T_world_from_parent)
-                return T_parent_from_world @ T_world_from_tag @ T_tag_from_frame, True
+            # 动标绑定类型: 由世界位姿链式反推相对父系变换
+            T_world_from_frame, valid_f = self.get_frame_to_world(frame_id)
+            parent_id = frame.parent_frame_id or "world"
+            if parent_id == "world":
+                return T_world_from_frame, valid_f
+            T_world_from_parent, valid_p = self.get_frame_to_world(parent_id)
+            if not (valid_f and valid_p):
+                return T_world_from_frame, False
+            return np.linalg.inv(T_world_from_parent) @ T_world_from_frame, True
 
         return np.eye(4, dtype=np.float64), True
+
+    def _resolve_tag_bound_world(self, frame: FrameDefinition) -> Tuple[np.ndarray, bool]:
+        """求解 tag_bound 坐标系到世界坐标系的变换矩阵 T_world_from_frame (支持多动标冗余回退)"""
+        cand_tags = frame.get_tag_ids()
+        resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
+        R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
+        T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
+
+        if resolved_tag is not None:
+            T_world_from_tag = self._tags_map[resolved_tag]
+            return T_world_from_tag @ T_tag_from_frame, True
+        return T_tag_from_frame, False
 
     def get_frame_to_world(self, frame_id: str) -> Tuple[np.ndarray, bool]:
         """
@@ -500,17 +495,7 @@ class CoordinateTreeManager:
 
         frame = self._frames[frame_id]
         if frame.type == "tag_bound":
-            cand_tags = frame.get_tag_ids()
-            resolved_tag = next((tid for tid in cand_tags if tid in self._tags_map), None)
-            R_off = rpy_deg_to_rot_mat(frame.offset_rpy_deg)
-            T_tag_from_frame = make_transform_matrix(R_off, frame.offset_xyz_mm)
-
-            if resolved_tag is not None:
-                T_world_from_tag = self._tags_map[resolved_tag]
-                return T_world_from_tag @ T_tag_from_frame, True
-            else:
-                # Tag 丢失，未解算
-                return T_tag_from_frame, False
+            return self._resolve_tag_bound_world(frame)
 
         # fixed_transform 沿树递归向上乘
         parent_id = frame.parent_frame_id or "world"
@@ -530,13 +515,12 @@ class CoordinateTreeManager:
         T_world_from_src, valid_src = self.get_frame_to_world(src_frame)
         T_world_from_dst, valid_dst = self.get_frame_to_world(dst_frame)
 
-        if not valid_src or not valid_dst:
-            # 降级尝试
-            pass
+        if not (valid_src and valid_dst):
+            return np.eye(4, dtype=np.float64), False
 
         try:
             T_dst_from_world = np.linalg.inv(T_world_from_dst)
-            return T_dst_from_world @ T_world_from_src, (valid_src and valid_dst)
+            return T_dst_from_world @ T_world_from_src, True
         except Exception as e:
             log.error(f"[FrameTree] 矩阵求逆失败 ({dst_frame}): {e}")
             return np.eye(4, dtype=np.float64), False
@@ -558,15 +542,15 @@ class CoordinateTreeManager:
         return transformed[:, :3]
 
     def load(self, filepath: Optional[str] = None) -> bool:
-        """从 spatial_scene.yaml 文件加载坐标系配置"""
+        """从 spatial_scene.yaml 文件加载坐标系配置 (通过 SceneConfigGuard 权威读取)"""
         path = filepath or self.spatial_scene_path
         if not path or not os.path.exists(path):
             self._init_default_world()
             return False
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+            from src.workspace.scene_config_guard import SceneConfigGuard
+            data = SceneConfigGuard.load_scene(path)
 
             self.workspace_id = data.get("workspace_id", self.workspace_id)
             self.active_frame_id = data.get("active_frame_id", "world")
@@ -599,32 +583,23 @@ class CoordinateTreeManager:
             return False
 
     def save(self, filepath: Optional[str] = None) -> bool:
-        """持久化保存至 spatial_scene.yaml 文件 (原子保留 rois 节)"""
+        """持久化保存至 spatial_scene.yaml 文件 (委托 SceneConfigGuard 原子写入，防竞态保留 rois 节)"""
         path = filepath or self.spatial_scene_path
         if not path:
             return False
 
         try:
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            existing_data = {}
-            if os.path.exists(path):
-                try:
-                    with open(path, "r", encoding="utf-8") as f:
-                        existing_data = yaml.safe_load(f) or {}
-                except Exception:
-                    existing_data = {}
-
-            existing_data["version"] = "2.0"
-            existing_data["workspace_id"] = self.workspace_id
-            existing_data["active_frame_id"] = self.active_frame_id
-            existing_data["frames"] = [f.to_dict() for f in self.list_frames()]
-            if "rois" not in existing_data:
-                existing_data["rois"] = []
-
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.dump(existing_data, f, allow_unicode=True, sort_keys=False, indent=2)
-            log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个) 至空间场景: {path}")
-            return True
+            from src.workspace.scene_config_guard import SceneConfigGuard
+            frames_dicts = [f.to_dict() for f in self.list_frames()]
+            success = SceneConfigGuard.update_frames(
+                filepath=path,
+                frames=frames_dicts,
+                active_frame_id=self.active_frame_id,
+                workspace_id=self.workspace_id,
+            )
+            if success:
+                log.info(f"[FrameTree] 成功写穿坐标系配置 ({len(self._frames)} 个) 至空间场景: {path}")
+            return success
         except Exception as e:
             log.error(f"[FrameTree] 保存空间场景坐标系配置失败 ({path}): {e}")
             return False

@@ -2,14 +2,14 @@
 """
 SCARA 机械臂调试终端 (Flux Loader GUI)
 ========================================
-基于 loader_core 业务核心的图形化调试界面，功能与 CLI 调试器一比一：
+基于 scara_driver 业务核心的图形化调试界面，功能与 CLI 调试器一比一：
   - 串口连接管理 (自动枚举 / 手动输入)
   - 限位诊断 M119、一键回零 G28、设零 G92、坐标刷新 M114、释放电机 M84
   - 笛卡尔与关节角点动 (W/S/A/D/U/J/Q/E + O/L/I/K)、三档步长
   - Z 轴快捷升降与指定高度、双/单夹爪舵机控制
   - 直达目标坐标、预设工位跳转 (与 CLI 共享 ~/.flux_loader/presets.json)
   - 芦笋搬运节拍宏 (N 次循环)、原生 G-code 透传
-业务逻辑全部委托 loader_core，本文件仅负责 GUI 事件循环与动作调度。
+业务逻辑全部委托 scara_driver，本文件仅负责 GUI 事件循环与动作调度。
 """
 
 import os
@@ -33,9 +33,9 @@ if _SCARA_DIR not in sys.path:
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
-from loader_core import (  # noqa: E402
+from scara_driver import (  # noqa: E402
     JogController,
-    LoaderConfig,
+    ScaraRobotConfig,
     MarlinProtocolHandler,
     PickAndPlaceWorkflow,
     Pose,
@@ -49,7 +49,7 @@ from tools.scara_debug.renderer import ScaraDebugRenderer, LOGIC_W, LOGIC_H  # n
 log = get_logger(__name__)
 
 
-from src.ui.dialog_utils import prompt_input_text
+from src.ui.dialog_utils import show_text_input_dialog
 
 
 class PresetManager:
@@ -94,7 +94,7 @@ class ScaraDebugApp(BaseCvApp):
             window_title="flux_vision_3d | SCARA 调试",
             enable_keyboard_zoom=False,
         )
-        self._config = LoaderConfig()
+        self._config = ScaraRobotConfig()
         tx = SerialTransceiver()
         self._handler = MarlinProtocolHandler(tx)
         self.robot = ScaraRobot(self._handler, self._config)
@@ -154,7 +154,7 @@ class ScaraDebugApp(BaseCvApp):
     def connect(self) -> None:
         port = self.selected_port
         if not port:
-            port = prompt_input_text("手动连接", "请输入串口名 (如 COM11):")
+            port = show_text_input_dialog("手动连接", "请输入串口名 (如 COM11):")
             if not port:
                 return
         self.add_log(f"[连接] 正在连接 {port} @ {self._config.default_baudrate}...")
@@ -186,14 +186,14 @@ class ScaraDebugApp(BaseCvApp):
         p = self.robot.current_pose
         self.add_log(f"[M114] X:{p.x:.1f} Y:{p.y:.1f} Z:{p.z:.1f} R:{p.r:.1f}")
 
-    def do_m119(self) -> None:
+    def handle_query_endstops(self) -> None:
         if not self._require_conn():
             return
         status = self.robot.get_limit_status()
         self.limit_lines = [f"{k}: {v}" for k, v in status.raw.items()]
         self.add_log(f"[M119] 限位诊断完成 ({len(self.limit_lines)} 项)。")
 
-    def do_home(self) -> None:
+    def handle_home(self) -> None:
         if not self._require_conn():
             return
         self.add_log("[G28] 正在三轴回零，请等待机械臂动作完成...")
@@ -208,7 +208,7 @@ class ScaraDebugApp(BaseCvApp):
         self.robot.set_coordinate_origin(x=hp.x, y=hp.y, z=hp.z, r=hp.r)
         self.add_log(f"[G92] 已设为机械零点 ({hp.x}, {hp.y}, {hp.z}, {hp.r})。")
 
-    def do_m84(self) -> None:
+    def handle_disable_motors(self) -> None:
         if not self._require_conn():
             return
         self.robot.disable_steppers()
@@ -217,7 +217,7 @@ class ScaraDebugApp(BaseCvApp):
     # ------------------------------------------------------------------
     # 点动与末端工具
     # ------------------------------------------------------------------
-    def do_jog(self, key: str) -> None:
+    def handle_jog_xy(self, key: str) -> None:
         if not self._require_conn():
             return
         self.jog.handle_key(key)
@@ -227,11 +227,11 @@ class ScaraDebugApp(BaseCvApp):
         self.jog.set_step_profile(key)
         self.add_log(f"[步长] 已切换: {self.jog.step_info}")
 
-    def do_z(self, z_mm: Optional[float] = None) -> None:
+    def handle_step_z(self, z_mm: Optional[float] = None) -> None:
         if not self._require_conn():
             return
         if z_mm is None:
-            raw = prompt_input_text("指定 Z 高度", "请输入目标 Z 轴高度 (0~100 mm):")
+            raw = show_text_input_dialog("指定 Z 高度", "请输入目标 Z 轴高度 (0~100 mm):")
             if not raw:
                 return
             try:
@@ -243,7 +243,7 @@ class ScaraDebugApp(BaseCvApp):
         self.robot.refresh_state()
         self.add_log(f"[Z 轴] 已移动至 {self.robot.current_pose.z:.1f} mm。")
 
-    def do_gripper(self, action: str) -> None:
+    def handle_gripper(self, action: str) -> None:
         if not self._require_conn():
             return
         g = self.robot.gripper
@@ -270,7 +270,7 @@ class ScaraDebugApp(BaseCvApp):
     def do_goto(self) -> None:
         if not self._require_conn():
             return
-        raw = prompt_input_text(
+        raw = show_text_input_dialog(
             "直达目标坐标",
             "输入目标 (如 X100 Y300 Z50 R0 F9000)\n省略的轴保持当前值:")
         if not raw:
@@ -333,7 +333,7 @@ class ScaraDebugApp(BaseCvApp):
     def do_gcode(self) -> None:
         if not self._require_conn():
             return
-        cmd = prompt_input_text("G-code 透传", "输入透传指令 (如 M119 / G28 / M114):")
+        cmd = show_text_input_dialog("G-code 透传", "输入透传指令 (如 M119 / G28 / M114):")
         if not cmd:
             return
         self.add_log(f"> {cmd}")
@@ -388,23 +388,23 @@ class ScaraDebugApp(BaseCvApp):
         elif bid == "refresh_pos":
             self.refresh_pos()
         elif bid == "m119":
-            self.do_m119()
+            self.handle_query_endstops()
         elif bid == "home":
-            self.do_home()
+            self.handle_home()
         elif bid == "g92":
             self.do_set_origin()
         elif bid == "m84":
-            self.do_m84()
+            self.handle_disable_motors()
         elif bid == "goto":
             self.do_goto()
         elif bid == "z_up":
-            self.do_z(100.0)
+            self.handle_step_z(100.0)
         elif bid == "z_down":
-            self.do_z(20.0)
+            self.handle_step_z(20.0)
         elif bid.startswith("grip_"):
-            self.do_gripper(bid)
+            self.handle_gripper(bid)
         elif bid.startswith("jog:"):
-            self.do_jog(bid.split(":", 1)[1])
+            self.handle_jog_xy(bid.split(":", 1)[1])
         elif bid.startswith("dd_step:"):
             self.do_step(bid.split(":", 1)[1])
         elif bid.startswith("preset:"):
@@ -464,7 +464,7 @@ class ScaraDebugApp(BaseCvApp):
                     log.exception("下拉框动作异常: %s", exc)
                     self.add_log(f"[ERR] 动作异常: {exc}")
             elif self.dd_z_open and bid.startswith("dd_z:"):
-                self.do_z(float(bid.split(":", 1)[1]))
+                self.handle_step_z(float(bid.split(":", 1)[1]))
             elif self.dd_step_open and bid.startswith("dd_step:"):
                 self.do_step(bid.split(":", 1)[1])
             self.dd_serial_open = False
@@ -494,7 +494,7 @@ class ScaraDebugApp(BaseCvApp):
         jog_keys = "wsadueqolik"
         ch = chr(key).lower() if 0 <= key < 256 else ""
         if ch in jog_keys and self.robot.is_connected():
-            self.do_jog(ch)
+            self.handle_jog_xy(ch)
         elif ch in ("1", "2", "3"):
             self.do_step(ch)
         elif raw_key == 32:  # 空格刷新坐标

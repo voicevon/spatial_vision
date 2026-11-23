@@ -20,7 +20,7 @@ from tools.tracker.common import (
     COL_WHITE, COL_YELLOW, TOOLBAR_H,
     PRISM_HW_MM, PRISM_HEIGHT_MM, _tag_local_frame, fmt_point,
     ASPARAGUS_WIDTH_MM, ASPARAGUS_LENGTH_MM, ASPARAGUS_HALF_LENGTH_MM, ASPARAGUS_HALF_WIDTH_MM, fmt_pose_4d)
-from src.ui.text_rendering import draw_text, measure_text
+from src.utils.text_rendering import draw_text, measure_text
 from src.ui.gui_theme import GuiTheme
 from src.calibration.verification.prism_renderer import draw_prism, COLORS_THEORY, COLORS_OBSERVED
 
@@ -367,7 +367,7 @@ class TrackerRenderer:
         # 14. [√连续识别] 勾选框 (勾选=逐帧解算目标世界坐标, FR-12.6)
         rc_x1 = ro_x2 + s_gap
         rc_x2 = rc_x1 + 104
-        self._draw_checkbox(canvas, (rc_x1, u1, rc_x2, u2), "连续识别", tr.recog_tag2_on)
+        self._draw_checkbox(canvas, (rc_x1, u1, rc_x2, u2), "连续识别", tr.auto_recognize_on)
         self.buttons.append(("TOGGLE_RECOG", (rc_x1, u1, rc_x2, u2), None))
 
         # ============ 第二组: 跟踪目标 (大空白分隔, 内分单次/连续两个小组) ============
@@ -612,7 +612,7 @@ class TrackerRenderer:
             if tr.world_locked and tr.locked_rvec is not None:
                 R_lock, _ = cv2.Rodrigues(tr.locked_rvec)
                 z_exp = R_lock @ np.array([0.0, 0.0, 1.0])
-            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
+            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_planar_tag_pnp(corners, expected_z_cam=z_exp)
             if ok_b:
                 tvec_b = np.asarray(tvec_b).reshape(3, 1)
 
@@ -624,7 +624,7 @@ class TrackerRenderer:
         cv2.polylines(canvas, [pts], True, COL_GREEN, 3, cv2.LINE_AA)
 
         # 3. 若开启棱柱显示，叠加 Studio 同款蓝色实测棱柱
-        if (tr.recog_tag2_on or tr.show_anchors_on) and rvec_b is not None and tvec_b is not None:
+        if (tr.auto_recognize_on or tr.show_anchors_on) and rvec_b is not None and tvec_b is not None:
             self._draw_studio_prism(canvas, rvec_b, tvec_b, False, is_target=True)
 
     def draw_anchor_overlay(self, canvas, det):
@@ -657,7 +657,7 @@ class TrackerRenderer:
             if tid in det:
                 # 蓝色实测棱柱 (单靶 PnP 位姿); 传入地图理论法向, 消除 IPPE 平面二义性 180° 翻转
                 R_exp, _ = cv2.Rodrigues(rvec_t)
-                ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(
+                ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_planar_tag_pnp(
                     det[tid], expected_z_cam=R_exp[:, 2])
                 if ok_b:
                     self._draw_studio_prism(canvas, rvec_b, np.asarray(tvec_b).reshape(3, 1), False)
@@ -717,7 +717,7 @@ class TrackerRenderer:
                     z_exp = R @ R_t[:, 2]
                 else:
                     z_exp = sky_z
-            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_single_tag_pnp(corners, expected_z_cam=z_exp)
+            ok_b, rvec_b, tvec_b = tr.pnp_solver.solve_planar_tag_pnp(corners, expected_z_cam=z_exp)
             if ok_b:
                 self._draw_studio_prism(canvas, rvec_b, np.asarray(tvec_b).reshape(3, 1), False,
                                         is_target=(tid == tr.target_tag_id))
@@ -836,11 +836,11 @@ class TrackerRenderer:
         y += 26
         r_txt = f"  R: {tr.measured_r:+6.1f}°" if getattr(tr, "measured_r", None) is not None else "  R:    -- "
         draw_text(canvas, f"实测 {fmt_point(tr.measured)}{r_txt}",
-                  (x1 + 14, y), 17, COL_GREEN if tr.measured is not None else COL_GRAY, True)
+                  (x1 + 14, y), 17, COL_BLUE if tr.measured is not None else COL_GRAY, True)
         y += 26
         theo_txt = f"理论 {fmt_point(tr.theoretical)}" if tr.theoretical is not None \
             else "理论      (地图中无该 Tag)"
-        draw_text(canvas, theo_txt, (x1 + 14, y), 17, COL_YELLOW)
+        draw_text(canvas, theo_txt, (x1 + 14, y), 17, COL_GREEN)
         y += 26
         if tr.measured is not None and tr.theoretical is not None:
             dev = tr.measured - tr.theoretical

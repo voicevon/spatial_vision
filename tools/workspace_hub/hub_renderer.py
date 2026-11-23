@@ -20,7 +20,7 @@ from src.ui.gui_components import (
     draw_rounded_rectangle,
 )
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, put_text
+from src.utils.text_rendering import draw_text, put_text
 from tools.workspace_hub.hub_state import HubState
 from tools.workspace_hub.hub_modals_renderer import HubModalsRenderer
 from tools.workspace_hub.hub_hit_tester import HubHitTester
@@ -67,6 +67,12 @@ WS_BTN_SYNC_DATA = (372, 192, 132, 28)
 WS_BTN_CLONE = (512, 192, 80, 28)
 WS_BTN_DELETE = (600, 192, 74, 28)
 WS_BTN_NEW_FRAME = (682, 192, 130, 28)
+
+# 【相机&内参】TAB 页签原位交互控件几何常量 (固定双行卡片, 界面零晃动)
+INTR_BTN_REFRESH_DEV = (862, 66, 80, 24)
+INTR_BTN_EDIT_CONFIG = (862, 100, 80, 24)
+INTR_BTN_CAPTURE = (734, 154, 98, 28)
+INTR_BTN_CALIB = (838, 154, 98, 28)
 
 
 # ==================== 白名单芯片矩阵编辑器几何常量 (渲染与命中测试单源共用) ====================
@@ -275,16 +281,17 @@ def point_in_rect(x: int, y: int, rect: tuple[int, int, int, int]) -> bool:
     return rx <= x < rx + rw and ry <= y < ry + rh
 
 
-def grid_hit_test(mx: int, my: int) -> int | None:
+def grid_hit_test(mx: int, my: int, y_offset: int = 0) -> int | None:
     """根据逻辑坐标返回命中的卡片格位索引 (0~8)；落在卡片间隙或网格外返回 None"""
-    if mx < GRID_X0 or my < GRID_Y0:
+    y0 = GRID_Y0 + y_offset
+    if mx < GRID_X0 or my < y0:
         return None
     col = (mx - GRID_X0) // (GRID_CELL_W + GRID_GAP_X)
-    row = (my - GRID_Y0) // (GRID_CELL_H + GRID_GAP_Y)
+    row = (my - y0) // (GRID_CELL_H + GRID_GAP_Y)
     if col >= GRID_COLS or row >= GRID_ROWS:
         return None
     local_x = (mx - GRID_X0) % (GRID_CELL_W + GRID_GAP_X)
-    local_y = (my - GRID_Y0) % (GRID_CELL_H + GRID_GAP_Y)
+    local_y = (my - y0) % (GRID_CELL_H + GRID_GAP_Y)
     if local_x >= GRID_CELL_W or local_y >= GRID_CELL_H:
         return None
     return row * GRID_COLS + col
@@ -341,9 +348,9 @@ class HubRenderer:
             state.selected_workspace_idx,
             selected_ws.workspace_id if selected_ws else None,
             len(state.workspaces),
-            state.gallery.selected_image_idx,
-            len(state.gallery.current_images),
-            state.gallery.image_grid_offset,
+            state.gallery.selected_calib_image_idx,
+            len(state.gallery.calib_images),
+            state.gallery.calib_grid_offset,
             state.gallery.selected_prod_image_idx,
             len(state.gallery.prod_images),
             state.gallery.prod_grid_offset,
@@ -387,6 +394,8 @@ class HubRenderer:
             self.frames_rois_page.render_frame_pose_tags(canvas, state, ws)
         elif state.active_tab == HubState.TAB_FRAME_ROIS:
             self.frames_rois_page.render_frame_rois(canvas, state, ws)
+        elif state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.gallery_page.render_intrinsics_images(canvas, state, ws)
         elif state.active_tab == HubState.TAB_PROD_IMAGES:
             self.gallery_page.render_prod_images(canvas, state, ws)
         else:
@@ -524,7 +533,7 @@ class HubRenderer:
                     ba_col = self.COLOR_DARK_GRAY
                 put_text(canvas, ba_badge, (wx + 28, wy + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.35, ba_col, 1, cv2.LINE_AA)
 
-                cnt_text = f"{ws.image_count}帧/{ws.prod_image_count}帧"
+                cnt_text = f"{ws.calibration_image_count}帧/{ws.production_image_count}帧"
                 put_text(canvas, cnt_text, (wx + 200, wy + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (140, 160, 180), 1, cv2.LINE_AA)
 
             elif item["type"] == "frame":

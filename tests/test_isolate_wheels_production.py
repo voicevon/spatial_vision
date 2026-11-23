@@ -28,7 +28,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from tools.isolate_wheels_production.app import IsolateWheelsProductionApp
+from tools.isolate_wheels_production.app import IsolationWheelProductionApp
 from tools.isolate_wheels_production.renderer import LOGIC_H, LOGIC_W
 
 
@@ -37,7 +37,7 @@ class TestIsolateWheelsProduction(unittest.TestCase):
 
     def setUp(self):
         tmp_settings = os.path.join(tempfile.mkdtemp(prefix="test_prod_"), "gui_settings.json")
-        self.app = IsolateWheelsProductionApp(settings_file=tmp_settings)
+        self.app = IsolationWheelProductionApp(settings_file=tmp_settings)
         # Mock MQTT client
         self.app.controller._client = MagicMock()
         self.app.controller._connected = True
@@ -118,7 +118,7 @@ class TestIsolateWheelsProduction(unittest.TestCase):
         self.app.load_speed = 1.5
         self.app.detected_counts = [1, 2, 0, 0, 1, 0, 0, 3]
 
-        ok = self.app.send_step_beat()
+        ok = self.app.dispatch_load_cycle()
         self.assertTrue(ok)
         self.app.controller._client.publish.assert_called_once()
         topic, payload = self.app.controller._client.publish.call_args[0][:2]

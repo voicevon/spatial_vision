@@ -59,7 +59,7 @@ from src.workspace.workspace_manager import (
     load_workspace_roi_manager,
 )
 from tools.spatial_mapping_studio.mapping_state import MappingDataManager
-from tools.spatial_mapping_studio.mapping_viewport_interactor import MappingViewportInteractor
+from src.ui.canvas_viewport_interactor import CanvasViewportInteractor
 from tools.spatial_mapping_studio.mapping_ba_runner import MappingBARunner
 from tools.spatial_mapping_studio.mapping_renderer import MappingRenderer
 from src.ui.viewport_manager import (
@@ -78,7 +78,7 @@ except ImportError:
 
 
 try:
-    from src.utils.config_guard import resolve_camera_intrinsics
+    from src.utils.intrinsics_resolver import resolve_camera_intrinsics
 except ImportError:
     resolve_camera_intrinsics = None
 
@@ -153,6 +153,9 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         if marker_size_mm is None:
             ws_dir = self.current_workspace.workspace_dir if self.current_workspace else None
             loaded = load_workspace_marker_size_mm(ws_dir) if ws_dir else None
+            if loaded is None and self.workspace_mgr and self.current_workspace:
+                self.workspace_mgr.ensure_tag_whitelist(self.current_workspace.workspace_id)
+                loaded = load_workspace_marker_size_mm(ws_dir)
             if loaded is None:
                 raise ValueError(
                     "未指定标靶物理边长 (marker_size_mm), 且当前工位 tag_whitelist.yaml.tag_default_size_mm 缺失或非法. "
@@ -202,9 +205,9 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             tag_detector=self.tag_detector
         )
 
-        # 视口显示双独立正交模式 (用户指定默认 3d)
-        self.ba_view_mode: str = "3d"    # BA 理论值: "3d" (翡翠绿棱柱), "2d" (投影框), "off" (隐藏)
-        self.obs_view_mode: str = "3d"   # 实测识别值: "3d" (天蓝棱柱), "2d" (实测角点框), "off" (隐藏)
+        # 视口显示双独立正交模式 (默认 3d_prism 四棱柱)
+        self.ba_view_mode: str = "3d_prism"    # BA 理论值: "3d_prism" (四棱柱), "3d_pyramid" (金字塔), "2d" (投影框), "off" (隐藏)
+        self.obs_view_mode: str = "3d_prism"   # 实测识别值: "3d_prism" (四棱柱), "3d_pyramid" (金字塔), "2d" (实测角点框), "off" (隐藏)
 
         # 下拉菜单展开态标识 ("FILTER_DROPDOWN", "SORT_DROPDOWN", "BA_VIEW_DROPDOWN", "OBS_VIEW_DROPDOWN" 或 None)
         self.active_dropdown: Optional[str] = None
@@ -261,7 +264,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         self.is_running = True
 
         # 9. 视口几何变换与鼠标交互控制器 (Viewport Zoom & Pan)
-        self.viewport = MappingViewportInteractor(win_w=self.win_w, win_h=self.win_h)
+        self.viewport = CanvasViewportInteractor(win_w=self.win_w, win_h=self.win_h)
 
         # 10. UI 界面排版与视觉渲染器
         self.ui_renderer = MappingRenderer()
@@ -303,6 +306,11 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         except Exception:
             pass
 
+    @property
+    def image_files(self) -> List[str]:
+        """代理获取当前工位所有采图路径列表"""
+        return self.data_mgr.image_files if getattr(self, "data_mgr", None) else []
+
     # ------------------------------ 下拉选项持久化 ------------------------------
     def _load_dropdown_state(self):
         """从 settings_file (config/gui_settings.json) 恢复建图工作站下拉选择偏好"""
@@ -316,7 +324,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             node = root.get(APP_ID, {})
             if not isinstance(node, dict):
                 return
-            state = node.get("dropdown_state") or node.get("viewer_state") or {}
+            state = node.get("dropdown_state") or {}
             if not isinstance(state, dict):
                 return
 
@@ -382,7 +390,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                 "plane_z": float(self.data_mgr.plane_z),
             }
             node["dropdown_state"] = state_data
-            node["viewer_state"] = state_data.copy()
+
             node["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
             os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
@@ -398,7 +406,7 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
             return []
         opts = []
         for s in self.workspace_mgr.list_workspaces():
-            opts.append((s.workspace_id, f"{s.name} ({s.image_count}帧)"))
+            opts.append((s.workspace_id, f"{s.name} ({s.calibration_image_count}帧)"))
         return opts
 
     @property
@@ -568,9 +576,29 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
         return self.status_toast
 
     def _load_camera_intrinsics(self) -> Tuple[np.ndarray, np.ndarray]:
-        """加载相机内参和畸变参数"""
+        """加载相机内参和畸变参数，优先工位专属内参并自动适配图像实际物理分辨率"""
+        act_shape = None
+        try:
+            if hasattr(self, "image_dir") and self.image_dir and os.path.exists(self.image_dir):
+                for fname in os.listdir(self.image_dir):
+                    if fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                        fpath = os.path.join(self.image_dir, fname)
+                        sample_img = cv2.imread(fpath)
+                        if sample_img is not None:
+                            act_shape = sample_img.shape[:2]
+                            break
+        except Exception as e:
+            log.debug(f"[Studio] 探测图像分辨率异常 (可忽略): {e}")
+
+        ws_dir = self.current_workspace.workspace_dir if getattr(self, "current_workspace", None) else None
+
         if resolve_camera_intrinsics is not None:
-            K, dist, _ = resolve_camera_intrinsics(CONFIG_PATH)
+            K, dist, meta = resolve_camera_intrinsics(
+                config_path=CONFIG_PATH,
+                actual_image_shape=act_shape,
+                workspace_dir=ws_dir
+            )
+            log.info(f"[Studio] 相机内参装配成功: 来源={meta.get('source')}, 基准分辨率={meta.get('base_resolution')}")
             return K, dist
         else:
             K = np.array([
@@ -781,10 +809,12 @@ class SpatialMappingStudioApp(MappingEventMixin, MappingWorkflowMixin):
                     self.toggle_frame_diagnostics()
                 elif key in (ord('v'), ord('V')):      # V 键 -> 循环切换视口预设模式
                     presets = [
-                        ("3d", "3d", "全 3D 双棱柱空间对比 (BA 3D + 实测 3D)"),
+                        ("3d_prism", "3d_prism", "全 3D 四棱柱空间对比 (BA 四棱柱 + 实测 四棱柱)"),
+                        ("3d_pyramid", "3d_pyramid", "全 3D 金字塔空间对比 (BA 金字塔 + 实测 金字塔)"),
+                        ("3d_prism", "3d_pyramid", "3D 混搭模式 (BA 四棱柱 + 实测 金字塔)"),
                         ("2d", "2d", "全 2D 重投影与残差矢量 (BA 2D + 实测 2D)"),
                         ("off", "2d", "仅单帧实测识别角点框"),
-                        ("3d", "off", "仅 BA 空间理论 3D 棱柱"),
+                        ("3d_prism", "off", "仅 BA 空间理论 3D 四棱柱"),
                         ("off", "off", "纯净原始采图 (全隐藏)")
                     ]
                     curr_idx = -1

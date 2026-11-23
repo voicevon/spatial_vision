@@ -33,11 +33,12 @@ from tools.workspace_hub.hub_renderer import (
     point_in_rect
 )
 from src.utils.logger import get_logger
+from src.devices.camera_service import CameraService
 
 log = get_logger(__name__)
 
 
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import show_confirm_dialog
 
 
 class WorkspaceHubApp(BaseCvApp):
@@ -72,13 +73,15 @@ class WorkspaceHubApp(BaseCvApp):
         """核心渲染: 委托 HubRenderer 进行渲染"""
         return self.renderer.render(self.state)
 
-    def _launch_capture_wizard(self):
-        """启动多视角交互式采图向导 (tools/capture/capture_wizard.py)"""
+    def _launch_capture_wizard(self, purpose: str = "calibration"):
+        """启动多视角交互式采图向导 (tools/capture/app.py)，支持三用途归档路由"""
         ws = self.state.get_selected_workspace()
-        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "tools", "capture", "capture_wizard.py")]
+        cmd = [sys.executable, "-m", "tools.capture", "--purpose", purpose]
         if ws:
             cmd.extend(["--workspace", ws.workspace_id])
-        self._run_subtool(cmd, "多视角交互采图向导")
+        name_map = {"intrinsics": "相机内参采图", "calibration": "外参建图采图", "production": "生产采样采图"}
+        desc = name_map.get(purpose, "多视角交互采图向导")
+        self._run_subtool(cmd, desc)
 
     def on_mouse_move(self, x: int, y: int):
         """实时跟踪鼠标坐标，支持全部按钮平滑 Hover 高亮"""
@@ -93,7 +96,7 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.select_workspace_by_offset(wheel_dir)
         elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED:
             # 全宽大图沉浸模式下滚轮切换大图
-            self.state.gallery.select_image_by_offset(wheel_dir)
+            self.state.gallery.select_calib_image_by_offset(wheel_dir)
         else:
             # 卡片网格墙模式下滚轮翻页
             self._scroll_grid_for_active_tab(wheel_dir)
@@ -109,10 +112,16 @@ class WorkspaceHubApp(BaseCvApp):
         "btn_add_frame_roi": lambda app: app._action_add_frame_roi(),
         "btn_roi_prev": lambda app: app.state.geometry.scroll_roi_list(-1),
         "btn_roi_next": lambda app: app.state.geometry.scroll_roi_list(1),
-        "exp_prev": lambda app: app.state.gallery.select_image_by_offset(-1),
-        "exp_next": lambda app: app.state.gallery.select_image_by_offset(1),
+        "exp_prev": lambda app: app._select_image_for_active_tab(-1),
+        "exp_next": lambda app: app._select_image_for_active_tab(1),
         "album_delete": lambda app: app.state.gallery.delete_selected_image(),
         "exp_restore": lambda app: app.state.gallery.toggle_expanded_preview(),
+        "run_intrinsics_calib": lambda app: app._action_run_intrinsics_calib(),
+        "run_capture_intrinsics": lambda app: app._launch_capture_wizard("intrinsics"),
+        "run_capture_calib": lambda app: app._launch_capture_wizard("calibration"),
+        "run_capture_prod": lambda app: app._launch_capture_wizard("production"),
+        "intr_refresh_devices": lambda app: app._action_refresh_hardware_devices(),
+        "intr_edit_config": lambda app: app._action_edit_hardware_config(),
         "ws_rename": lambda app: app.workspace_handler.handle_rename_workspace(),
         "ws_open_dir": lambda app: app.workspace_handler.handle_open_directory(),
         "ws_edit_desc": lambda app: app.workspace_handler.handle_edit_description(),
@@ -138,7 +147,21 @@ class WorkspaceHubApp(BaseCvApp):
         "roi_scrollbar_click": lambda app, h: app.state.geometry.jump_roi_scroll_by_y(h[1]),
         "frame_roi_edit": lambda app, h: app.state.geometry.open_roi_modal(h[1]),
         "frame_roi_delete": lambda app, h: app._action_delete_roi(h[1]),
+        "grid_item": lambda app, h: app._action_select_grid_item(h[1]),
     }
+
+    def _action_select_grid_item(self, target_idx: int):
+        """响应相册网格卡片点击：选中对应照片"""
+        tab = self.state.active_tab
+        if tab == HubState.TAB_INTRINSICS_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.intrinsics_images):
+                self.state.gallery.select_intrinsics_image_at_index(target_idx)
+        elif tab == HubState.TAB_PROD_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.prod_images):
+                self.state.gallery.select_prod_image_at_index(target_idx)
+        elif tab == HubState.TAB_CALIB_IMAGES:
+            if 0 <= target_idx < len(self.state.gallery.calib_images):
+                self.state.gallery.select_calib_image_at_index(target_idx)
 
     def _action_dropdown_toggle(self, dd_type: str):
         """响应下拉框的展开/收起切换"""
@@ -181,7 +204,7 @@ class WorkspaceHubApp(BaseCvApp):
             f"⚠️ 此操作不可撤销，请确认是否立即执行删除？"
         )
 
-        if prompt_confirm("确认删除子机构坐标系", confirm_msg):
+        if show_confirm_dialog("确认删除子机构坐标系", confirm_msg):
             self.state.geometry.delete_frame_cascade(fid)
 
     def _action_edit_frame_pose(self):
@@ -196,7 +219,7 @@ class WorkspaceHubApp(BaseCvApp):
             self.state.geometry.roi_modal_data["frame_id"] = cur_frame.frame_id
 
     def _action_delete_roi(self, roi_id: str):
-        if prompt_confirm("确认删除 3D ROI", f"确定要删除 3D ROI 空间物件 [{roi_id}] 吗？"):
+        if show_confirm_dialog("确认删除 3D ROI", f"确定要删除 3D ROI 空间物件 [{roi_id}] 吗？"):
             self.state.geometry.delete_roi(roi_id)
             self.state.set_toast(f"已删除 ROI: {roi_id}")
 
@@ -259,14 +282,19 @@ class WorkspaceHubApp(BaseCvApp):
             self._PARAMETRIC_DISPATCH[hit[0]](self, hit)
             return
 
-        # 5. 相册卡片网格墙点击: 单击选中卡片
-        cell_idx = grid_hit_test(x, y)
+        # 5. 相册卡片网格墙点击: 单击选中卡片 (兜底)
+        y_offset = 158 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+        cell_idx = grid_hit_test(x, y, y_offset=y_offset)
         if cell_idx is not None:
             tab = self.state.active_tab
-            if tab == HubState.TAB_CALIB_IMAGES:
-                target = self.state.gallery.image_grid_offset + cell_idx
-                if 0 <= target < len(self.state.gallery.current_images):
-                    self.state.gallery.select_image_at_index(target)
+            if tab == HubState.TAB_INTRINSICS_IMAGES:
+                target = self.state.gallery.intrinsics_grid_offset + cell_idx
+                if 0 <= target < len(self.state.gallery.intrinsics_images):
+                    self.state.gallery.select_intrinsics_image_at_index(target)
+            elif tab == HubState.TAB_CALIB_IMAGES:
+                target = self.state.gallery.calib_grid_offset + cell_idx
+                if 0 <= target < len(self.state.gallery.calib_images):
+                    self.state.gallery.select_calib_image_at_index(target)
             elif tab == HubState.TAB_PROD_IMAGES:
                 target = self.state.gallery.prod_grid_offset + cell_idx
                 if 0 <= target < len(self.state.gallery.prod_images):
@@ -279,27 +307,122 @@ class WorkspaceHubApp(BaseCvApp):
                 self.state.gallery.toggle_expanded_preview()
                 return
         else:
-            cell_idx = grid_hit_test(x, y)
-            if cell_idx is not None and self.state.active_tab in (HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
+            y_offset = 158 if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES else 0
+            cell_idx = grid_hit_test(x, y, y_offset=y_offset)
+            allowed_tabs = (HubState.TAB_INTRINSICS_IMAGES, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES)
+            if cell_idx is not None and self.state.active_tab in allowed_tabs:
                 self.state.gallery.toggle_expanded_preview()
                 return
         self.on_click(x, y)
 
     def _select_image_for_active_tab(self, delta: int):
-        """按当前激活页签切换对应的相册照片 (标定相册/生产相册; 其余页签无相册则忽略)"""
-        if self.state.active_tab == HubState.TAB_PROD_IMAGES:
+        """按当前激活页签切换对应的相册照片 (三大图集通用; 其余页签无相册则忽略)"""
+        if self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.state.gallery.select_intrinsics_image_by_offset(delta)
+        elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.select_prod_image_by_offset(delta)
         elif self.state.gallery.view_mode == HubState.VIEW_EXPANDED or self.state.active_tab == HubState.TAB_CALIB_IMAGES:
-            self.state.gallery.select_image_by_offset(delta)
+            self.state.gallery.select_calib_image_by_offset(delta)
 
     def _scroll_grid_for_active_tab(self, delta_rows: int):
         """按当前激活页签滚动卡片网格 / ROI 列表 (滚轮驱动)"""
         if self.state.active_tab == HubState.TAB_FRAME_ROIS:
             self.state.geometry.scroll_roi_list(delta_rows)
+        elif self.state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+            self.state.gallery.scroll_intrinsics_grid(delta_rows)
         elif self.state.active_tab == HubState.TAB_PROD_IMAGES:
             self.state.gallery.scroll_prod_grid(delta_rows)
         else:
-            self.state.gallery.scroll_image_grid(delta_rows)
+            self.state.gallery.scroll_calib_grid(delta_rows)
+
+    def _action_run_intrinsics_calib(self):
+        """响应点击【标定内参】动作：从当前工位内参图集一键求解物理焦距与畸变并写穿至工位沙盒"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("请先选择工位！")
+            return
+        img_count = len(self.state.gallery.intrinsics_images)
+        if img_count < 3:
+            self.state.set_toast(f"内参标定至少需要3张棋盘格照片，当前仅有 {img_count} 张！")
+            return
+
+        self.state.set_toast("正在解算单目相机内参与畸变矩阵，请稍候...")
+        from src.calibration.solvers.camera_intrinsics_calibrator import calibrate_workspace_intrinsics
+        res = calibrate_workspace_intrinsics(ws, pattern_size=(9, 6), square_size_mm=25.0, save_to_workspace=True)
+        if res.success:
+            self.state.set_toast(f"标定成功！fx={res.fx:.1f}, fy={res.fy:.1f}, RMSE={res.rmse:.3f}px (已写入工位沙盒)")
+        else:
+            self.state.set_toast(f"内参标定失败: {res.message}")
+
+    def _action_refresh_hardware_devices(self):
+        """原位重新扫描物理设备，热更新当前工位绑定的设备序列号"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法刷新设备！")
+            return
+        try:
+            devs = CameraService.probe_available_devices()
+            rs_list = devs.get("realsense", [])
+            usb_list = devs.get("usb", [])
+            cur_type = getattr(ws, "camera_type", "realsense") or "realsense"
+            new_serial = getattr(ws, "camera_serial", "") or ""
+
+            if cur_type == "realsense":
+                new_serial = rs_list[0]["serial"] if rs_list else ""
+            else:
+                new_serial = str(usb_list[0]["index"]) if usb_list else "0"
+
+            self.workspace_mgr.bind_workspace_camera(
+                workspace_id=ws.workspace_id,
+                camera_type=cur_type,
+                camera_serial=new_serial,
+                camera_resolution=ws.camera_resolution
+            )
+            self.state.refresh_workspaces()
+            self.state.set_toast(f"已刷新物理设备: 发现 {len(rs_list)} 台 RealSense, {len(usb_list)} 台 USB 相机")
+        except Exception as e:
+            self.state.set_toast(f"刷新设备异常: {e}")
+
+    def _action_edit_hardware_config(self):
+        """响应点击【修改配置】：若工位存在历史图像则锁定禁止修改；空白工位弹出配置窗"""
+        ws = self.state.get_selected_workspace()
+        if not ws:
+            self.state.set_toast("未选中任何工位，无法配置硬件！")
+            return
+
+        ws.refresh_stats()
+        if ws.is_hardware_locked:
+            self.state.set_toast(f"工位【{ws.name}】已锁定硬件配置 (已有 {ws.total_image_count} 帧照片保护)，禁止修改！")
+            return
+
+        devs = CameraService.probe_available_devices()
+        cur_type = getattr(ws, "camera_type", "realsense") or "realsense"
+        cur_serial = getattr(ws, "camera_serial", "") or ""
+        cur_res = getattr(ws, "resolution_str", "1920x1080") or "1920x1080"
+
+        from src.ui.dialog_utils import prompt_hardware_config
+        form_res = prompt_hardware_config(
+            title=f"配置工位【{ws.name}】硬件规格",
+            initial_camera_type=cur_type,
+            initial_serial=cur_serial,
+            initial_resolution=cur_res,
+            available_devices=devs
+        )
+        if not form_res:
+            self.state.set_toast("已取消修改相机硬件与分辨率。")
+            return
+
+        ok, msg = self.workspace_mgr.bind_workspace_camera(
+            workspace_id=ws.workspace_id,
+            camera_type=form_res["camera_type"],
+            camera_serial=form_res["camera_serial"],
+            camera_resolution=form_res["camera_resolution"]
+        )
+        if ok:
+            self.state.refresh_workspaces()
+            self.state.set_toast(f"工位【{ws.name}】硬件配置已更新: {form_res['camera_type']} @ {ws.resolution_str}")
+        else:
+            self.state.set_toast(f"硬件配置更新失败: {msg}")
 
     def _run_subtool(self, cmd: list, desc: str):
         """统一子工具拉起执行器：销毁主窗、运行子工具、恢复环境与刷新状态"""
@@ -319,7 +442,7 @@ class WorkspaceHubApp(BaseCvApp):
             ws.refresh_stats()
             ws.save_meta()
         self.state.refresh_workspaces()
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.set_toast(f"已完成 {desc} 并返回 Workspace 驾驶舱，数据已同步！")
 
     def _launch_spatial_mapping_studio(self):
@@ -327,20 +450,16 @@ class WorkspaceHubApp(BaseCvApp):
         ws = self.state.get_selected_workspace()
         if not ws:
             return
+        self.workspace_mgr.ensure_tag_whitelist(ws.workspace_id)
         cmd = [sys.executable, "-m", "tools.spatial_mapping_studio",
                "--workspace", ws.workspace_id,
                "--images", ws.calib_raw_images_dir,
                "--map", ws.map_path]
         self._run_subtool(cmd, "空间建图工作站 (Spatial Mapping Studio)")
 
-    def _launch_image_diagnostics(self):
-        """启动标靶单帧漏检病因深度切片与梯度诊断"""
-        cmd = [sys.executable, "tools/calibration/diagnose_tag_frame.py"]
-        self._run_subtool(cmd, "图像深度病因诊断切片系统")
-
     def _launch_tag_generator(self):
         """启动 AprilTag 标靶图纸生成与 1:1 A4 排版"""
-        cmd = [sys.executable, "tools/calibration/generate_apriltags.py"]
+        cmd = [sys.executable, "tools/generate_apriltags.py"]
         self._run_subtool(cmd, "标靶高清生成与排版工具")
 
     def _handle_frame_tag_edit_xyz(self, tag_id: int):

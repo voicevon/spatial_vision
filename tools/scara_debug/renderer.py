@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text
+from src.utils.text_rendering import draw_text
 
 # 逻辑画布尺寸
 LOGIC_W = 1280

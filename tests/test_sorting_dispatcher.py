@@ -73,7 +73,7 @@ class TestSortingDispatcher(unittest.TestCase):
     def _make_dummy_target(self, tid: int, grade: str = "A", is_topmost: bool = True,
                            rel_h: float = 20.0, robot_xy=(100.0, 200.0)) -> AsparagusTarget:
         return AsparagusTarget(
-            id=tid,
+            target_id=tid,
             center_px=(300.0, 300.0),
             length_px=150.0,
             diam_px=15.0,
@@ -83,9 +83,9 @@ class TestSortingDispatcher(unittest.TestCase):
             contour=np.zeros((10, 1, 2)),
             length_mm=180.0,
             diam_mm=14.0,
-            grip_x=0.0,
-            grip_y=0.0,
-            grip_z=500.0,
+            grip_cam_x=0.0,
+            grip_cam_y=0.0,
+            grip_cam_z=500.0,
             z_top=480.0,
             rel_height_mm=rel_h,
             robot_x=robot_xy[0],
@@ -118,7 +118,7 @@ class TestSortingDispatcher(unittest.TestCase):
 
         best = self.dispatcher.select_best_target([t_bottom, t_top_lower, t_top_highest])
         self.assertIsNotNone(best)
-        self.assertEqual(best.id, 3)
+        self.assertEqual(best.target_id, 3)
 
     def test_grade_routing_and_overflow(self):
         """测试品质分级路由与槽位满溢防护"""

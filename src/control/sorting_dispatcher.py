@@ -223,7 +223,7 @@ class SortingDispatcher:
 
         # 3. 构造任务
         task = ScaraPickTask(
-            target_id=target.id,
+            target_id=target.target_id,
             pick_x=float(target.robot_x),
             pick_y=float(target.robot_y),
             pick_z=float(target.robot_z),
@@ -233,7 +233,7 @@ class SortingDispatcher:
             drop_z=float(slot.drop_z),
             drop_r=float(slot.drop_r),
             slot_index=slot.slot_index,
-            tag_info=f"物料#{target.id}({target.grade}级) -> 槽位#{slot.slot_index + 1}[{slot.name}]",
+            tag_info=f"物料#{target.target_id}({target.grade}级) -> 槽位#{slot.slot_index + 1}[{slot.name}]",
         )
         return target, slot, task
 

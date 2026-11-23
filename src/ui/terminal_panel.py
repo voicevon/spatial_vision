@@ -27,7 +27,7 @@ from collections import deque
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import draw_text, get_cached_font
+from src.utils.text_rendering import draw_text, get_cached_font
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

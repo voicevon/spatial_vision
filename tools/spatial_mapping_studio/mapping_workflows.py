@@ -35,13 +35,13 @@ class MappingWorkflowMixin:
         if self.ba_runner.is_ba_running:
             self.set_toast("全局平差计算中，请待平差完成后再执行提取")
             return False
-        if not self.image_files:
+        if not self.data_mgr.image_files:
             self.set_toast("未扫描到采图文件，无法执行超精重提取")
             return False
 
         self.is_extracting_all = True
         self.extract_progress = 0.01
-        self.extract_stage_text = f"正在启动全局全量超精提取 (共 {len(self.image_files)} 帧)..."
+        self.extract_stage_text = f"正在启动全局全量超精提取 (共 {len(self.data_mgr.image_files)} 帧)..."
         self.set_toast(self.extract_stage_text)
 
         def _worker():

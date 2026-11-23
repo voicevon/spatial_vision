@@ -1,3 +1,4 @@
+import unittest
 import os
 import sys
 import shutil
@@ -83,7 +84,7 @@ def test_tag_bound_frame():
         name="动态滑块",
         parent_frame_id="world",
         type="tag_bound",
-        tag_id=15,
+        tag_ids=[15],
         offset_xyz_mm=[0.0, 0.0, 10.0],
     )
     assert coord_mgr.add_frame(frame_slider) is True

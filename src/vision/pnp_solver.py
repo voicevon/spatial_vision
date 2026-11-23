@@ -118,16 +118,16 @@ class PnpSolver:
         """查询关联地图中指定标靶的 4 角点世界 3D 坐标 (4, 3)"""
         return get_tag_world_corners(self.tags_map, tag_id, self.marker_size_mm)
 
-    def solve_pnp(
+    def solve_point_cloud_pnp(
         self,
         obj_flat: np.ndarray,
         img_flat: np.ndarray
-    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], bool]:
+    ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
         """
         标准两阶段 SQPNP -> ITERATIVE 稳健 PnP 求解
         :param obj_flat: (N, 3) 3D 空间点
         :param img_flat: (N, 2) 2D 像面像点
-        :return: (rvec, tvec, success)
+        :return: (success, rvec, tvec)
         """
         try:
             succ, rvec, tvec = cv2.solvePnP(
@@ -140,11 +140,11 @@ class PnpSolver:
                     rvec=rvec, tvec=tvec, useExtrinsicGuess=True,
                     flags=cv2.SOLVEPNP_ITERATIVE
                 )
-            return rvec, tvec, succ
+            return succ, rvec, tvec
         except Exception:
-            return None, None, False
+            return False, None, None
 
-    def solve_single_tag_pnp(
+    def solve_planar_tag_pnp(
         self,
         corners_2d: np.ndarray,
         expected_z_cam: Optional[np.ndarray] = None,

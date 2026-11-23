@@ -30,7 +30,7 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
         rel_height = 28.5     # 芦笋相对工作台的凸起净高度 (安全下探高度)
 
         target = AsparagusTarget(
-            id=1,
+            target_id=1,
             center_px=(640.0, 360.0),
             length_px=450.0,
             diam_px=30.0,
@@ -40,9 +40,9 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
             contour=np.zeros((10, 1, 2), dtype=np.int32),
             length_mm=210.0,
             diam_mm=16.5,
-            grip_x=12.0,
-            grip_y=-5.0,
-            grip_z=camera_depth,
+            grip_cam_x=12.0,
+            grip_cam_y=-5.0,
+            grip_cam_z=camera_depth,
             z_top=camera_depth - 10.0,
             rel_height_mm=rel_height,
             robot_x=12.0,
@@ -94,7 +94,7 @@ class TestHandEyeMatrixAndSafety(unittest.TestCase):
         top = targets[0]
 
         self.assertEqual(top.calibration_source, "hand_eye")
-        self.assertAlmostEqual(top.robot_z, 640.0 - top.grip_z, delta=5.0)
+        self.assertAlmostEqual(top.robot_z, 640.0 - top.grip_cam_z, delta=5.0)
         planner = ScaraMotionPlanner()
         gcode = planner.generate_pick_gcode(top)
         self.assertIn("手工标定矩阵", gcode)

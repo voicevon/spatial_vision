@@ -26,7 +26,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.workspace.workspace_manager import Workspace, WorkspaceManager
-from src.control.isolate_wheels_controller import IsolateWheelsController
+from src.control.isolation_wheel_controller import IsolationWheelController
 from src.devices.camera_service import CameraService
 from src.ui.base_cv_app import BaseCvApp
 from src.utils.logger import get_logger
@@ -34,14 +34,14 @@ from tools.isolate_wheels_production.renderer import (
     COLOR_BG,
     LOGIC_H,
     LOGIC_W,
-    ProductionRenderer,
+    IsolationWheelProductionRenderer,
 )
 from tools.isolate_wheels_production.vision_detector import WheelVisionDetector
 
 log = get_logger("flux_vision.tools.isolate_wheels_production.app")
 
 
-class IsolateWheelsProductionApp(BaseCvApp):
+class IsolationWheelProductionApp(BaseCvApp):
     """分离轮 8 通道自动化视觉生产工作台主应用"""
 
     def __init__(self, settings_file: Optional[str] = None):
@@ -56,11 +56,11 @@ class IsolateWheelsProductionApp(BaseCvApp):
         )
 
         # 核心控制中枢、工位管理器与视觉检测器
-        self.controller = IsolateWheelsController()
+        self.controller = IsolationWheelController()
         self.workspace_mgr = WorkspaceManager()
         self.camera_service = CameraService()
         self.detector = WheelVisionDetector()
-        self.renderer = ProductionRenderer()
+        self.renderer = IsolationWheelProductionRenderer()
 
         # 1. 工位状态
         self.current_workspace_id: str = ""
@@ -93,7 +93,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
         self.load_speed: float = 1.0
         self.total_cycles: int = 0
         self.cycle_start_time: float = 0.0
-        self.last_beat_time: float = 0.0
+        self.last_cycle_time: float = 0.0
         self.cycle_durations: List[float] = []
 
         # 5. UI 下拉弹窗展开标记
@@ -246,7 +246,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
         self.controller.disconnect()
 
     # ==================== 生产调度与流水线中枢交互 ====================
-    def send_step_beat(self) -> bool:
+    def dispatch_load_cycle(self) -> bool:
         """
         执行单步生产节拍：
         读取视觉自动数出的 8 轮数量，下发至 MQTT load 节拍
@@ -282,7 +282,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
         self.set_toast("已启动连续流水线模式 (收到 done 自动下发下一拍)")
         log.info("[Production] 连续流水线启动。")
         if not self.waiting_done:
-            self.send_step_beat()
+            self.dispatch_load_cycle()
 
     def pause_pipeline(self):
         """暂停连续生产流水线"""
@@ -325,13 +325,13 @@ class IsolateWheelsProductionApp(BaseCvApp):
                 self.discharged_counts[i] += self._last_sent_counts[i]
 
             self.waiting_done = False
-            self.last_beat_time = now
+            self.last_cycle_time = now
             log.info(f"[Production] 节拍完成 (第 {self.total_cycles} 拍) -> 累计出料: {sum(self.discharged_counts)}")
 
             # 核心业务逻辑：连续流水线模式下，收到 done 立即自动触发下一拍
             if self.auto_pipeline and not self.paused:
                 log.info("[Production] 流水线闭环: 收到 done，正在自动读取视觉物料并启动下一节拍...")
-                self.send_step_beat()
+                self.dispatch_load_cycle()
 
     def _on_state_event(self, devid: str, state: str):
         """设备状态变动回调 (安全停机)"""
@@ -343,6 +343,9 @@ class IsolateWheelsProductionApp(BaseCvApp):
                 log.error(f"[Production] 设备异常 [{state}]，流水线中止！")
 
     # ==================== 主循环与事件调度 ====================
+    def on_tick(self):
+        self.update()
+
     def update(self):
         # 1. 相机取流与视觉检测自动计数
         if self.is_camera_running:
@@ -363,9 +366,9 @@ class IsolateWheelsProductionApp(BaseCvApp):
         # 2. 流水线守护检查 (若未处于 waiting_done 且流水线激活，可自动步进)
         if self.auto_pipeline and not self.paused and not self.waiting_done:
             now = time.time()
-            if (now - self.last_beat_time) >= 1.5:
+            if (now - self.last_cycle_time) >= 1.5:
                 # 处于空闲时自动唤醒节拍
-                self.send_step_beat()
+                self.dispatch_load_cycle()
 
     def render(self) -> np.ndarray:
         canvas = np.full((LOGIC_H, LOGIC_W, 3), COLOR_BG, dtype=np.uint8)
@@ -375,8 +378,11 @@ class IsolateWheelsProductionApp(BaseCvApp):
         return canvas
 
     # ==================== 鼠标与快捷键交互 ====================
-    def handle_mouse(self, event: int, x: int, y: int, flags: int, param):
-        super().handle_mouse(event, x, y, flags, param)
+    def on_click(self, x: int, y: int):
+        self.handle_mouse(cv2.EVENT_LBUTTONDOWN, x, y, 0, None)
+
+    def handle_mouse(self, event: int, x: int, y: int, flags: int = 0, param=None):
+
         if event != cv2.EVENT_LBUTTONDOWN:
             return
 
@@ -385,7 +391,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             ws_list = self.workspace_mgr.list_workspaces()
             for idx, ws in enumerate(ws_list):
                 iy = 48 + 4 + idx * 28
-                if ProductionRenderer.pt_in(x, y, (434, iy, 192, 24)):
+                if IsolationWheelProductionRenderer.pt_in(x, y, (434, iy, 192, 24)):
                     self.switch_workspace(ws.workspace_id)
                     self.popup_ws = False
                     return
@@ -396,7 +402,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             cams = self.camera_types
             for idx, (cid, _) in enumerate(cams):
                 iy = 48 + 4 + idx * 28
-                if ProductionRenderer.pt_in(x, y, (604, iy, 132, 24)):
+                if IsolationWheelProductionRenderer.pt_in(x, y, (604, iy, 132, 24)):
                     self.switch_camera_type(cid)
                     self.popup_cam = False
                     return
@@ -407,7 +413,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             res_list = self.resolutions
             for idx, (rw, rh) in enumerate(res_list):
                 iy = 48 + 4 + idx * 28
-                if ProductionRenderer.pt_in(x, y, (744, iy, 112, 24)):
+                if IsolationWheelProductionRenderer.pt_in(x, y, (744, iy, 112, 24)):
                     self.switch_resolution(rw, rh)
                     self.popup_res = False
                     return
@@ -418,7 +424,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             speeds = [0.1, 0.2, 0.5, 1.0, 1.5, 2.0]
             for idx, spd in enumerate(speeds):
                 iy = 48 + 4 + idx * 28
-                if ProductionRenderer.pt_in(x, y, (964, iy, 102, 24)):
+                if IsolationWheelProductionRenderer.pt_in(x, y, (964, iy, 102, 24)):
                     self.load_speed = spd
                     self.popup_speed = False
                     self.set_toast(f"生产速度倍率已切换至: {spd:.1f}x")
@@ -428,20 +434,20 @@ class IsolateWheelsProductionApp(BaseCvApp):
 
         # ---------------- 顶部控制栏按钮 ----------------
         # 步骤 1：工位选择下拉
-        if ProductionRenderer.pt_in(x, y, (430, 14, 160, 32)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (430, 14, 160, 32)):
             self.popup_ws = not self.popup_ws
             return
 
         # 步骤 2：相机设备与分辨率选择
-        if ProductionRenderer.pt_in(x, y, (600, 14, 130, 32)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (600, 14, 130, 32)):
             self.popup_cam = not self.popup_cam
             return
-        if ProductionRenderer.pt_in(x, y, (740, 14, 110, 32)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (740, 14, 110, 32)):
             self.popup_res = not self.popup_res
             return
 
         # 相机打开 / 关闭按钮
-        if ProductionRenderer.pt_in(x, y, (860, 14, 90, 32)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (860, 14, 90, 32)):
             if self.is_camera_running:
                 self.close_camera()
             else:
@@ -449,14 +455,14 @@ class IsolateWheelsProductionApp(BaseCvApp):
             return
 
         # 速度倍率下拉按钮
-        if ProductionRenderer.pt_in(x, y, (960, 14, 100, 32)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (960, 14, 100, 32)):
             self.popup_speed = not self.popup_speed
             return
 
         # ---------------- 底部流水线控制按钮 ----------------
         by = 560
         # 启动 / 暂停连续流水线
-        if ProductionRenderer.pt_in(x, y, (32, by + 40, 220, 46)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (32, by + 40, 220, 46)):
             if self.auto_pipeline:
                 self.pause_pipeline()
             else:
@@ -464,20 +470,23 @@ class IsolateWheelsProductionApp(BaseCvApp):
             return
 
         # 单次执行节拍 (S)
-        if ProductionRenderer.pt_in(x, y, (264, by + 40, 180, 46)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (264, by + 40, 180, 46)):
             if not self.auto_pipeline:
-                self.send_step_beat()
+                self.dispatch_load_cycle()
             return
 
         # 急停 (ESC)
-        if ProductionRenderer.pt_in(x, y, (454, by + 40, 120, 46)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (454, by + 40, 120, 46)):
             self.emergency_stop()
             return
 
         # 重置批次统计 (C)
-        if ProductionRenderer.pt_in(x, y, (584, by + 40, 130, 46)):
+        if IsolationWheelProductionRenderer.pt_in(x, y, (584, by + 40, 130, 46)):
             self.reset_batch_statistics()
             return
+
+    def on_key(self, key: int) -> bool:
+        return self.handle_key(key)
 
     def handle_key(self, key: int) -> bool:
         if key in (ord(' '),):
@@ -488,7 +497,7 @@ class IsolateWheelsProductionApp(BaseCvApp):
             return True
         elif key in (ord('s'), ord('S')):
             if not self.auto_pipeline:
-                self.send_step_beat()
+                self.dispatch_load_cycle()
             return True
         elif key in (27,):  # ESC
             self.emergency_stop()
@@ -496,11 +505,11 @@ class IsolateWheelsProductionApp(BaseCvApp):
         elif key in (ord('c'), ord('C')):
             self.reset_batch_statistics()
             return True
-        return super().handle_key(key)
+        return super().on_key(key)
 
 
 def main():
-    app = IsolateWheelsProductionApp()
+    app = IsolationWheelProductionApp()
     app.run()
 
 

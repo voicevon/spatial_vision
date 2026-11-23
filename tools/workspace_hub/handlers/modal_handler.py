@@ -12,7 +12,7 @@ Workspace Hub 模态弹窗事件处理器 (ModalHandler)
 """
 
 from typing import Any
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text
+from src.ui.dialog_utils import show_text_input_dialog
 
 
 class ModalHandler:
@@ -37,7 +37,7 @@ class ModalHandler:
         """通用三维向量分轴安全输入提示框"""
         cur_vec = list(target_dict.get(key, default_vec) or default_vec)
         cur_val = cur_vec[axis_idx] if axis_idx < len(cur_vec) else 0.0
-        val_str = prompt_input_text(title, prompt, initial=f"{cur_val:.1f}")
+        val_str = show_text_input_dialog(title, prompt, initial=f"{cur_val:.1f}")
         if val_str is not None and val_str.strip():
             try:
                 v = float(val_str.strip())
@@ -170,7 +170,7 @@ class ModalHandler:
             return
         if hit == "frame_field_name":
             old_name = d.get("name", "")
-            new_name = prompt_input_text("编辑坐标系名称", "请输入坐标系人类可读名称:", initial=old_name)
+            new_name = show_text_input_dialog("编辑坐标系名称", "请输入坐标系人类可读名称:", initial=old_name)
             if new_name and new_name.strip():
                 d["name"] = new_name.strip()
                 self.state.set_toast(f"已修改坐标系名称为: 【{new_name.strip()}】")
@@ -180,7 +180,7 @@ class ModalHandler:
             if old_id == "world":
                 self.state.set_toast("绝对世界基准坐标系 [world] 禁止修改 ID！")
                 return
-            new_id = prompt_input_text("编辑坐标系唯一ID", "请输入唯一标识符 (英文字母/数字/下划线):", initial=old_id)
+            new_id = show_text_input_dialog("编辑坐标系唯一ID", "请输入唯一标识符 (英文字母/数字/下划线):", initial=old_id)
             if new_id and new_id.strip():
                 new_id_clean = new_id.strip()
                 frames = geom.get_coordinate_frames()
@@ -212,7 +212,7 @@ class ModalHandler:
                 return
             elif field_category == "tag_id":
                 curr_val = d.get("tag_id", 0)
-                val_str = prompt_input_text(
+                val_str = show_text_input_dialog(
                     "动标绑定 AprilTag ID 列表",
                     "请输入绑定的动标标靶编号 (支持单个如 10，或逗号分隔多动标冗余组如 10,11):",
                     initial=str(curr_val)
@@ -325,14 +325,14 @@ class ModalHandler:
             return
         if hit == "roi_field_name":
             old_name = d.get("name", "")
-            new_name = prompt_input_text("编辑 ROI 物件名称", "请输入 3D ROI 物件名称:", initial=old_name)
+            new_name = show_text_input_dialog("编辑 ROI 物件名称", "请输入 3D ROI 物件名称:", initial=old_name)
             if new_name and new_name.strip():
                 d["name"] = new_name.strip()
                 self.state.set_toast(f"已修改 3D ROI 名称为: 【{new_name.strip()}】")
             return
         if hit == "roi_field_id":
             old_id = d.get("roi_id", "")
-            new_id = prompt_input_text("编辑 ROI 唯一ID", "请输入唯一标识符 (英文字母/数字/下划线):", initial=old_id)
+            new_id = show_text_input_dialog("编辑 ROI 唯一ID", "请输入唯一标识符 (英文字母/数字/下划线):", initial=old_id)
             if new_id and new_id.strip():
                 new_id_clean = new_id.strip()
                 rois = geom.get_roi_spaces()
@@ -367,7 +367,7 @@ class ModalHandler:
         if hit == "roi_field_capacity":
             binding = d.setdefault("binding", {})
             cur_cap = str(binding.get("capacity_max", 20))
-            new_cap = prompt_input_text("修改落料槽最大容量", "请输入单槽最大容纳物料根数:", initial=cur_cap)
+            new_cap = show_text_input_dialog("修改落料槽最大容量", "请输入单槽最大容纳物料根数:", initial=cur_cap)
             if new_cap and new_cap.strip().isdigit():
                 binding["capacity_max"] = max(1, int(new_cap.strip()))
                 self.state.set_toast(f"已设置落料槽最大容量为: {binding['capacity_max']} 根")
@@ -375,7 +375,7 @@ class ModalHandler:
 
         if hit == "roi_field_conf":
             cur_conf = f"{float(d.get('min_confidence', 0.3) or 0.3):.2f}"
-            new_conf = prompt_input_text("修改识别最低置信度", "请输入识别置信度门限 (0.05 ~ 0.95):", initial=cur_conf)
+            new_conf = show_text_input_dialog("修改识别最低置信度", "请输入识别置信度门限 (0.05 ~ 0.95):", initial=cur_conf)
             if new_conf and new_conf.strip():
                 try:
                     c_val = float(new_conf.strip())

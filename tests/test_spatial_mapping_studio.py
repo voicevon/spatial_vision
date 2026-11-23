@@ -97,7 +97,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             marker_size_mm=50.0,
             win_w=1920,
             win_h=1080,
-            manifest_path=self.manifest_path
+            manifest_path=self.manifest_path,
+            settings_file=os.path.join(self.temp_dir, "gui_settings.json"),
         )
 
     def tearDown(self):
@@ -281,17 +282,17 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
 
     def test_view_mode_and_ba_progress(self):
         """测试视口双独立正交模式 (BA 理论与单帧实测) 与全局平差进度条渲染"""
-        # 1. 测试默认双 3D 模式
-        self.assertEqual(self.studio.ba_view_mode, "3d")
-        self.assertEqual(self.studio.obs_view_mode, "3d")
+        # 1. 测试默认双 3D 模式 (四棱柱)
+        self.assertEqual(self.studio.ba_view_mode, "3d_prism")
+        self.assertEqual(self.studio.obs_view_mode, "3d_prism")
         self.assertEqual(self.studio.right_bar_w, 180, "右侧栏应成功瘦身为 180px")
 
         # 2. 测试切换 BA 与 OBS 独立下拉框
-        for ba_m in ["3d", "2d", "off"]:
+        for ba_m in ["3d_prism", "3d_pyramid", "2d", "off"]:
             self.studio._handle_button_click(f"DD_SELECT_BA_VIEW_DROPDOWN_{ba_m}", ("BA_VIEW_DROPDOWN", ba_m), 0, 0)
             self.assertEqual(self.studio.ba_view_mode, ba_m)
 
-        for obs_m in ["3d", "2d", "off"]:
+        for obs_m in ["3d_prism", "3d_pyramid", "2d", "off"]:
             self.studio._handle_button_click(f"DD_SELECT_OBS_VIEW_DROPDOWN_{obs_m}", ("OBS_VIEW_DROPDOWN", obs_m), 0, 0)
             self.assertEqual(self.studio.obs_view_mode, obs_m)
 
@@ -474,11 +475,11 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
     def test_frame_diagnostics_and_gate_status(self):
         """测试单帧病因切片诊断算法、物理指标与准入门限/拓扑评估"""
         diag = self.studio.data_mgr.diagnose_frame(0)
-        self.assertIn("contrast_rms", diag)
-        self.assertIn("laplacian_var", diag)
-        self.assertIn("mean_intensity", diag)
-        self.assertIn("false_rejections_count", diag)
-        self.assertIn("missing_projected_tags", diag)
+        self.assertIn("contrast", diag)
+        self.assertIn("sharpness", diag)
+        self.assertIn("brightness", diag)
+        self.assertIn("rejected_quads_count", diag)
+        self.assertIn("missing_theoretical_tags", diag)
 
         # 检查 StudioDataManager 的门限与拓扑字段
         self.assertIn(self.studio.data_mgr.gate_status, ["PASS", "ACCEPTABLE", "REVIEW"])
@@ -635,8 +636,8 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             return original_render_prisms(*args, **kwargs)
 
         self.studio.visualizer.render_tag_dual_prisms = mock_render_prisms
-        self.studio.ba_view_mode = "3d"
-        self.studio.obs_view_mode = "3d"
+        self.studio.ba_view_mode = "3d_prism"
+        self.studio.obs_view_mode = "3d_prism"
 
         # 执行视口叠加绘制
         self.studio.ui_renderer.overlay_visual_elements(
@@ -818,13 +819,14 @@ class TestSpatialMappingStudioApp(unittest.TestCase):
             translation_xyz_mm=[100.0, 0.0, 0.0],
             rotation_rpy_deg=[0.0, 0.0, 0.0],
             calibration_spec={
-                "reference_tags": {
-                    5: [0.0, 0.0, 0.0],  # Tag 5 在子系的名义坐标为 [0, 0, 0]
-                }
+                "reference_tag_ids": [5],
             }
         )
         coord_mgr.add_frame(sub_frame)
         self.studio.coord_mgr = coord_mgr
+        self.studio.ba_runner.anchor_tags = {
+            5: {"xyz_mm": [0.0, 0.0, 0.0], "frame_id": "frame_sub_1"}
+        }
 
         # 默认基准为 world
         self.assertEqual(self.studio.active_reference_frame_id, "world")

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 from src.ui.gui_theme import GuiTheme
 from src.ui.gui_components import draw_dropdown_button, draw_dashboard_button
 
@@ -72,7 +72,7 @@ class MappingCenterViewMixin:
 
         # 1. BA 理论下拉框
         ba_x1, ba_x2 = cursor_x, cursor_x + 148
-        cur_ba_label = dict(BA_VIEW_OPTIONS).get(app.ba_view_mode, "3D 翡翠绿棱柱")
+        cur_ba_label = dict(BA_VIEW_OPTIONS).get(app.ba_view_mode, "3D 翡翠绿四棱柱")
         is_ba_open = (app.active_dropdown == "BA_VIEW_DROPDOWN")
         draw_dropdown_button(canvas, (ba_x1, row_y1, ba_x2, row_y2), cur_ba_label,
                              is_open=is_ba_open, mouse_pos=app.mouse_pos, prefix="BA理论: ")
@@ -86,7 +86,7 @@ class MappingCenterViewMixin:
 
         # 2. 实测识别下拉框
         obs_x1, obs_x2 = cursor_x, cursor_x + 148
-        cur_obs_label = dict(OBS_VIEW_OPTIONS).get(app.obs_view_mode, "3D 科技天蓝棱柱")
+        cur_obs_label = dict(OBS_VIEW_OPTIONS).get(app.obs_view_mode, "3D 科技天蓝四棱柱")
         is_obs_open = (app.active_dropdown == "OBS_VIEW_DROPDOWN")
         draw_dropdown_button(canvas, (obs_x1, row_y1, obs_x2, row_y2), cur_obs_label,
                              is_open=is_obs_open, mouse_pos=app.mouse_pos, prefix="实测识别: ")
@@ -215,7 +215,7 @@ class MappingCenterViewMixin:
         if len(obj_pts) >= 1:
             obj_flat = np.concatenate(obj_pts, axis=0)
             img_flat = np.concatenate(img_pts, axis=0)
-            rvec, tvec, success = app.pnp_solver.solve_pnp(obj_flat, img_flat)
+            success, rvec, tvec = app.pnp_solver.solve_point_cloud_pnp(obj_flat, img_flat)
 
         # 若当前无足够有效点 (如标靶全被剔除)，尝试复用 meta 缓存的相机外参
         if not success and meta is not None:
@@ -233,13 +233,17 @@ class MappingCenterViewMixin:
             T_c_w[:3, :3] = R_c_w
             T_c_w[:3, 3] = tvec.flatten()
 
-            need_3d = (ba_mode == "3d" or obs_mode == "3d")
+            ba_is_3d = ba_mode in ("3d_prism", "3d_pyramid")
+            obs_is_3d = obs_mode in ("3d_prism", "3d_pyramid")
+            need_3d = (ba_is_3d or obs_is_3d)
+            ba_shape = "pyramid" if ba_mode == "3d_pyramid" else "prism"
+            obs_shape = "pyramid" if obs_mode == "3d_pyramid" else "prism"
             if need_3d:
                 # 收集候选标靶：
                 # (a) 当前帧观测到的所有标靶 (不论保留还是已剔除)
-                # (b) 如果开启了 ba_mode == "3d"，还包含地图中已建图的其余已知标靶
+                # (b) 如果开启了 ba_is_3d，还包含地图中已建图的其余已知标靶
                 candidate_tids = list(obs_map.keys())
-                if ba_mode == "3d":
+                if ba_is_3d:
                     tags_dict = (app.data_mgr.tags_map_data or {}).get("tags", {})
                     for m_tid in tags_dict.keys():
                         if m_tid not in obs_map:
@@ -263,7 +267,7 @@ class MappingCenterViewMixin:
 
                     # 理论 BA 位姿 (翡翠绿)
                     r_tag, t_tag = None, None
-                    if ba_mode == "3d":
+                    if ba_is_3d:
                         r_tag, _ = cv2.Rodrigues(T_c_t[:3, :3])
                         t_tag = t_tag_center.reshape((3, 1))
 
@@ -277,9 +281,9 @@ class MappingCenterViewMixin:
                         c_arr = np.array(obs["corners"], dtype=np.float64).reshape((4, 2))
                         is_kept = obs.get("keep", True) and not is_frame_excluded
                         # 仅在有效保留且 obs_mode=='3d' 下才计算并显示实测蓝色棱柱
-                        if is_kept and obs_mode == "3d":
+                        if is_kept and obs_is_3d:
                             # 传入地图理论法向, 消除 IPPE 平面二义性 180° 翻转
-                            succ_single, obs_r, obs_t = app.pnp_solver.solve_single_tag_pnp(
+                            succ_single, obs_r, obs_t = app.pnp_solver.solve_planar_tag_pnp(
                                 c_arr, expected_z_cam=T_c_t[:3, :3][:, 2])
 
                     # 如果既不画理论绿色棱柱，也不画实测蓝色棱柱，跳过
@@ -330,18 +334,21 @@ class MappingCenterViewMixin:
                                 ref_pos = (T_ref_w @ np.array([pw[0], pw[1], pw[2], 1.0], dtype=np.float64))[:3].tolist()
                             ref_frame = coord_mgr.get_frame(ref_fid)
                             if ref_frame and getattr(ref_frame, "calibration_spec", None):
-                                ref_tags = ref_frame.calibration_spec.get("reference_tags", {})
-                                if tid in ref_tags or str(tid) in ref_tags:
-                                    nom_pos = ref_tags.get(tid) or ref_tags.get(str(tid))
-                                    if nom_pos is not None and ref_pos is not None:
-                                        nom_err = float(np.linalg.norm(np.array(ref_pos[:3]) - np.array(nom_pos[:3])))
+                                ref_ids = [int(x) for x in ref_frame.calibration_spec.get("reference_tag_ids", [])]
+                                anchor_tags = getattr(getattr(app, "ba_runner", None), "anchor_tags", None) or {}
+                                if tid in ref_ids and tid in anchor_tags:
+                                    coords = anchor_tags[tid].get("xyz_mm")
+                                    if coords and len(coords) >= 3 and None not in coords[:3]:
+                                        nom_pos = coords[:3]
+                                        if ref_pos is not None:
+                                            nom_err = float(np.linalg.norm(np.array(ref_pos[:3]) - np.array(nom_pos[:3])))
 
                     app.visualizer.render_tag_dual_prisms(
                         img=disp_frame,
-                        ba_rvec=r_tag if ba_mode == "3d" else None,
-                        ba_tvec=t_tag if ba_mode == "3d" else None,
-                        obs_rvec=obs_r if (obs_mode == "3d" and succ_single) else None,
-                        obs_tvec=obs_t if (obs_mode == "3d" and succ_single) else None,
+                        ba_rvec=r_tag if ba_is_3d else None,
+                        ba_tvec=t_tag if ba_is_3d else None,
+                        obs_rvec=obs_r if (obs_is_3d and succ_single) else None,
+                        obs_tvec=obs_t if (obs_is_3d and succ_single) else None,
                         tag_id=tid,
                         err_px=err_px,
                         err_mm=err_mm,
@@ -355,22 +362,24 @@ class MappingCenterViewMixin:
                         ref_frame_id=ref_fid,
                         ref_position_mm=ref_pos,
                         nominal_local_xyz=nom_pos,
-                        nominal_error_mm=nom_err
+                        nominal_error_mm=nom_err,
+                        ba_shape=ba_shape,
+                        obs_shape=obs_shape,
                     )
                     rendered_tids.add(tid)
 
-            # 4. 2D 理论重投影框与残差矢量
+            # 4. 2D 理论重投影框与残差矢量 (理论统一翡翠绿)
             if ba_mode == "2d" and len(valid_obs) > 0:
                 proj_pts, _ = cv2.projectPoints(obj_flat, rvec, tvec, app.pnp_solver.camera_matrix, app.pnp_solver.dist_coeffs)
                 proj_flat = proj_pts.reshape((-1, 2))
                 for i in range(len(valid_obs)):
                     p4 = proj_flat[i * 4:(i + 1) * 4].astype(np.int32)
-                    cv2.polylines(disp_frame, [p4], isClosed=True, color=(0, 210, 255), thickness=1, lineType=cv2.LINE_AA)
+                    cv2.polylines(disp_frame, [p4], isClosed=True, color=(0, 230, 80), thickness=2, lineType=cv2.LINE_AA)
 
                 if obs_mode == "2d" and hasattr(app.visualizer, "draw_reprojection_vectors"):
                     app.visualizer.draw_reprojection_vectors(disp_frame, img_flat, proj_flat, scale_factor=40.0)
 
-        # 4. 保底渲染：对所有提取到但未被 3D 棱柱覆盖的有效保留标靶，保底绘制 2D 实测角点多边形与编号标签
+        # 4. 保底渲染：对所有提取到但未被 3D 棱柱覆盖的有效保留标靶，保底绘制 2D 实测角点多边形与编号标签 (实测统一科技天蓝)
         if obs_mode != "off":
             for obs in observations:
                 if not obs.get("keep", True) or is_frame_excluded:
@@ -378,20 +387,20 @@ class MappingCenterViewMixin:
                 tid = obs["tag_id"]
                 if obs_mode == "2d" or tid not in rendered_tids:
                     pts = np.array(obs["corners"], dtype=np.int32).reshape((-1, 2))
-                    cv2.polylines(disp_frame, [pts], isClosed=True, color=(0, 230, 80), thickness=2, lineType=cv2.LINE_AA)
+                    cv2.polylines(disp_frame, [pts], isClosed=True, color=(245, 180, 30), thickness=2, lineType=cv2.LINE_AA)
                     cx, cy = int(np.mean(pts[:, 0])), int(np.mean(pts[:, 1]))
                     in_map = (app.data_mgr.get_tag_world_corners(tid) is not None)
                     tag_lbl = f"Tag #{tid}" if in_map else f"Tag #{tid} [未入图]"
-                    put_text(disp_frame, tag_lbl, (cx - 38, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 230, 80), 2, cv2.LINE_AA)
+                    put_text(disp_frame, tag_lbl, (cx - 38, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (245, 180, 30), 2, cv2.LINE_AA)
                     rendered_tids.add(tid)
 
         # 5. 若处于病因切片诊断模式，叠加视野内预测但实测漏检的标靶框 (橙黄色矩形与 Tag 标注)
         if getattr(app, "show_frame_diagnostics", False):
             diag = getattr(app.data_mgr, "current_diagnostics", {})
-            missing = diag.get("missing_projected_tags", []) or diag.get("missing_theoretical_tags", [])
+            missing = diag.get("missing_theoretical_tags", [])
             for m in missing:
                 tid = m.get("tag_id")
-                c_pts = m.get("proj_corners") or m.get("predicted_corners")
+                c_pts = m.get("proj_corners")
                 if c_pts is not None and len(c_pts) == 4:
                     pts_i = np.array(c_pts, dtype=np.int32)
                     cv2.polylines(disp_frame, [pts_i], isClosed=True, color=(0, 140, 255), thickness=2, lineType=cv2.LINE_AA)

@@ -31,6 +31,7 @@ class WheelVisionDetector:
         self._ref_h: int = 720
         self._init_default_rois()
 
+
         # 视觉检测输出缓存
         self.current_counts: List[int] = [0] * 8
         self.detected_boxes: List[List[Tuple[int, int, int, int]]] = [[] for _ in range(8)]
@@ -54,12 +55,14 @@ class WheelVisionDetector:
         self._ref_h = max(100, height)
         self._init_default_rois()
 
+
     def load_rois(self, rois_file_or_dir: str):
         """从文件或工位目录中载入 ROI 配置"""
         import os
         import yaml
         if not os.path.exists(rois_file_or_dir):
             self._init_default_rois()
+    
             return
         try:
             with open(rois_file_or_dir, "r", encoding="utf-8") as f:
@@ -70,7 +73,9 @@ class WheelVisionDetector:
                     log.info(f"[VisionDetector] 成功从 {rois_file_or_dir} 解析出 {len(items)} 个 ROI")
         except Exception as e:
             log.warning(f"[VisionDetector] 解析 ROI 文件失败 ({e})，使用默认 8 通道布局")
-        self._init_default_rois()
+            self._init_default_rois()
+    
+
 
     def get_detected_counts(self) -> List[int]:
         """获取当前检出的数量列表"""
@@ -94,6 +99,7 @@ class WheelVisionDetector:
         """从工位 ROI 管理器中匹配或加载 8 个通道的定义"""
         if not roi_mgr:
             self._init_default_rois()
+    
             return
 
         all_rois = roi_mgr.list_rois()
@@ -107,9 +113,10 @@ class WheelVisionDetector:
             # 按 X 坐标从左向右排序 (物理编号 1 到 8)
             sorted_rois = sorted(wheel_rois, key=lambda r: r.center_xyz_mm[0])[:8]
             # 转换为大致对应的画面局部归一化范围
-            self._init_default_rois()
+    
             log.info(f"[VisionDetector] 已成功从工位绑定 {len(sorted_rois)} 个物理槽位 ROI")
         else:
+    
             self._init_default_rois()
             log.info("[VisionDetector] 工位未配置足够的 8 通道专用 ROI，已启用自适应 8 通道阵列")
 

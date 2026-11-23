@@ -102,6 +102,7 @@ class HubHitTester:
             BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H,
             WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME,
+            INTR_BTN_REFRESH_DEV, INTR_BTN_EDIT_CONFIG, INTR_BTN_CAPTURE, INTR_BTN_CALIB,
             FRAME_DELETE_BTN, FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
             FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN, FRAME_ROI_SCROLL_TRACK,
             frame_tag_chip_rect, frame_roi_edit_btn, frame_roi_del_btn,
@@ -446,12 +447,45 @@ class HubHitTester:
                     if point_in_rect(mx, my, frame_roi_del_btn(i)):
                         return ("frame_roi_delete", r.roi_id)
 
-        # 图片卡片网格墙卡片 Hover (标定相册与生产相册通用)
-        if state.active_tab in (HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
-            cell_idx = grid_hit_test(mx, my)
-            if cell_idx is not None:
-                offset = state.gallery.prod_grid_offset if state.active_tab == HubState.TAB_PROD_IMAGES else state.gallery.image_grid_offset
-                return ("grid_item", offset + cell_idx)
+        # 图片卡片网格墙卡片 Hover 与按钮检测 (三大图集通用)
+        if state.active_tab in (HubState.TAB_INTRINSICS_IMAGES, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
+            if state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
+                # 硬件操作按钮
+                if point_in_rect(mx, my, INTR_BTN_REFRESH_DEV):
+                    return "intr_refresh_devices"
+                if point_in_rect(mx, my, INTR_BTN_EDIT_CONFIG):
+                    return "intr_edit_config"
+
+                # 标定与采图操作按钮
+                if point_in_rect(mx, my, INTR_BTN_CAPTURE):
+                    return "run_capture_intrinsics"
+                if point_in_rect(mx, my, INTR_BTN_CALIB):
+                    return "run_intrinsics_calib"
+
+                # 空状态居中 [+ 打开相机采集]
+                if not state.gallery.intrinsics_images and point_in_rect(mx, my, (570, 260, 160, 36)):
+                    return "run_capture_intrinsics"
+                cell_idx = grid_hit_test(mx, my, y_offset=158)
+                if cell_idx is not None:
+                    return ("grid_item", state.gallery.intrinsics_grid_offset + cell_idx)
+            elif state.active_tab == HubState.TAB_PROD_IMAGES:
+                # 右上角 [+ 采集相片]
+                if point_in_rect(mx, my, (835, 56, 110, 32)):
+                    return "run_capture_prod"
+                if not state.gallery.prod_images and point_in_rect(mx, my, (570, 216, 160, 36)):
+                    return "run_capture_prod"
+                cell_idx = grid_hit_test(mx, my)
+                if cell_idx is not None:
+                    return ("grid_item", state.gallery.prod_grid_offset + cell_idx)
+            else:
+                # 外参建图页签
+                if point_in_rect(mx, my, (835, 56, 110, 32)):
+                    return "run_capture_calib"
+                if not state.gallery.calib_images and point_in_rect(mx, my, (570, 216, 160, 36)):
+                    return "run_capture_calib"
+                cell_idx = grid_hit_test(mx, my)
+                if cell_idx is not None:
+                    return ("grid_item", state.gallery.calib_grid_offset + cell_idx)
 
         return None
 

@@ -44,7 +44,7 @@ class TestMappingDropdownPersistence(unittest.TestCase):
         self.ws_b = self.mgr.create_workspace(alias="工位B")
         for ws in (self.ws_a, self.ws_b):
             with open(ws.whitelist_path, "w", encoding="utf-8") as f:
-                f.write("tag_default_size_mm: 50.0\nwhitelist: [0, 1, 2]\n")
+                f.write("tag_default_size_mm: 50.0\ntags:\n  0: {}\n  1: {}\n  2: {}\n")
 
         self.image_dir = os.path.join(self.test_dir, "images")
         os.makedirs(self.image_dir, exist_ok=True)
@@ -184,8 +184,8 @@ class TestMappingDropdownPersistence(unittest.TestCase):
         app = self._create_app()
         self.assertEqual(app.data_mgr.filter_mode, "all")
         self.assertEqual(app.data_mgr.sort_mode, "name_asc")
-        self.assertEqual(app.ba_view_mode, "3d")
-        self.assertEqual(app.obs_view_mode, "3d")
+        self.assertEqual(app.ba_view_mode, "3d_prism")
+        self.assertEqual(app.obs_view_mode, "3d_prism")
 
 
 if __name__ == "__main__":

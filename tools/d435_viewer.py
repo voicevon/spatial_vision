@@ -35,7 +35,7 @@ except ImportError:
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.ui.gui_window_manager import GuiWindowManager
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, get_cached_font, measure_text, put_text
+from src.utils.text_rendering import draw_text, get_cached_font, measure_text, put_text
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)

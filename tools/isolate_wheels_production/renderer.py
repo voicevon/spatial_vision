@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, measure_text
+from src.utils.text_rendering import draw_text, measure_text
 
 # 逻辑视窗分辨率
 LOGIC_W = 1280
@@ -57,7 +57,7 @@ def draw_centered_text(
     draw_text(canvas, text, (cx - tw // 2, cy - th // 2), font_size=font_size, color=color, bold=bold)
 
 
-class ProductionRenderer:
+class IsolationWheelProductionRenderer:
     """分离轮 8 通道自动化视觉生产工作台渲染器"""
 
     @staticmethod

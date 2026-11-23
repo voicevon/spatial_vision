@@ -50,7 +50,7 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         # 实例化轻量 tracker
         self.tracker = RobotOnlineTracker.__new__(RobotOnlineTracker)
         self.tracker.target_tag_id = 2
-        self.tracker.recog_tag2_on = True
+        self.tracker.auto_recognize_on = True
         self.tracker.show_anchors_on = False
         self.tracker.show_xy_plane_on = False
         self.tracker.world_locked = False
@@ -97,8 +97,8 @@ class TestTrackerAsparagusRotation(unittest.TestCase):
         proj_pts, _ = cv2.projectPoints(obj_pts, rvec_gt, t_gt, self.camera_matrix, self.dist_coeffs)
         corners_2d = proj_pts.reshape((4, 2))
 
-        # 调用 pnp_solver.solve_single_tag_pnp
-        ok, rvec_est, tvec_est = self.pnp_solver.solve_single_tag_pnp(corners_2d, expected_z_cam=np.array([0, 0, 1]))
+        # 调用 pnp_solver.solve_planar_tag_pnp
+        ok, rvec_est, tvec_est = self.pnp_solver.solve_planar_tag_pnp(corners_2d, expected_z_cam=np.array([0, 0, 1]))
         self.assertTrue(ok)
         self.assertIsNotNone(rvec_est)
         self.assertIsNotNone(tvec_est)

@@ -16,7 +16,11 @@ import sys
 import subprocess
 from typing import Any
 
-from src.ui.dialog_utils import prompt_confirm, prompt_input_text, show_info_dialog
+from src.ui.dialog_utils import (
+    show_confirm_dialog, show_text_input_dialog, show_info_dialog,
+    prompt_create_workspace_dialog
+)
+from src.devices.camera_service import CameraService
 from src.workspace.health_auditor import audit_workspace, audit_all_workspaces
 
 
@@ -49,7 +53,7 @@ class WorkspaceHandler:
         if not ws:
             return
 
-        new_name = prompt_input_text(
+        new_name = show_text_input_dialog(
             "修改 Workspace 名称",
             f"请输入 Workspace【{ws.name}】的新显示名称\n(支持中文、英文、数字，如: 1号机台主标定):",
             initial=ws.name
@@ -64,7 +68,7 @@ class WorkspaceHandler:
             return
 
         cur_desc = getattr(ws, "description", "") or ""
-        new_desc = prompt_input_text(
+        new_desc = show_text_input_dialog(
             "修改工位备注",
             f"请输入工位【{ws.name}】的备注信息 (单行文本):",
             initial=cur_desc
@@ -73,20 +77,31 @@ class WorkspaceHandler:
             self.state.update_current_workspace_description(new_desc.strip())
 
     def handle_create_workspace(self):
-        """新建 Workspace (支持中文名称弹窗)"""
+        """新建 Workspace (支持中文名称与相机硬件/分辨率规格配置弹窗)"""
         idx = len(self.state.workspaces) + 1
         default_alias = f"Workspace_{idx}"
 
-        chosen_name = prompt_input_text(
-            "新建 Workspace",
-            "请输入新 Workspace 名称/别名 (支持中文、英文、数字，如: 2号机架高位):",
-            initial=default_alias
+        devs = CameraService.probe_available_devices()
+        form_res = prompt_create_workspace_dialog(
+            default_alias=default_alias,
+            available_devices=devs
         )
-        if not chosen_name:
+        if not form_res:
             self.state.set_toast("已取消新建 Workspace。")
             return
 
-        new_ws = self.workspace_mgr.create_workspace(alias=chosen_name, description=f"Workspace {chosen_name}")
+        chosen_name = form_res["alias"]
+        cam_type = form_res["camera_type"]
+        cam_serial = form_res["camera_serial"]
+        cam_res = form_res["camera_resolution"]
+
+        new_ws = self.workspace_mgr.create_workspace(
+            alias=chosen_name,
+            description=f"Workspace {chosen_name}",
+            camera_type=cam_type,
+            camera_serial=cam_serial,
+            camera_resolution=cam_res
+        )
         self.state.refresh_workspaces()
         target_idx = 0
         for i, s in enumerate(self.state.workspaces):
@@ -94,7 +109,7 @@ class WorkspaceHandler:
                 target_idx = i
                 break
         self.state.select_workspace_at_index(target_idx)
-        self.state.set_toast(f"已成功新建 Workspace: 【{new_ws.name}】({new_ws.workspace_id})，按 [C] 开始采图！")
+        self.state.set_toast(f"已新建工位【{new_ws.name}】: {cam_type} @ {new_ws.resolution_str}，按 [C] 开始采图！")
 
     def handle_clone_workspace(self):
         """克隆 Workspace (支持中文名称弹窗)"""
@@ -104,7 +119,7 @@ class WorkspaceHandler:
             return
 
         default_clone_name = f"{ws.name}_对照组"
-        chosen_name = prompt_input_text(
+        chosen_name = show_text_input_dialog(
             "克隆 Workspace",
             f"请输入克隆后的新 Workspace 名称 (基于原 Workspace【{ws.name}】):",
             initial=default_clone_name
@@ -137,7 +152,7 @@ class WorkspaceHandler:
             self.state.set_toast("至少需保留一个工位，禁止删除唯一工位！")
             return
 
-        confirmed = prompt_confirm(
+        confirmed = show_confirm_dialog(
             "确认删除 Workspace",
             f"确定要永久删除工位【{ws.name}】吗？\n\n物理ID: {ws.workspace_id}\n此操作将删除该工位的所有图片和标定数据，不可恢复！"
         )
@@ -163,7 +178,7 @@ class WorkspaceHandler:
         res = audit_workspace(ws, auto_fix=True)
 
         # 刷新相册与列表数据
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.gallery.load_prod_images()
         self.state.refresh_workspaces()
 
@@ -179,7 +194,7 @@ class WorkspaceHandler:
         res = audit_all_workspaces(self.workspace_mgr, auto_fix=True)
 
         # 刷新当前选中的工位与列表视图
-        self.state.gallery.load_current_workspace_images()
+        self.state.gallery.load_calib_images()
         self.state.gallery.load_prod_images()
         self.state.refresh_workspaces()
 

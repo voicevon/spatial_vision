@@ -19,12 +19,12 @@ import cv2
 import numpy as np
 
 from src.ui.gui_theme import GuiTheme
-from src.ui.text_rendering import draw_text, get_cached_font, measure_text, put_text
+from src.utils.text_rendering import draw_text, get_cached_font, measure_text, put_text
+# 导出通用系统弹窗组件 (保持全局基础控件库公开 API 完整性)
 from src.ui.dialog_utils import (
     show_error_dialog,
-    show_critical_message,
-    prompt_confirm,
-    prompt_input_text,
+    show_confirm_dialog,
+    show_text_input_dialog,
 )
 
 
@@ -1000,8 +1000,3 @@ class ScrollableListBox:
         else:
             self._last_track_rect = (0, 0, 0, 0)
             self._last_thumb_rect = (0, 0, 0, 0)
-
-
-
-
-

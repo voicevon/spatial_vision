@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.ui.text_rendering import put_text
+from src.utils.text_rendering import put_text
 from src.vision.pipelines.base_pipeline import BaseAsparagusPipeline, PipelineResult, PipelineStep
 from src.vision.pipelines.occlusion_peeler import CandidateSpine, OcclusionPeeler
 from src.vision.pipelines.registry import PipelineRegistry
@@ -379,7 +379,7 @@ class PolarityScanlinePipeline(BaseAsparagusPipeline):
                 robot_r = cand.yaw_deg
 
             targets.append(AsparagusTarget(
-                id=rank_idx + 1,
+                target_id=rank_idx + 1,
                 center_px=(cx_val, cy_val),
                 length_px=cand.length_px,
                 diam_px=cand.diam_px,
@@ -389,9 +389,9 @@ class PolarityScanlinePipeline(BaseAsparagusPipeline):
                 contour=cand.box_corners,
                 length_mm=round(len_mm, 1),
                 diam_mm=round(diam_mm, 1),
-                grip_x=round(grip_x, 1),
-                grip_y=round(grip_y, 1),
-                grip_z=round(grip_z, 1),
+                grip_cam_x=round(grip_x, 1),
+                grip_cam_y=round(grip_y, 1),
+                grip_cam_z=round(grip_z, 1),
                 z_top=round(z_nominal, 1),
                 rel_height_mm=round(rel_h, 1),
                 robot_x=round(robot_x, 1),
