@@ -105,7 +105,7 @@ class ToolCardMeta:
 
 
 def build_tools_catalog() -> List[ToolCardMeta]:
-    """构建全系统核心工具目录：12 张卡片，三大功能分组 (A环境场景→B Tag标定→D生产调试)"""
+    """构建全系统核心工具目录：14 张卡片，三大功能分组 (A环境场景→B 标定建图与生产验证→D 硬件调试与系统运维)"""
 
     COLOR_A = (195, 155, 45)   # A 环境场景  : 琥珀金 (Amber)
     COLOR_B = (65,  175, 160)  # B Tag标定   : 精密工业深青 (Teal)
@@ -180,29 +180,50 @@ def build_tools_catalog() -> List[ToolCardMeta]:
         ToolCardMeta(
             key_id="asparagus_offline",
             shortcut="4",
-            title="芦笋位姿工作室",
-            subtitle="生产样本与位姿解算",
+            title="顶层抓取位姿工作室",
+            subtitle="多根堆叠顶层目标与抓取位姿",
             category="B — 标定建图与生产验证",
             is_gui=True,
             command=[sys.executable, "-m", "tools.asparagus_pose_studio"],
             tag_color=COLOR_B,
-            summary="离线解算芦笋空间位姿，对比多技术路线算法流水线并精调特征参数。",
+            summary="针对多根堆叠场景寻找最顶层可抓取芦笋，对比多算法流水线并精调抓取位姿参数。",
             details=[
                 "工位样本载入：优先读取当前工位 production/raw_images/ 样本",
-                "3D 空间解算：台面点云拟合、实例切分与顶层芦笋空间位姿判决",
-                "3D 抓取位姿验证：实时解算抓取中轴线、法向矢量与品质评级 (A/B/C)",
+                "顶层目标判决：台面点云拟合、实例切分与最顶层可抓取芦笋锁定",
+                "3D 抓取位姿验证：实时解算抓取中轴线、法向矢量与偏航角",
                 "多阶段步骤视图：深度对比 10+ 种脊线骨架算法并一键调参"
             ],
             inputs=["工位生产照片目录 (production/raw_images/ 或 snapshots)"],
-            outputs=["芦笋位姿检测结果、品质指标分析与批量评估报表"],
+            outputs=["顶层可抓取芦笋位姿结果、算法对比视图与批量评估"],
             quick_tips="快捷键: [4] 启动 | [↑↓] 切换样本 | [B] 批量解算 | [ESC] 退出"
         ),
 
         ToolCardMeta(
-            key_id="scara_production",
+            key_id="asparagus_measure",
             shortcut="5",
+            title="单根芦笋测量工作室",
+            subtitle="单根 ROI 有效长度与 2cm 处直径",
+            category="B — 标定建图与生产验证",
+            is_gui=True,
+            command=[sys.executable, "-m", "tools.asparagus_measure_studio"],
+            tag_color=COLOR_B,
+            summary="针对 ROI 内单根芦笋进行几何精密测量，识别白绿分界线并计算绿色有效长度与偏移 20mm 处直径。",
+            details=[
+                "双源 ROI 定位：支持读取工位 spatial_scene.yaml 3D ROI 投影或画面手动画框 2D ROI",
+                "白根分界识别：按固定根→尖朝向沿中轴检测白根与绿茎分界线，无白根按全绿处理",
+                "有效长度与特征直径：计算绿色有效长度及白绿分界线向头部偏移 20mm 处截面直径",
+                "离线与实时双模式：支持工位样本分析与 RealSense/USB 相机实时预览测量"
+            ],
+            inputs=["工位生产样本或实时相机流", "工位 spatial_scene.yaml ROI 或手动 2D ROI"],
+            outputs=["绿色有效长度 (mm)、20mm 偏移处直径 (mm) 及可视化标注视图"],
+            quick_tips="快捷键: [5] 启动 | [M] 切换离线/实时 | [D] 手动画框 ROI | [ESC] 退出"
+        ),
+
+        ToolCardMeta(
+            key_id="scara_production",
+            shortcut="S",
             title="SCARA 抓取生产",
-            subtitle="皮带感知与 SCARA 抓取闭环",
+            subtitle="[S] 皮带感知与 SCARA 抓取闭环",
             category="B — 标定建图与生产验证",
             is_gui=True,
             command=[sys.executable, "-m", "tools.scara_production"],
@@ -216,7 +237,7 @@ def build_tools_catalog() -> List[ToolCardMeta]:
             ],
             inputs=["当前工位顶层 tags_map.yaml、rois.yaml、机械臂串口"],
             outputs=["实时分选调度看板、各槽位根数统计与 SCARA 搬运执行"],
-            quick_tips="快捷键: [5] 启动 | [SPACE] 启动/暂停自动生产 | [S] 单拍测试 | [R] 换箱复位"
+            quick_tips="快捷键: [S] 启动 | [SPACE] 启动/暂停自动生产 | [S] 单拍测试 | [R] 换箱复位"
         ),
 
         ToolCardMeta(
@@ -612,27 +633,27 @@ class GuiLauncherApp:
 
         # 方向键：将卡片索引映射到 (row, col) 坐标后导航
         # row 0: idx 0 (A Workspace，全宽)
-        # rows 1-3: idx 1-5 (B 区 5张: 2+2+1)
-        # rows 4-7: idx 6-12 (D 区 7张: 2+2+2+1)
+        # rows 1-3: idx 1-6 (B 区 6张: 2+2+2)
+        # rows 4-7: idx 7-13 (D 区 7张: 2+2+2+1)
         def idx_to_rc(i: int) -> Tuple[int, int]:
             if i <= 0:
                 return (0, 0)
-            if 1 <= i <= 5:   # B 区 5张 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5)
+            if 1 <= i <= 6:   # B 区 6张 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5, 6)
                 b = i - 1
                 return (b // 2 + 1, b % 2)
-            d = i - 6         # D 区 7张 (row4: idx 6, 7; row5: idx 8, 9; row6: idx 10, 11; row7: idx 12)
+            d = i - 7         # D 区 7张 (row4: idx 7, 8; row5: idx 9, 10; row6: idx 11, 12; row7: idx 13)
             return (d // 2 + 4, d % 2)
 
         def rc_to_idx(r: int, c: int) -> int:
             if r == 0:
                 return 0
-            if 1 <= r <= 3:   # B 区 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5)
+            if 1 <= r <= 3:   # B 区 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5, 6)
                 base_b = (r - 1) * 2
-                return min(1 + base_b + c, 5)
-            if 4 <= r <= 7:   # D 区 (row4: idx 6, 7; row5: idx 8, 9; row6: idx 10, 11; row7: idx 12)
+                return min(1 + base_b + c, 6)
+            if 4 <= r <= 7:   # D 区 (row4: idx 7, 8; row5: idx 9, 10; row6: idx 11, 12; row7: idx 13)
                 base_d = (r - 4) * 2
-                return min(6 + base_d + c, 12)
-            return 12
+                return min(7 + base_d + c, 13)
+            return 13
 
         row, col = idx_to_rc(self.selected_tool_idx)
 
@@ -690,19 +711,20 @@ class GuiLauncherApp:
         key_char = chr(raw_key & 0xFF).lower() if (raw_key & 0xFF) < 128 else ""
 
         shortcut_map = {
-            '1': "workspace_hub",         # A Workspace 工作空间中枢
-            '2': "tag_wizard",            # B 图像采集 (双用途)
-            '3': "spatial_mapping_studio", # B 空间建图工作站
-            '4': "asparagus_offline",     # B 芦笋抓取位姿离线解算
-            '5': "scara_production",      # B SCARA 抓取生产工作台
+            '1': "workspace_hub",             # A Workspace 工作空间中枢
+            '2': "tag_wizard",                # B 图像采集 (双用途)
+            '3': "spatial_mapping_studio",    # B 空间建图工作站
+            '4': "asparagus_offline",         # B 顶层抓取位姿工作室
+            '5': "asparagus_measure",         # B 单根芦笋测量工作室
+            's': "scara_production",          # B SCARA 抓取生产工作台
             '0': "isolate_wheels_production", # B 分离轮生产工作台
-            '6': "d435_live",             # D RealSense 诊断
-            '7': "scara_debug",           # D SCARA 机械臂调试
-            '8': "isolate_wheels_debug",  # D Isolator WHEELS 调试
-            '9': "net_camera_debug",      # D NetCamera 调试
+            '6': "d435_live",                 # D RealSense 诊断
+            '7': "scara_debug",               # D SCARA 机械臂调试
+            '8': "isolate_wheels_debug",      # D Isolator WHEELS 调试
+            '9': "net_camera_debug",          # D NetCamera 调试
             't': "sys_diagnose_tests",
             'p': "pip_install",
-            'w': "tag_paper_gen",         # D AprilTag 图纸生成 (存量补缺)
+            'w': "tag_paper_gen",             # D AprilTag 图纸生成 (存量补缺)
         }
 
         if key_char in shortcut_map:
@@ -717,10 +739,10 @@ class GuiLauncherApp:
     def _get_card_rect(self, idx: int) -> Tuple[int, int, int, int]:
         """返回第 idx 张卡片的 (x, y, w, h)，与渲染布局严格保持一致
 
-        布局 (8行，3分组，共 13 张卡片):
+        布局 (8行，3分组，共 14 张卡片):
           row 0     A Workspace (1张全宽: idx 0)
-          rows 1-3  B 标定建图与生产验证流水线 (5张: 2+2+1, idx 1~5)
-          rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 6~12)
+          rows 1-3  B 标定建图与生产验证流水线 (6张: 2+2+2, idx 1~6)
+          rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 7~13)
         """
         s = self.win_mgr.scale_pct / 100.0
         LH = max(14, int(20 * s))
@@ -736,13 +758,13 @@ class GuiLauncherApp:
         if idx == 0:          # A: 顶部全宽卡片 (Workspace)
             return X0, Y0 + LH, FW, CH
 
-        if 1 <= idx <= 5:     # B: 5张 (2+2+1, 3行: idx 1~5)
+        if 1 <= idx <= 6:     # B: 6张 (2+2+2, 3行: idx 1~6)
             b = idx - 1
             base_y = Y0 + LH + CH + GY + LH
             return X0 + (b % 2) * (CW + SX), base_y + (b // 2) * (CH + SY), CW, CH
 
-        # D: 7张 (2+2+2+1, 4行: idx 6~12)
-        d = idx - 6
+        # D: 7张 (2+2+2+1, 4行: idx 7~13)
+        d = idx - 7
         base_y = Y0 + LH + CH + GY + LH + 3 * (CH + SY) + GY + LH
         return X0 + (d % 2) * (CW + SX), base_y + (d // 2) * (CH + SY), CW, CH
 
@@ -993,7 +1015,7 @@ class GuiLauncherApp:
         group_headers = [
             (self._get_card_rect(0)[1] - LH,  FW, "A  Workspace",                                 (195, 155,  45)),
             (self._get_card_rect(1)[1] - LH,  FW, "B  标定建图与生产验证 (Pipelines)",           ( 65, 175, 160)),
-            (self._get_card_rect(6)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
+            (self._get_card_rect(7)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
         ]
         for hy, hw, label, accent in group_headers:
             cv2.rectangle(canvas, (X0, hy), (X0 + hw, hy + LH - max(1, int(2 * s))), (18, 22, 30), -1)

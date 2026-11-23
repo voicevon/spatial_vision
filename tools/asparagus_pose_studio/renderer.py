@@ -222,7 +222,7 @@ class AsparagusPoseStudioRenderer:
         W, H = canvas.shape[1], canvas.shape[0]
 
         # 1. 标题文字 (第一排最左侧 Logo)
-        title_str = "芦笋位姿工作室"
+        title_str = "顶层抓取位姿工作室"
         draw_text(canvas, title_str,
                   (m["L"], int(15 * m["s"])), m["fs_title"], GuiTheme.TEXT, bold=True)
         (tw_title, _), _ = measure_text(title_str, font_size=m["fs_title"])

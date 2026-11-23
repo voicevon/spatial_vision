@@ -43,7 +43,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
             base_w=BASE_W,
             base_h=BASE_H,
             window_name=WINDOW_KEY,
-            window_title="芦笋位姿工作室 - Asparagus Pose Studio",
+            window_title="顶层抓取位姿工作室 - Topmost Pick Pose Studio",
             settings_file=settings_file,
             min_w=900,
             min_h=600,
@@ -633,10 +633,10 @@ class AsparagusPoseStudioApp(BaseCvApp):
         return False
 
     def setup(self):
-        log.info("芦笋位姿工作室 GUI 已启动: %s (%d 个样本)", self.sample_dir, len(self.samples))
+        log.info("顶层抓取位姿工作室 GUI 已启动: %s (%d 个样本)", self.sample_dir, len(self.samples))
 
     def cleanup(self):
-        log.info("芦笋位姿工作室 GUI 已安全退出")
+        log.info("顶层抓取位姿工作室 GUI 已安全退出")
 
     # ------------------------------ 渲染接口 ------------------------------
     def render(self) -> np.ndarray:
@@ -650,7 +650,7 @@ class AsparagusPoseStudioApp(BaseCvApp):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="芦笋位姿工作室 GUI (Asparagus Pose Studio)")
+    parser = argparse.ArgumentParser(description="顶层抓取位姿工作室 GUI (Topmost Pick Pose Studio)")
     parser.add_argument("--dir", type=str, default=None,
                         help="样本目录 (默认当前工位 production/raw_images/, 彩色 png + 可选对齐深度 npy)")
     args = parser.parse_args()

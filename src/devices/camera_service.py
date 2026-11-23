@@ -50,10 +50,14 @@ class CameraService:
 
         self.pipeline = None          # rs.pipeline (RealSense 后端)
         self.usb_capture = None       # cv2.VideoCapture (USB 后端)
+        self.align = None             # rs.align (启用深度流时对齐至彩色帧)
+        self.depth_scale_mm = 1.0     # RealSense 原始深度单位换算至毫米系数
+        self.depth_enabled = False
         self.is_running = False
         self.stream_desc = "未初始化"
         self.color_sensor = None      # rs.sensor 彩色传感器句柄 (曝光调控)
         self.last_valid_frame = None  # 最近一帧有效图像 (瞬时失败回退用)
+        self.last_valid_depth = None  # 最近一帧有效对齐深度图 (float32 mm)
 
     @staticmethod
     def probe_available_devices() -> dict:
@@ -79,11 +83,12 @@ class CameraService:
         return devices
 
     # ------------------------------ 启动 ------------------------------
-    def start_realsense(self, width, height, fps=30, serial=None, fallbacks=()) -> bool:
+    def start_realsense(self, width, height, fps=30, serial=None, fallbacks=(), enable_depth: bool = False) -> bool:
         """
-        启动 RealSense 彩色流。
+        启动 RealSense 彩色流（可选同时开启对齐深度流）。
         :param serial: 指定 RealSense 硬件序列号 (为 None 或空则使用首台可用设备)
         :param fallbacks: ((w, h, fps), ...) 逐级降级链, 主档失败后依次尝试
+        :param enable_depth: 是否同时开启对齐到彩色帧的深度流
         """
         if not HAVE_REALSENSE:
             raise RuntimeError("pyrealsense2 未安装, 请先安装 RealSense SDK")
@@ -95,6 +100,8 @@ class CameraService:
 
             last_err = None
             cur = (width, height, fps)
+            self.align = None
+            self.depth_enabled = False
             for w, h, f in ((width, height, fps),) + tuple(fallbacks):
                 try:
                     pipeline = rs.pipeline()
@@ -102,12 +109,21 @@ class CameraService:
                     if serial and str(serial).strip():
                         cfg.enable_device(str(serial).strip())
                     cfg.enable_stream(rs.stream.color, w, h, rs.format.bgr8, f)
-                    pipeline.start(cfg)
+                    if enable_depth:
+                        dw, dh = (min(w, 1280), min(h, 720))
+                        cfg.enable_stream(rs.stream.depth, dw, dh, rs.format.z16, f)
+                    profile = pipeline.start(cfg)
                     self.pipeline = pipeline
+                    if enable_depth:
+                        self.align = rs.align(rs.stream.color)
+                        depth_sensor = profile.get_device().first_depth_sensor()
+                        self.depth_scale_mm = float(depth_sensor.get_depth_scale()) * 1000.0
+                        self.depth_enabled = True
                     cur = (w, h, f)
                     dev_sn = f" (S/N: {serial})" if serial else ""
-                    self.stream_desc = f"{w}x{h} @ {f}fps{dev_sn}"
-                    log.info(f"[Camera] RealSense 彩色流: {w}x{h} @ {f}fps{dev_sn}")
+                    mode_tag = "RGB-D" if self.depth_enabled else "彩色流"
+                    self.stream_desc = f"{w}x{h} @ {f}fps {mode_tag}{dev_sn}"
+                    log.info(f"[Camera] RealSense {mode_tag}: {w}x{h} @ {f}fps{dev_sn}")
                     break
                 except Exception as e:
                     last_err = e
@@ -156,29 +172,45 @@ class CameraService:
                 pass
             self.usb_capture = None
         self.color_sensor = None
+        self.align = None
+        self.depth_enabled = False
+        self.last_valid_depth = None
         self.is_running = False
 
     # ------------------------------ 帧读取 ------------------------------
     def read_frame(self, timeout_ms: int = 1000):
         """读取一帧 BGR 图像; 瞬时失败回退最近有效帧; 未运行返回 None"""
+        bgr, _ = self.read_rgbd_frame(timeout_ms=timeout_ms)
+        return bgr
+
+    def read_rgbd_frame(self, timeout_ms: int = 1000) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """读取一帧对齐的 (BGR 彩色图, float32 毫米深度图); 未启用深度或 USB 时深度为 None"""
         if not self.is_running:
-            return None
+            return None, None
         try:
             if self.pipeline is not None:
                 frames = self.pipeline.wait_for_frames(timeout_ms=timeout_ms)
+                if self.align is not None:
+                    frames = self.align.process(frames)
                 color = frames.get_color_frame()
+                depth = frames.get_depth_frame() if self.depth_enabled else None
                 if color:
                     bgr = np.asanyarray(color.get_data())
                     self.last_valid_frame = bgr
-                    return bgr
+                    depth_mm = None
+                    if depth:
+                        raw_d = np.asanyarray(depth.get_data()).astype(np.float32)
+                        depth_mm = raw_d * float(self.depth_scale_mm)
+                        self.last_valid_depth = depth_mm
+                    return bgr, depth_mm
             elif self.usb_capture is not None:
                 ok, frame = self.usb_capture.read()
                 if ok:
                     self.last_valid_frame = frame
-                    return frame
+                    return frame, None
         except Exception:
             pass
-        return self.last_valid_frame
+        return self.last_valid_frame, self.last_valid_depth
 
     def adjust_exposure(self, delta_us: float) -> Tuple[bool, str]:
         """

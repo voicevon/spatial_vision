@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 1017,
-    "updated_at": "2026-10-05 20:27:58"
+    "updated_at": "2026-11-24 02:22:11"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -34,7 +34,7 @@
     "scale_pct": 110,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 20:31:53",
+    "updated_at": "2026-11-24 01:21:19",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
@@ -52,7 +52,7 @@
     "scale_pct": 100,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-04 20:32:36",
+    "updated_at": "2026-11-24 01:26:11",
     "viewer_state": {
       "purpose": "intrinsics"
     }
@@ -83,7 +83,7 @@
     "scale_pct": 120,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-10-01 21:36:41",
+    "updated_at": "2026-11-24 01:30:30",
     "studio_state": {
       "pipeline_key": "feng_green_axis_v2",
       "selected_sample_name": "view_0009.png",
