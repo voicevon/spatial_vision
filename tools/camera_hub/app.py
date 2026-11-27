@@ -11,6 +11,7 @@ Camera Hub 主控制器 (CameraHubApp)
 import argparse
 import os
 import sys
+import threading
 import time
 from typing import Optional
 import cv2
@@ -22,6 +23,12 @@ if PROJECT_ROOT not in sys.path:
 from src.calibration.solvers.camera_intrinsics_calibrator import (
     calibrate_camera_profile,
     detect_chessboard_corners,
+)
+from src.calibration.solvers.chessboard_guide import (
+    PoseAlignmentFeedback,
+    evaluate_alignment,
+    extract_detected_quad_norm,
+    project_guide_mesh,
 )
 from src.cameras.camera_entity import parse_resolution
 from src.cameras.camera_registry import CameraRegistry
@@ -64,7 +71,26 @@ class CameraHubApp(BaseCvApp):
         self.renderer = CameraHubRenderer(self.state)
         self._cam_srv = CameraService()
         self._last_detect_ts: float = 0.0
-        self._detect_interval_s: float = 0.22  # ~4.5 Hz 节流，保持预览流畅
+        self._detect_interval_s: float = 0.10  # ~10 Hz 保证自动抓拍进度环顺滑且防抖灵敏
+        self.sound_enabled: bool = True
+
+    def _play_beep_async(self, double_beep: bool = False):
+        """异步播放 Windows 原生提示音（不阻塞 OpenCV 主循环，非 Windows 静默）"""
+        if not self.sound_enabled or sys.platform != "win32":
+            return
+
+        def _worker():
+            try:
+                import winsound
+                if double_beep:
+                    winsound.Beep(1000, 90)
+                    winsound.Beep(1500, 140)
+                else:
+                    winsound.Beep(1200, 85)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     # ==================== 业务动作 ====================
     def probe_local_cameras(self) -> int:
@@ -177,9 +203,12 @@ class CameraHubApp(BaseCvApp):
         self.state.live_frame = None
         self.state.live_corners_found = False
         self.state.live_corners = None
+        self.state.last_feedback = None
+        self.state.prev_detected_quad_norm = None
+        self.state.reset_hold_timer()
         self.state.stream_desc = "相机未开启"
 
-    def capture_current_frame(self) -> str:
+    def capture_current_frame(self, auto_triggered: bool = False) -> str:
         cam = self.state.get_selected_camera()
         if cam is None:
             self.set_toast("请先选择相机")
@@ -192,10 +221,101 @@ class CameraHubApp(BaseCvApp):
         if not imwrite_unicode(out_path, self.state.live_frame):
             self.set_toast("保存棋盘格原图失败")
             return ""
-        self.state.flash_timer = time.time() + 0.12
+        self.state.flash_timer = time.time() + 0.14
+        self.state.session_captured_paths.append(out_path)
+        self.state.capture_cooldown_until = time.time() + 0.45
         self.state.refresh_profile_data()
-        self.set_toast(f"已抓拍: {os.path.basename(out_path)} (累计 {len(self.state.images)} 帧)")
+
+        pose = self.state.get_current_pose()
+        finished_all = self.state.advance_pose()
+        prefix = "自动抓拍" if auto_triggered else "手动抓拍"
+
+        if finished_all:
+            self._play_beep_async(double_beep=True)
+            self._stop_camera()
+            self.set_toast(f"全部 {len(self.state.guide_poses)} 个引导姿态采图完成，正在自动求解内参...")
+            self.run_calibration()
+        else:
+            self._play_beep_async(double_beep=False)
+            next_pose = self.state.get_current_pose()
+            self.set_toast(
+                f"{prefix}成功 ({pose.title}): {os.path.basename(out_path)} | 下一姿态: {next_pose.title}"
+            )
         return out_path
+
+    def undo_last_capture(self) -> bool:
+        """撤销本次引导会话最近抓拍的一张照片并回退一个姿态"""
+        cam = self.state.get_selected_camera()
+        if cam is None or not self.state.session_captured_paths:
+            self.set_toast("本次会话暂无可撤销的抓拍记录")
+            return False
+        last_path = self.state.session_captured_paths.pop()
+        cam.delete_image(self.state.selected_resolution, last_path)
+        self.state.invalidate_thumb(last_path)
+        self.state.current_pose_idx = max(0, self.state.current_pose_idx - 1)
+        self.state.reset_hold_timer()
+        self.state.prev_detected_quad_norm = None
+        self.state.refresh_profile_data()
+        self.set_toast(f"已撤销抓拍: {os.path.basename(last_path)}，回退至步骤 {self.state.current_pose_idx + 1}")
+        return True
+
+    def process_live_frame_for_auto_capture(self, frame, now: Optional[float] = None) -> PoseAlignmentFeedback:
+        """对当前预览帧执行棋盘格检测、3D 引导框对准评估与 0.7s 稳定自动抓拍驱动"""
+        now_ts = time.time() if now is None else float(now)
+        self.state.live_frame = frame
+        fh, fw = frame.shape[:2]
+        viewport_aspect = float(fw) / float(max(1, fh))
+
+        pose = self.state.get_current_pose()
+        mesh = project_guide_mesh(pose, self.state.pattern_size, viewport_aspect=viewport_aspect)
+
+        found, corners = detect_chessboard_corners(frame, self.state.pattern_size)
+        self.state.live_corners_found = found
+        self.state.live_corners = corners
+
+        if not found or corners is None:
+            fb = PoseAlignmentFeedback(
+                detected=False, aligned=False, stable=False, match_score=0.0,
+                guidance_text=f"{pose.instruction}（请将棋盘格完整置于画面内）",
+            )
+            self.state.last_feedback = fb
+            self.state.prev_detected_quad_norm = None
+            self.state.reset_hold_timer()
+            return fb
+
+        det_quad, det_corners = extract_detected_quad_norm(corners, self.state.pattern_size, fw, fh)
+        # 前置摄像头镜像预览模式：将检测角点水平镜像至预览坐标系以对齐 3D 引导与方向提示
+        # （落盘原图仍保持 self.state.live_frame 未翻转的传感器真实帧）
+        if self.state.is_mirror_preview and det_quad:
+            det_quad = [(1.0 - x, y) for x, y in det_quad]
+            det_corners = [(1.0 - x, y) for x, y in det_corners]
+
+        fb = evaluate_alignment(
+            detected_quad_norm=det_quad,
+            target_quad_norm=mesh.outer_quad,
+            detected_corners_norm=det_corners,
+            prev_quad_norm=self.state.prev_detected_quad_norm,
+        )
+        self.state.last_feedback = fb
+        self.state.prev_detected_quad_norm = det_quad
+
+        # 自动抓拍稳定保持计时器
+        if (
+            self.state.auto_capture_enabled
+            and fb.aligned
+            and fb.stable
+            and now_ts >= self.state.capture_cooldown_until
+        ):
+            if self.state.aligned_since_ts <= 0.0:
+                self.state.aligned_since_ts = now_ts
+            elapsed = now_ts - self.state.aligned_since_ts
+            self.state.hold_progress = min(1.0, max(0.0, elapsed / max(0.05, self.state.hold_duration_s)))
+            if elapsed >= self.state.hold_duration_s:
+                self.capture_current_frame(auto_triggered=True)
+        else:
+            self.state.reset_hold_timer()
+
+        return fb
 
     def run_calibration(self):
         cam = self.state.get_selected_camera()
@@ -262,9 +382,7 @@ class CameraHubApp(BaseCvApp):
                 now = time.time()
                 if now - self._last_detect_ts >= self._detect_interval_s:
                     self._last_detect_ts = now
-                    found, corners = detect_chessboard_corners(frame, self.state.pattern_size)
-                    self.state.live_corners_found = found
-                    self.state.live_corners = corners
+                    self.process_live_frame_for_auto_capture(frame, now=now)
 
         cw = self.win_mgr.canvas_w
         ch = self.win_mgr.canvas_h
@@ -315,8 +433,25 @@ class CameraHubApp(BaseCvApp):
             self.state.adjust_pattern(d_square_mm=1.0)
         elif btn_id == "btn_toggle_cam":
             self._toggle_camera()
+        elif btn_id == "btn_toggle_auto":
+            self.state.auto_capture_enabled = not self.state.auto_capture_enabled
+            self.state.reset_hold_timer()
+            self.set_toast(f"自动抓拍已{'开启' if self.state.auto_capture_enabled else '关闭'}")
+        elif btn_id == "btn_toggle_facing":
+            new_facing = self.state.toggle_camera_facing()
+            desc = "前置摄像头（左右镜像预览，保存真实原图）" if new_facing == "front" else "后置摄像头（正常预览）"
+            self.set_toast(f"已切换为: {desc}")
+        elif btn_id == "btn_skip_pose":
+            self.state.skip_pose()
+            p = self.state.get_current_pose()
+            self.set_toast(f"已跳过，当前引导步骤 {self.state.current_pose_idx + 1}/{len(self.state.guide_poses)}: {p.title}")
+        elif btn_id == "btn_undo_capture":
+            self.undo_last_capture()
+        elif btn_id == "btn_reset_guide":
+            self.state.reset_guide_session()
+            self.set_toast("引导姿态进度已重置为第 1 步")
         elif btn_id == "btn_capture":
-            self.capture_current_frame()
+            self.capture_current_frame(auto_triggered=False)
         elif btn_id == "btn_solve":
             self.run_calibration()
         elif btn_id == "btn_prune_bad":
@@ -330,7 +465,17 @@ class CameraHubApp(BaseCvApp):
         if key in (27, ord("q"), ord("Q")):
             self.stop()
         elif key == 32 and self.state.active_mode == CameraHubState.MODE_LIVE:
-            self.capture_current_frame()
+            self.capture_current_frame(auto_triggered=False)
+        elif key in (ord("n"), ord("N")) and self.state.active_mode == CameraHubState.MODE_LIVE:
+            self.state.skip_pose()
+            p = self.state.get_current_pose()
+            self.set_toast(f"已跳过至步骤 {self.state.current_pose_idx + 1}/{len(self.state.guide_poses)}: {p.title}")
+        elif key in (ord("z"), ord("Z")) and self.state.active_mode == CameraHubState.MODE_LIVE:
+            self.undo_last_capture()
+        elif key in (ord("m"), ord("M")) and self.state.active_mode == CameraHubState.MODE_LIVE:
+            new_facing = self.state.toggle_camera_facing()
+            desc = "前置（左右镜像预览）" if new_facing == "front" else "后置（正常预览）"
+            self.set_toast(f"已切换为: {desc}")
         elif key in (ord("b"), ord("B")):
             self.run_calibration()
         elif key in (127, 8, 3014656):  # Del / Backspace

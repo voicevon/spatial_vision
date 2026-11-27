@@ -133,11 +133,16 @@ class CameraProfile:
     name: str                      # 友好别名 (如 产线1号D435)
     camera_dir: str                # 物理目录 data/cameras/<camera_id>
     camera_type: str = "realsense" # 'realsense' | 'usb' (未来预留 'net_camera')
+    facing: str = "rear"           # 'rear' (后置正常) | 'front' (前置左右镜像预览)
     hardware_serial: str = ""      # RealSense 硬件序列号或未来设备唯一标识
     usb_index: Optional[int] = None
     description: str = ""
     created_at: str = ""
     updated_at: str = ""
+
+    @property
+    def is_front_facing(self) -> bool:
+        return str(self.facing).strip().lower() == "front"
 
     @property
     def meta_path(self) -> str:
@@ -253,6 +258,7 @@ class CameraProfile:
             "camera_id": self.camera_id,
             "name": self.name,
             "camera_type": self.camera_type,
+            "facing": "front" if self.is_front_facing else "rear",
             "hardware_serial": self.hardware_serial,
             "usb_index": self.usb_index,
             "description": self.description,
@@ -288,6 +294,7 @@ class CameraProfile:
                 name=str(data.get("name") or cam_id),
                 camera_dir=os.path.abspath(camera_dir),
                 camera_type=str(data.get("camera_type") or "realsense"),
+                facing="front" if str(data.get("facing") or "rear").strip().lower() == "front" else "rear",
                 hardware_serial=str(data.get("hardware_serial") or ""),
                 usb_index=data.get("usb_index"),
                 description=str(data.get("description") or ""),

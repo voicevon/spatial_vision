@@ -14,9 +14,37 @@ from typing import Any, List, Tuple
 import cv2
 import numpy as np
 
+from src.calibration.solvers.chessboard_guide import project_guide_mesh
 from src.ui.gui_theme import GuiTheme
 from src.utils.text_rendering import draw_text
 from tools.camera_hub.state import CameraHubState
+
+
+def _draw_dashed_line(
+    canvas: np.ndarray,
+    pt1: Tuple[int, int],
+    pt2: Tuple[int, int],
+    color: Tuple[int, int, int],
+    thickness: int = 2,
+    dash_len: int = 12,
+    gap_len: int = 8,
+):
+    """在 OpenCV 画布上绘制虚线（用于标识 3D 引导框的远边）"""
+    x1, y1 = pt1
+    x2, y2 = pt2
+    dist = float(np.hypot(x2 - x1, y2 - y1))
+    if dist < 1.0:
+        return
+    dx = (x2 - x1) / dist
+    dy = (y2 - y1) / dist
+    pos = 0.0
+    step = float(dash_len + gap_len)
+    while pos < dist:
+        end_pos = min(dist, pos + dash_len)
+        p_start = (int(round(x1 + dx * pos)), int(round(y1 + dy * pos)))
+        p_end = (int(round(x1 + dx * end_pos)), int(round(y1 + dy * end_pos)))
+        cv2.line(canvas, p_start, p_end, color, thickness, cv2.LINE_AA)
+        pos += step
 
 
 class CameraHubRenderer:
@@ -130,8 +158,9 @@ class CameraHubRenderer:
             cv2.rectangle(canvas, (rect[0], rect[1]), (rect[0] + rect[2], rect[1] + rect[3]), border, 1)
 
             dot_col = GuiTheme.OK if is_online else GuiTheme.TEXT_MUTED
+            facing_tag = "前置" if cam.is_front_facing else "后置"
             draw_text(canvas, f"● {cam.name}", (22, cy + 8), font_size=13, color=GuiTheme.TEXT if is_sel else GuiTheme.TEXT_SUB, bold=is_sel)
-            draw_text(canvas, f"ID: {cam.camera_id} · {cam.camera_type}", (22, cy + 28), font_size=11, color=GuiTheme.TEXT_MUTED)
+            draw_text(canvas, f"ID: {cam.camera_id} · {cam.camera_type} · {facing_tag}", (22, cy + 28), font_size=11, color=GuiTheme.TEXT_MUTED)
 
             # 显示当前分辨率是否已标定
             rec = cam.load_intrinsics(self.state.selected_resolution)
@@ -210,52 +239,221 @@ class CameraHubRenderer:
 
     def _render_live_mode(self, canvas: np.ndarray, x0: int, y0: int, w: int, h: int, mpos: Tuple[int, int]):
         ctrl_h = 42
+        is_front = self.state.is_mirror_preview
         self._btn(
-            canvas, "btn_toggle_cam", (x0, y0, 130, 34),
-            "关闭相机" if self.state.pipeline_running else "开启相机预览",
+            canvas, "btn_toggle_cam", (x0, y0, 108, 34),
+            "关闭相机" if self.state.pipeline_running else "开启预览",
             mpos, accent=GuiTheme.ERR if self.state.pipeline_running else GuiTheme.OK,
             active=self.state.pipeline_running,
         )
         self._btn(
-            canvas, "btn_capture", (x0 + 140, y0, 160, 34),
-            f"抓拍棋盘格 [Space] ({len(self.state.images)})",
-            mpos, accent=GuiTheme.ACCENT,
+            canvas, "btn_toggle_facing", (x0 + 114, y0, 108, 34),
+            "前置:镜像 [M]" if is_front else "后置:正常 [M]",
+            mpos, accent=GuiTheme.ACCENT if is_front else GuiTheme.TEXT_SUB,
+            active=is_front, font_size=11,
         )
         self._btn(
-            canvas, "btn_solve", (x0 + 310, y0, 140, 34),
-            "立即标定求解", mpos, accent=GuiTheme.GOLD,
+            canvas, "btn_toggle_auto", (x0 + 228, y0, 104, 34),
+            f"自动抓拍:{'开' if self.state.auto_capture_enabled else '关'}",
+            mpos, accent=GuiTheme.OK if self.state.auto_capture_enabled else GuiTheme.TEXT_MUTED,
+            active=self.state.auto_capture_enabled, font_size=11,
         )
-        status_txt = (
-            "● 已锁定棋盘格角点，可按 [空格] 抓拍"
-            if (self.state.pipeline_running and self.state.live_corners_found)
-            else ("○ 预览中 — 请将棋盘格完整置于画面内" if self.state.pipeline_running else self.state.stream_desc)
+        self._btn(
+            canvas, "btn_capture", (x0 + 338, y0, 112, 34),
+            f"抓拍 ({len(self.state.images)})",
+            mpos, accent=GuiTheme.ACCENT, font_size=11,
         )
-        status_col = GuiTheme.OK if (self.state.pipeline_running and self.state.live_corners_found) else GuiTheme.TEXT_SUB
-        draw_text(canvas, status_txt, (x0 + 464, y0 + 10), font_size=12, color=status_col)
+        self._btn(canvas, "btn_skip_pose", (x0 + 456, y0, 68, 34), "跳过 [N]", mpos, accent=GuiTheme.TEXT_SUB, font_size=11)
+        self._btn(canvas, "btn_undo_capture", (x0 + 530, y0, 68, 34), "撤销 [Z]", mpos, accent=GuiTheme.WARN, font_size=11)
+        self._btn(canvas, "btn_reset_guide", (x0 + 604, y0, 50, 34), "重置", mpos, accent=GuiTheme.TEXT_SUB, font_size=11)
+        self._btn(canvas, "btn_solve", (x0 + w - 118, y0, 118, 34), "立即标定求解", mpos, accent=GuiTheme.GOLD, font_size=11)
 
         # 视频视口
         vx, vy, vw, vh = x0, y0 + ctrl_h, w, h - ctrl_h
         cv2.rectangle(canvas, (vx, vy), (vx + vw, vy + vh), (12, 15, 20), -1)
-        border_col = GuiTheme.OK if (self.state.pipeline_running and self.state.live_corners_found) else GuiTheme.BORDER
-        cv2.rectangle(canvas, (vx, vy), (vx + vw, vy + vh), border_col, 2 if self.state.live_corners_found else 1)
+
+        fb = self.state.last_feedback
+        is_aligned = bool(fb and fb.aligned)
+        border_col = GuiTheme.OK if (self.state.pipeline_running and is_aligned) else GuiTheme.BORDER
+        cv2.rectangle(canvas, (vx, vy), (vx + vw, vy + vh), border_col, 2 if is_aligned else 1)
 
         if self.state.live_frame is not None and self.state.pipeline_running:
-            frame = self.state.live_frame.copy()
-            if self.state.live_corners_found and self.state.live_corners is not None:
-                cv2.drawChessboardCorners(frame, self.state.pattern_size, self.state.live_corners, True)
-            fh, fw = frame.shape[:2]
+            frame = self.state.live_frame
+            display_frame = cv2.flip(frame, 1) if self.state.is_mirror_preview else frame
+            fh, fw = display_frame.shape[:2]
             scale = min((vw - 4) / max(1, fw), (vh - 4) / max(1, fh))
             dw, dh = max(1, int(fw * scale)), max(1, int(fh * scale))
-            resized = cv2.resize(frame, (dw, dh), interpolation=cv2.INTER_AREA)
+            resized = cv2.resize(display_frame, (dw, dh), interpolation=cv2.INTER_AREA)
             ox = vx + (vw - dw) // 2
             oy = vy + (vh - dh) // 2
             canvas[oy:oy + dh, ox:ox + dw] = resized
+
+            # 叠加 flux_android 风格 3D 透视引导轮廓与稳定保持进度环
+            self._render_3d_guide_overlay(canvas, ox, oy, dw, dh, float(fw) / float(max(1, fh)))
+
+            # 顶部半透明引导横幅（步骤、姿态标题、倾角提示、实时方向指引与进度条）
+            self._render_guide_banner(canvas, vx + 4, vy + 4, vw - 8)
+
+            # 快门白闪反馈
             if time.time() < self.state.flash_timer:
                 overlay = np.full((dh, dw, 3), 255, dtype=np.uint8)
                 canvas[oy:oy + dh, ox:ox + dw] = cv2.addWeighted(canvas[oy:oy + dh, ox:ox + dw], 0.45, overlay, 0.55, 0)
         else:
-            draw_text(canvas, "点击左上 [开启相机预览]，对准棋盘格从多角度采集 12~25 张照片",
-                      (vx + max(20, vw // 2 - 250), vy + vh // 2 - 10), font_size=15, color=GuiTheme.TEXT_MUTED)
+            pose = self.state.get_current_pose()
+            draw_text(
+                canvas,
+                f"点击左上 [开启相机预览] — 3D 透视引导共 {len(self.state.guide_poses)} 个姿态（当前: {pose.title}）",
+                (vx + max(20, vw // 2 - 290), vy + vh // 2 - 22), font_size=15, color=GuiTheme.TEXT_SUB,
+            )
+            draw_text(
+                canvas,
+                "开启自动抓拍后，只需将棋盘格对准画面中的 3D 轮廓并稳住 0.7 秒即可自动抓拍保存",
+                (vx + max(20, vw // 2 - 300), vy + vh // 2 + 8), font_size=13, color=GuiTheme.TEXT_MUTED,
+            )
+
+    def _render_3d_guide_overlay(
+        self,
+        canvas: np.ndarray,
+        ox: int,
+        oy: int,
+        dw: int,
+        dh: int,
+        viewport_aspect: float,
+    ):
+        """绘制 3D 投影目标棋盘格轮廓、近/远边深度编码、实时角点与中心自动抓拍进度环"""
+        pose = self.state.get_current_pose()
+        fb = self.state.last_feedback
+        mesh = project_guide_mesh(pose, self.state.pattern_size, viewport_aspect=viewport_aspect)
+
+        def to_px(pt: Tuple[float, float]) -> Tuple[int, int]:
+            return (int(round(ox + pt[0] * dw)), int(round(oy + pt[1] * dh)))
+
+        # BGR 颜色语义：绿=已对准，黄=已检出待微调，青=搜寻中
+        if fb and fb.aligned:
+            guide_col = (94, 197, 34)    # #22C55E
+        elif fb and fb.detected:
+            guide_col = (21, 204, 250)   # #FACC15
+        else:
+            guide_col = (248, 189, 56)   # #38BDF8
+
+        quad_px = [to_px(p) for p in mesh.outer_quad]
+
+        # 1. 半透明目标多边形填充
+        if len(quad_px) == 4:
+            overlay = canvas.copy()
+            poly = np.array(quad_px, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.fillPoly(overlay, [poly], guide_col)
+            alpha = 0.22 if (fb and fb.aligned) else 0.12
+            cv2.addWeighted(overlay, alpha, canvas, 1.0 - alpha, 0, canvas)
+
+        # 2. 内部 3D 透视网格线
+        grid_col = (int(guide_col[0] * 0.75), int(guide_col[1] * 0.75), int(guide_col[2] * 0.75))
+        for a, b in mesh.grid_lines:
+            cv2.line(canvas, to_px(a), to_px(b), grid_col, 1, cv2.LINE_AA)
+
+        # 3. 深度编码外框边（近边粗实线，远边虚线）
+        is_tilted = (abs(pose.pitch_deg) > 4.0 or abs(pose.yaw_deg) > 4.0)
+        min_z = min(mesh.corner_depths) if mesh.corner_depths else 2.6
+        max_z = max(mesh.corner_depths) if mesh.corner_depths else 2.6
+        z_span = max(1e-4, max_z - min_z)
+
+        closest_edge, closest_z = -1, float("inf")
+        farthest_edge, farthest_z = -1, -float("inf")
+        for i in range(4):
+            nxt = (i + 1) % 4
+            avg_z = 0.5 * (mesh.corner_depths[i] + mesh.corner_depths[nxt])
+            if avg_z < closest_z:
+                closest_z, closest_edge = avg_z, i
+            if avg_z > farthest_z:
+                farthest_z, farthest_edge = avg_z, i
+
+        for i in range(4):
+            nxt = (i + 1) % 4
+            avg_z = 0.5 * (mesh.corner_depths[i] + mesh.corner_depths[nxt])
+            depth_norm = max(0.0, min(1.0, (avg_z - min_z) / z_span)) if is_tilted else 0.5
+            is_far = is_tilted and (depth_norm > 0.65)
+            thick = max(2, int(round(5.0 - depth_norm * 3.0))) if is_tilted else 3
+            if is_far:
+                _draw_dashed_line(canvas, quad_px[i], quad_px[nxt], guide_col, thickness=thick)
+            else:
+                cv2.line(canvas, quad_px[i], quad_px[nxt], guide_col, thick, cv2.LINE_AA)
+
+        # 4. 四角锚点圆
+        for p in quad_px:
+            cv2.circle(canvas, p, 6, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(canvas, p, 4, guide_col, -1, cv2.LINE_AA)
+
+        # 5. 倾斜姿态近边/远边中文标签
+        if is_tilted and closest_edge >= 0 and farthest_edge >= 0:
+            na, nb = quad_px[closest_edge], quad_px[(closest_edge + 1) % 4]
+            fa, fb_pt = quad_px[farthest_edge], quad_px[(farthest_edge + 1) % 4]
+            near_mid = ((na[0] + nb[0]) // 2 - 14, (na[1] + nb[1]) // 2 - 10)
+            far_mid = ((fa[0] + fb_pt[0]) // 2 - 14, (fa[1] + fb_pt[1]) // 2 - 10)
+            draw_text(canvas, "近边", near_mid, font_size=13, color=(255, 255, 255), bold=True)
+            draw_text(canvas, "远边", far_mid, font_size=13, color=(220, 230, 240), bold=True)
+
+        # 6. 实时检测到的棋盘格外框与角点
+        if fb and fb.detected and len(fb.detected_quad_norm) == 4:
+            det_px = [to_px(p) for p in fb.detected_quad_norm]
+            det_col = (128, 222, 74) if fb.aligned else (71, 224, 253)
+            poly_det = np.array(det_px, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(canvas, [poly_det], True, det_col, 2, cv2.LINE_AA)
+            for pt in fb.detected_corners_norm:
+                cv2.circle(canvas, to_px(pt), 3, det_col, -1, cv2.LINE_AA)
+
+        # 7. 目标中心锚点与自动抓拍稳定保持进度环
+        center_px = to_px((pose.center_x, pose.center_y))
+        cv2.circle(canvas, center_px, 6, guide_col, 2, cv2.LINE_AA)
+        if self.state.hold_progress > 0.01:
+            sweep = 360.0 * min(1.0, max(0.0, self.state.hold_progress))
+            cv2.ellipse(
+                canvas,
+                center_px,
+                (28, 28),
+                0.0,
+                -90.0,
+                -90.0 + sweep,
+                (94, 197, 34),
+                5,
+                cv2.LINE_AA,
+            )
+
+    def _render_guide_banner(self, canvas: np.ndarray, bx: int, by: int, bw: int):
+        """视口顶部半透明引导横幅：步骤进度、姿态名称、倾角说明与实时方向指引"""
+        bh = 56
+        overlay = canvas.copy()
+        cv2.rectangle(overlay, (bx, by), (bx + bw, by + bh), (18, 24, 34), -1)
+        cv2.addWeighted(overlay, 0.78, canvas, 0.22, 0, canvas)
+
+        pose = self.state.get_current_pose()
+        total = len(self.state.guide_poses)
+        step_txt = f"步骤 {self.state.current_pose_idx + 1}/{total} · {pose.title}  [{pose.tilt_hint}]"
+        draw_text(canvas, step_txt, (bx + 12, by + 6), font_size=13, color=GuiTheme.TEXT, bold=True)
+
+        fb = self.state.last_feedback
+        guide_msg = fb.guidance_text if fb else pose.instruction
+        if fb and fb.aligned and fb.stable:
+            msg_col = GuiTheme.OK
+        elif fb and fb.detected:
+            msg_col = GuiTheme.GOLD
+        else:
+            msg_col = GuiTheme.ACCENT
+        draw_text(canvas, guide_msg, (bx + 12, by + 28), font_size=13, color=msg_col, bold=True)
+
+        # 右侧进度条
+        bar_w = 180
+        bar_x = bx + bw - bar_w - 14
+        bar_y = by + 22
+        cv2.rectangle(canvas, (bar_x, bar_y), (bar_x + bar_w, bar_y + 10), (40, 48, 62), -1)
+        prog = float(self.state.current_pose_idx) / float(max(1, total))
+        fill_w = int(round(bar_w * min(1.0, max(0.0, prog))))
+        if fill_w > 0:
+            cv2.rectangle(canvas, (bar_x, bar_y), (bar_x + fill_w, bar_y + 10), GuiTheme.OK, -1)
+        draw_text(
+            canvas,
+            f"会话已拍 {len(self.state.session_captured_paths)}/{total}",
+            (bar_x, by + 4), font_size=11, color=GuiTheme.TEXT_SUB,
+        )
 
     def _render_gallery_mode(self, canvas: np.ndarray, x0: int, y0: int, w: int, h: int, mpos: Tuple[int, int]):
         # 顶部内参指标卡 + 操作按钮
@@ -338,5 +536,5 @@ class CameraHubRenderer:
         fy = ch - self.FOOTER_H
         cv2.rectangle(canvas, (0, fy), (cw, ch), GuiTheme.CARD_BG, -1)
         cv2.line(canvas, (0, fy), (cw, fy), GuiTheme.BORDER, 1)
-        tip = toast_msg or "[Space] 抓拍  |  [B] 标定求解  |  [Del] 删帧  |  [滚轮] 翻页  |  [ESC] 退出"
+        tip = toast_msg or "[自动抓拍] 对准 3D 轮廓稳住 0.7s 自动保存  |  [Space] 手动抓拍  |  [N] 跳过  |  [Z] 撤销  |  [B] 求解  |  [ESC] 退出"
         draw_text(canvas, tip, (14, fy + 10), font_size=12, color=GuiTheme.TEXT_SUB)

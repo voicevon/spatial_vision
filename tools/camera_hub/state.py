@@ -12,6 +12,11 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from src.calibration.solvers.chessboard_guide import (
+    GuidePose,
+    PoseAlignmentFeedback,
+    default_guide_poses,
+)
 from src.cameras.camera_entity import CameraProfile, IntrinsicsRecord, parse_resolution
 from src.cameras.camera_registry import CameraRegistry
 from src.utils.image_io import imread_unicode
@@ -51,13 +56,24 @@ class CameraHubState:
         # 在线探测标记 (camera_id -> True)
         self.online_camera_ids: set[str] = set()
 
-        # 实时预览与角点检测缓存
+        # 实时预览与 3D 引导自动抓拍状态
         self.pipeline_running: bool = False
         self.stream_desc: str = "相机未开启"
         self.live_frame: Optional[np.ndarray] = None
         self.live_corners_found: bool = False
         self.live_corners: Optional[np.ndarray] = None
         self.flash_timer: float = 0.0
+
+        self.guide_poses: List[GuidePose] = default_guide_poses()
+        self.current_pose_idx: int = 0
+        self.auto_capture_enabled: bool = True
+        self.hold_duration_s: float = 0.7
+        self.aligned_since_ts: float = 0.0
+        self.hold_progress: float = 0.0
+        self.last_feedback: Optional[PoseAlignmentFeedback] = None
+        self.prev_detected_quad_norm: Optional[List[Tuple[float, float]]] = None
+        self.session_captured_paths: List[str] = []
+        self.capture_cooldown_until: float = 0.0
 
         # 缩略图 LRU 缓存
         self._thumb_cache: OrderedDict[str, np.ndarray] = OrderedDict()
@@ -68,6 +84,52 @@ class CameraHubState:
     @property
     def pattern_size(self) -> Tuple[int, int]:
         return (self.pattern_cols, self.pattern_rows)
+
+    @property
+    def is_mirror_preview(self) -> bool:
+        cam = self.get_selected_camera()
+        return bool(cam and cam.is_front_facing)
+
+    def toggle_camera_facing(self) -> str:
+        """切换当前选中相机的前置/后置属性并持久化到 camera_meta.yaml"""
+        cam = self.get_selected_camera()
+        if cam is None:
+            return "rear"
+        cam.facing = "rear" if cam.is_front_facing else "front"
+        cam.save_meta()
+        self.prev_detected_quad_norm = None
+        self.reset_hold_timer()
+        return cam.facing
+
+    def get_current_pose(self) -> GuidePose:
+        idx = max(0, min(self.current_pose_idx, len(self.guide_poses) - 1))
+        return self.guide_poses[idx]
+
+    def reset_hold_timer(self):
+        self.aligned_since_ts = 0.0
+        self.hold_progress = 0.0
+
+    def reset_guide_session(self):
+        self.current_pose_idx = 0
+        self.session_captured_paths.clear()
+        self.last_feedback = None
+        self.prev_detected_quad_norm = None
+        self.capture_cooldown_until = 0.0
+        self.reset_hold_timer()
+
+    def advance_pose(self) -> bool:
+        """推进到下一个引导姿态；若已完成全部姿态返回 True"""
+        self.reset_hold_timer()
+        self.prev_detected_quad_norm = None
+        if self.current_pose_idx + 1 >= len(self.guide_poses):
+            return True
+        self.current_pose_idx += 1
+        return False
+
+    def skip_pose(self):
+        self.reset_hold_timer()
+        self.prev_detected_quad_norm = None
+        self.current_pose_idx = (self.current_pose_idx + 1) % len(self.guide_poses)
 
     def get_selected_camera(self) -> Optional[CameraProfile]:
         for c in self.cameras:

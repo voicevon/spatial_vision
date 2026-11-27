@@ -7,7 +7,7 @@
     "scale_pct": 100,
     "canvas_w": 1111,
     "canvas_h": 696,
-    "updated_at": "2026-11-27 09:08:04"
+    "updated_at": "2026-11-27 09:36:03"
   },
   "robot_online_tracker": {
     "scale_pct": 100,
@@ -34,7 +34,7 @@
     "scale_pct": 110,
     "canvas_w": 1920,
     "canvas_h": 1017,
-    "updated_at": "2026-11-26 21:46:19",
+    "updated_at": "2026-11-27 09:31:05",
     "hub_state": {
       "selected_workspace_id": "20260927_222851_TestStation",
       "selected_workspace_name": "TestStation",
@@ -194,8 +194,8 @@
   },
   "camera_hub": {
     "scale_pct": 100,
-    "canvas_w": 1366,
-    "canvas_h": 705,
-    "updated_at": "2026-11-27 09:08:15"
+    "canvas_w": 1920,
+    "canvas_h": 1017,
+    "updated_at": "2026-11-27 09:45:14"
   }
 }
