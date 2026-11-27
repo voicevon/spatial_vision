@@ -14,6 +14,7 @@ import json
 import time
 from typing import Optional
 
+from src.cameras.camera_registry import CameraRegistry
 from src.workspace.workspace_manager import WorkspaceManager, Workspace
 from src.utils.logger import get_logger
 from src.ui.gui_components import TabBar, TabItem
@@ -32,12 +33,11 @@ APP_ID = "workspace_hub"
 class HubState:
     """工作空间中枢 (Workspace Hub) 核心状态机"""
 
-    # 1. 工位宏观视图页签 (选中工位根节点时激活: 遵循 工位 -> 内参 -> 三组图集 的树形层次)
-    TAB_REPORT = "tab_report"                       # 大盘看板 (体检报告/全局拓扑)
-    TAB_INTRINSICS_IMAGES = "tab_intrinsics_images" # 相机内参 (棋盘格/圆形网格内参标定图集)
-    TAB_CALIB_IMAGES = "tab_calib_images"           # 外参建图 (AprilTag 空间建图图集)
-    TAB_PROD_IMAGES = "tab_prod_images"             # 生产图集 (生产采样与工件质检图集)
-    WS_TAB_ORDER = (TAB_REPORT, TAB_INTRINSICS_IMAGES, TAB_CALIB_IMAGES, TAB_PROD_IMAGES)
+    # 1. 工位宏观视图页签 (选中工位根节点时激活: 大盘看板 / 外参建图 / 生产图集)
+    TAB_REPORT = "tab_report"             # 大盘看板 (体检报告/全局拓扑/绑定相机)
+    TAB_CALIB_IMAGES = "tab_calib_images" # 外参建图 (AprilTag 空间建图图集)
+    TAB_PROD_IMAGES = "tab_prod_images"   # 生产图集 (生产采样与工件质检图集)
+    WS_TAB_ORDER = (TAB_REPORT, TAB_CALIB_IMAGES, TAB_PROD_IMAGES)
 
     # 2. 坐标系微观视图页签 (选中坐标系子节点时激活)
     TAB_FRAME_POSE_TAGS = "tab_frame_pose_tags" # 机构位姿与 10-Slot Tag 标靶
@@ -59,8 +59,9 @@ class HubState:
         ("none", "通用标定观察工位", "general_viewer"),
     ]
 
-    def __init__(self, workspace_mgr: WorkspaceManager = None):
+    def __init__(self, workspace_mgr: WorkspaceManager = None, camera_registry: CameraRegistry = None):
         self.workspace_mgr = workspace_mgr or WorkspaceManager()
+        self.camera_registry = camera_registry or CameraRegistry()
 
         self.workspaces: list[Workspace] = []
         self.selected_workspace_idx = 0
@@ -153,15 +154,12 @@ class HubState:
             self.selected_workspace_idx = idx
             self.active_dropdown = None
             self.save_selected_workspace()
-            self.gallery.selected_intrinsics_image_idx = 0
-            self.gallery.intrinsics_grid_offset = 0
             self.gallery.selected_calib_image_idx = 0
             self.gallery.calib_grid_offset = 0
             self.gallery.selected_prod_image_idx = 0
             self.gallery.prod_grid_offset = 0
             self.geometry.roi_scroll_offset = 0
             self.geometry.load_geometry_managers()
-            self.gallery.load_intrinsics_images()
             self.gallery.load_calib_images()
             self.gallery.load_prod_images()
             self.whitelist.refresh_whitelist_cache()
@@ -221,7 +219,6 @@ class HubState:
         else:
             tabs = [
                 TabItem(key=self.TAB_REPORT, label="大盘看板"),
-                TabItem(key=self.TAB_INTRINSICS_IMAGES, label="相机&内参"),
                 TabItem(key=self.TAB_CALIB_IMAGES, label="外参建图"),
                 TabItem(key=self.TAB_PROD_IMAGES, label="生产图集", badge="★"),
             ]
@@ -367,3 +364,29 @@ class HubState:
         next_mode = self.PRODUCTION_MODES[next_idx][0]
         self.set_workspace_production_mode(next_mode)
         return next_mode
+
+    def set_workspace_camera_binding(self, camera_id: str) -> bool:
+        """将当前工位绑定至全局相机库中的指定相机档案 (硬件已锁定时拒绝修改)"""
+        ws = self.get_selected_workspace()
+        if not ws:
+            return False
+        if ws.is_hardware_locked:
+            self.set_toast(f"工位【{ws.name}】已锁定硬件配置 (已有 {ws.total_image_count} 帧照片保护)，禁止更换相机！")
+            return False
+        if not camera_id:
+            ws.camera_id = ""
+            ws.save_meta()
+            self.set_toast(f"工位【{ws.name}】已解除全局相机绑定")
+            return True
+        cam = self.camera_registry.get_camera(camera_id)
+        if cam is None:
+            self.set_toast(f"未在全局相机库中找到相机: {camera_id}")
+            return False
+        ws.camera_id = cam.camera_id
+        ws.camera_type = cam.camera_type
+        ws.camera_serial = cam.hardware_serial if cam.camera_type == "realsense" else (
+            str(cam.usb_index) if cam.usb_index is not None else ""
+        )
+        ws.save_meta()
+        self.set_toast(f"工位【{ws.name}】已绑定全局相机: {cam.name} ({cam.camera_id})")
+        return True

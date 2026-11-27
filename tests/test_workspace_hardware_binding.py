@@ -124,11 +124,12 @@ class TestWorkspaceHardwareBinding(unittest.TestCase):
         cur_ws = app.state.get_selected_workspace()
         self.assertIsNotNone(cur_ws)
 
-        # 1. 模拟向工位写入一张测试照片，使其处于锁定状态
+        # 1. 模拟向工位写入一张外参测试照片，使其处于锁定状态
         test_img = np.zeros((1080, 1920, 3), dtype=np.uint8)
-        img_p = os.path.join(cur_ws.intrinsics_raw_images_dir, "test_lock.png")
+        img_p = os.path.join(cur_ws.calib_raw_images_dir, "calib_0001.png")
         cv2.imwrite(img_p, test_img)
-        self.assertGreater(cur_ws.get_image_count("intrinsics"), 0)
+        cur_ws.refresh_stats()
+        self.assertGreater(cur_ws.get_image_count("calibration"), 0)
 
         # 尝试触发修改硬件，应被防御拦截
         app._action_edit_hardware_config()

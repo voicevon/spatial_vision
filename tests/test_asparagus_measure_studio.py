@@ -150,6 +150,77 @@ class TestAsparagusMeasureStudio(unittest.TestCase):
         mock_cam.start_realsense.assert_not_called()
         app.cleanup()
 
+    def test_planar_rectify_batch_eval_and_station_yaml_export(self):
+        """验证 4 标靶拉正开关、ground_truth.csv 批量评测与产线 YAML 导出"""
+        import yaml
+        from tests.test_sorter_pipeline import _make_synthetic_rig_and_camera_frame
+
+        rig_cfg, tilted_frame = _make_synthetic_rig_and_camera_frame(
+            asparagus_len_mm=220.0, asparagus_diam_mm=14.0
+        )
+        rig_dir = os.path.join(self.temp_dir, "rig_samples")
+        os.makedirs(rig_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(rig_dir, "tilted_01.png"), tilted_frame)
+        with open(os.path.join(rig_dir, "ground_truth.csv"), "w", encoding="utf-8") as f:
+            f.write("filename,true_len_mm,true_diam_mm\n")
+            f.write("tilted_01.png,220.0,14.0\n")
+
+        station_yaml = os.path.join(self.temp_dir, "sorter_station.yaml")
+        station_data = {
+            "rig": {
+                "tag_size_mm": rig_cfg.tag_size_mm,
+                "fixed_tags_mm": {k: list(v) for k, v in rig_cfg.fixed_tags_mm.items()},
+                "roi_mm": list(rig_cfg.roi_mm),
+                "px_per_mm": rig_cfg.px_per_mm,
+            },
+            "grading": {
+                "default_reject_grade": 0,
+                "rules": [{"grade": 1, "name": "特级粗", "min_len_mm": 210.0, "min_diam_mm": 12.5}],
+            },
+            "measure": {"green_h_low": 25},
+        }
+        with open(station_yaml, "w", encoding="utf-8") as f:
+            yaml.safe_dump(station_data, f, allow_unicode=True)
+
+        app = AsparagusMeasureStudioApp(
+            sample_dir=rig_dir,
+            settings_file=self.tmp_settings,
+            station_config_path=station_yaml,
+        )
+        # 开启 4 标靶单应性拉正
+        app.toggle_planar_rectify()
+        self.assertTrue(app.use_planar_rectify)
+        self.assertIsNotNone(app.measurement)
+        self.assertTrue(app.measurement.valid, app.measurement.reason)
+        self.assertEqual(app.measurement.scale_source, "planar_homography")
+        self.assertAlmostEqual(app.measurement.effective_length_mm, 220.0, delta=3.0)
+        self.assertAlmostEqual(app.measurement.diameter_mm, 14.0, delta=1.5)
+        self.assertIsNotNone(app.grade_decision)
+        self.assertEqual(app.grade_decision.grade, 1)
+
+        # 执行离线批量评测 (对照 ground_truth.csv)
+        summary = app.run_offline_batch_eval()
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary.valid_count, 1)
+        self.assertEqual(summary.gt_matched_count, 1)
+        self.assertLess(summary.len_mae_mm, 3.0)
+        self.assertLess(summary.diam_mae_mm, 1.5)
+
+        # 调整参数并导出至 sorter_station.yaml（不破坏 rig 与 grading 节）
+        app.measurer.config.green_h_low = 31
+        app.measurer.config.diameter_offset_mm = 22.0
+        self.assertTrue(app.export_to_station_yaml())
+        with open(station_yaml, "r", encoding="utf-8") as f:
+            exported = yaml.safe_load(f)
+        self.assertEqual(exported["measure"]["green_h_low"], 31)
+        self.assertEqual(exported["measure"]["diameter_offset_mm"], 22.0)
+        self.assertIn("fixed_tags_mm", exported["rig"])
+        self.assertIn("rules", exported["grading"])
+
+        canvas = app.render()
+        self.assertEqual(canvas.shape, (800, 1280, 3))
+        app.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()

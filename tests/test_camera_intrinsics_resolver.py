@@ -4,10 +4,11 @@ import shutil
 import tempfile
 import unittest
 import numpy as np
-import yaml
 
+from src.cameras.camera_entity import IntrinsicsRecord
+from src.cameras.camera_registry import CameraRegistry
 from src.utils.intrinsics_resolver import resolve_camera_intrinsics
-from src.workspace.workspace_manager import Workspace
+from src.workspace.workspace_manager import WorkspaceManager
 
 
 class DummyHardwareIntrinsics:
@@ -27,7 +28,7 @@ class DummyStreamProfile:
 
 
 class TestCameraIntrinsicsResolver(unittest.TestCase):
-    """测试相机内参自适应解析器与工位沙盒专属机制"""
+    """测试相机内参自适应解析器与全局相机库优先机制"""
 
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp(prefix="test_cam_intr_")
@@ -36,7 +37,7 @@ class TestCameraIntrinsicsResolver(unittest.TestCase):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_hardware_profile_direct_read(self):
-        """测试硬件 active profile 在线直读最高优先级"""
+        """测试无全局相机绑定时硬件 active profile 在线直读优先级"""
         dummy_prof = DummyStreamProfile()
         K, dist, meta = resolve_camera_intrinsics(stream_profile=dummy_prof)
         self.assertEqual(meta["source"], "realsense_hardware_profile")
@@ -47,7 +48,6 @@ class TestCameraIntrinsicsResolver(unittest.TestCase):
 
     def test_resolution_adaptive_scaling(self):
         """测试 1080P 内参在遇到 720P 图像时的自动等比缩放"""
-        # 基准 1920x1080 -> 实际图像 1280x720 (缩放比 2/3)
         dummy_prof = DummyStreamProfile()
         K, dist, meta = resolve_camera_intrinsics(
             stream_profile=dummy_prof,
@@ -58,41 +58,36 @@ class TestCameraIntrinsicsResolver(unittest.TestCase):
         self.assertAlmostEqual(K[0, 0], 1234.56 * expected_scale, places=2)
         self.assertAlmostEqual(K[0, 2], 965.12 * expected_scale, places=2)
 
-    def test_workspace_custom_intrinsics_priority(self):
-        """测试工位沙盒 intrinsics/camera_intrinsics.yaml 专属内参优先加载"""
-        intr_dir = os.path.join(self.tmp_dir, "intrinsics")
-        os.makedirs(intr_dir, exist_ok=True)
-        intr_file = os.path.join(intr_dir, "camera_intrinsics.yaml")
-        
-        ws_intr_data = {
-            "width": 1920,
-            "height": 1080,
-            "fx": 1225.0,
-            "fy": 1222.0,
-            "cx": 960.0,
-            "cy": 540.0,
-            "dist_coeffs": [-0.05, 0.08, 0.0, 0.0, -0.02]
-        }
-        with open(intr_file, "w", encoding="utf-8") as f:
-            yaml.safe_dump(ws_intr_data, f)
+    def test_workspace_bound_camera_registry_priority(self):
+        """测试工位绑定全局 camera_id 时优先从全局相机库加载高精内参"""
+        cams_root = os.path.join(self.tmp_dir, "cameras")
+        ws_root = os.path.join(self.tmp_dir, "workspaces")
+        reg = CameraRegistry(cameras_root=cams_root)
+        cam = reg.register_camera("工位主摄D435", camera_type="realsense", hardware_serial="SN_PRIO")
+        rec = IntrinsicsRecord(
+            width=1920, height=1080,
+            fx=1225.0, fy=1222.0, cx=960.0, cy=540.0,
+            dist_coeffs=[-0.05, 0.08, 0.0, 0.0, -0.02],
+            rmse=0.25, valid_images_count=10, total_images_count=10,
+        )
+        cam.save_intrinsics("1920x1080", rec)
 
-        # 传入工位目录，即便有硬件 profile 也必须以工位高精校准内参优先！
+        ws_mgr = WorkspaceManager(workspaces_dir=ws_root)
+        ws = ws_mgr.create_workspace("ws_prio", camera_id=cam.camera_id)
+
+        # 即便有硬件 profile 也必须以全局相机库高精标定内参优先
         dummy_prof = DummyStreamProfile()
         K, dist, meta = resolve_camera_intrinsics(
             stream_profile=dummy_prof,
-            workspace_dir=self.tmp_dir
+            workspace_dir=ws.workspace_dir,
+            cameras_root=cams_root,
         )
-        self.assertEqual(meta["source"], "workspace_intrinsics")
+        self.assertEqual(meta["source"], "camera_registry")
+        self.assertEqual(meta["camera_id"], cam.camera_id)
         self.assertAlmostEqual(K[0, 0], 1225.0, places=1)
         self.assertAlmostEqual(K[1, 1], 1222.0, places=1)
         self.assertAlmostEqual(dist[0, 0], -0.05, places=3)
         self.assertAlmostEqual(dist[4, 0], -0.02, places=3)
-
-    def test_workspace_class_property(self):
-        """测试 Workspace 对象的 camera_intrinsics_path 属性"""
-        ws = Workspace(workspace_id="test_ws", name="Test Workspace", workspace_dir=self.tmp_dir)
-        expected_path = os.path.join(self.tmp_dir, "intrinsics", "camera_intrinsics.yaml")
-        self.assertEqual(ws.camera_intrinsics_path, expected_path)
 
 
 if __name__ == "__main__":

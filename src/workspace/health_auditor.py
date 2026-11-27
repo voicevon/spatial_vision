@@ -42,26 +42,24 @@ def audit_workspace(ws: Workspace, auto_fix: bool = True) -> Dict[str, Any]:
     actions_taken: List[str] = []
     warnings: List[str] = []
 
-    # ---------------- 1. 物理照片与元数据一致性核验 (三大专区全覆盖) ----------------
-    disk_intr = ws.get_image_count("intrinsics")
+    # ---------------- 1. 物理照片与元数据一致性核验 (外参 + 生产两大图集) ----------------
     disk_calib = ws.get_image_count("calibration")
     disk_prod = ws.get_image_count("production")
-    recorded_intr = ws.intrinsics_image_count
     recorded_calib = ws.calibration_image_count
     recorded_prod = ws.production_image_count
 
-    img_synced = (disk_intr == recorded_intr and disk_calib == recorded_calib and disk_prod == recorded_prod)
+    img_synced = (disk_calib == recorded_calib and disk_prod == recorded_prod)
     if not img_synced:
         msg = (
-            f"物理照片与元数据偏差: 内参记录 {recorded_intr} (实际 {disk_intr}), "
-            f"外参记录 {recorded_calib} (实际 {disk_calib}), 生产记录 {recorded_prod} (实际 {disk_prod})"
+            f"物理照片与元数据偏差: 外参记录 {recorded_calib} (实际 {disk_calib}), "
+            f"生产记录 {recorded_prod} (实际 {disk_prod})"
         )
         warnings.append(msg)
         if auto_fix:
             ws.refresh_stats()
             ws.save_meta()
             actions_taken.append(
-                f"物理照片数量已自愈同步: 内参 {disk_intr} 帧, 外参 {disk_calib} 帧, 生产 {disk_prod} 帧"
+                f"物理照片数量已自愈同步: 外参 {disk_calib} 帧, 生产 {disk_prod} 帧"
             )
 
     # ---------------- 2. 标靶白名单与锚点单一真理源核验 (幽灵标靶防腐 + 废弃双轨拦截) ----------------

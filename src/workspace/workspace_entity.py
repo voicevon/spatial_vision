@@ -32,17 +32,16 @@ class Workspace:
     description: str = ""                  # 工位说明备注
     created_at: str = ""                   # 创建时间
     updated_at: str = ""                   # 最后更新时间
+    camera_id: str = ""                    # 绑定的全局相机资产 ID (对应 data/cameras/<camera_id>)
     camera_type: str = "realsense"         # 绑定相机类型: 'realsense' (默认), 'usb', 'mock'
     camera_serial: str = ""                # 采集相机硬件序列号或设备索引
     valid_tag_ids: List[int] = field(default_factory=list)
-
 
     camera_resolution: List[int] = field(default_factory=lambda: [1920, 1080])  # 工位锁定的标准相机物理分辨率 [宽, 高]
 
     # 状态与指标
     calibration_image_count: int = 0       # 外参建图图片数
     production_image_count: int = 0        # 生产采图数
-    intrinsics_image_count: int = 0        # 相机内参标定图片数
     calibration_active_image_count: int = 0  # 标定有效帧数
     ba_solved: bool = False
     global_rmse_px: float = 0.0
@@ -71,13 +70,10 @@ class Workspace:
         """工位自描述元数据路径"""
         return os.path.join(self.workspace_dir, "workspace_meta.yaml")
 
-    # ------------------------------ 工位分辨率与内参规范 (SSOT) ------------------------------
+    # ------------------------------ 工位分辨率与硬件绑定规范 (SSOT) ------------------------------
     @property
     def resolution(self) -> Tuple[int, int]:
-        """【工位核心契约】相机标准物理分辨率 (宽, 高)，优先内参规格，其次元数据，缺省 1920x1080"""
-        intr = self.load_camera_intrinsics()
-        if intr and intr.get("width") and intr.get("height"):
-            return int(intr["width"]), int(intr["height"])
+        """【工位核心契约】相机标准物理分辨率 (宽, 高)，以工位元数据为唯一来源，缺省 1920x1080"""
         if self.camera_resolution and len(self.camera_resolution) >= 2:
             return int(self.camera_resolution[0]), int(self.camera_resolution[1])
         return 1920, 1080
@@ -97,88 +93,13 @@ class Workspace:
 
     @property
     def total_image_count(self) -> int:
-        """工位全量业务照片总数 (基于内存缓存指标: 内参 + 外参 + 生产)"""
-        return self.intrinsics_image_count + self.calibration_image_count + self.production_image_count
+        """工位全量业务照片总数 (基于内存缓存指标: 外参 + 生产)"""
+        return self.calibration_image_count + self.production_image_count
 
     @property
     def is_hardware_locked(self) -> bool:
         """工位是否已锁定硬件配置 (已有历史照片保护，杜绝跨分辨率或换机污染)"""
         return self.total_image_count > 0
-
-    # ------------------------------ 相机内参标定专区 (intrinsics/) ------------------------------
-    @property
-    def intrinsics_dir(self) -> str:
-        """【图集一】相机内参标定业务专区根目录"""
-        return os.path.join(self.workspace_dir, "intrinsics")
-
-    @property
-    def intrinsics_raw_images_dir(self) -> str:
-        """【图集一】相机内参标定原始照片 (棋盘格/圆形标定板) 存储目录"""
-        return os.path.join(self.intrinsics_dir, "raw_images")
-
-    @property
-    def intrinsics_reports_dir(self) -> str:
-        """【图集一】相机内参标定质量评估与残差报告目录"""
-        return os.path.join(self.intrinsics_dir, "reports")
-
-    @property
-    def camera_intrinsics_path(self) -> str:
-        """【工位专属】相机内参文件路径 (单一真理源: intrinsics/camera_intrinsics.yaml)"""
-        return os.path.join(self.intrinsics_dir, "camera_intrinsics.yaml")
-
-    def load_camera_intrinsics(self) -> Optional[Dict[str, Any]]:
-        """加载本工位专属相机内参配置字典，不存在则返回 None"""
-        p = self.camera_intrinsics_path
-        if os.path.exists(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    return yaml.safe_load(f) or {}
-            except Exception as e:
-                log.warning(f"[Workspace] 读取工位内参异常 ({p}): {e}")
-        return None
-
-    def save_camera_intrinsics(
-        self,
-        data: Optional[Dict[str, Any]] = None,
-        *,
-        fx: Optional[float] = None,
-        fy: Optional[float] = None,
-        cx: Optional[float] = None,
-        cy: Optional[float] = None,
-        dist_coeffs: Optional[List[float]] = None,
-        image_size: Optional[Tuple[int, int]] = None,
-        rmse: Optional[float] = None,
-    ) -> bool:
-        """将高精相机内参写穿持久化至本工位沙盒中"""
-        payload = dict(data) if data else {}
-        if fx is not None:
-            payload["fx"] = float(fx)
-        if fy is not None:
-            payload["fy"] = float(fy)
-        if cx is not None:
-            payload["cx"] = float(cx)
-        if cy is not None:
-            payload["cy"] = float(cy)
-        if dist_coeffs is not None:
-            payload["dist_coeffs"] = [float(x) for x in dist_coeffs]
-        if image_size is not None:
-            payload["width"] = int(image_size[0])
-            payload["height"] = int(image_size[1])
-        if rmse is not None:
-            payload["rmse"] = float(rmse)
-        payload["calibrated"] = True
-        payload["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-
-        p = self.camera_intrinsics_path
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        try:
-            with open(p, "w", encoding="utf-8") as f:
-                yaml.safe_dump(payload, f, allow_unicode=True, sort_keys=False)
-            log.info(f"[Workspace] 工位专属相机内参已写穿保存: {p}")
-            return True
-        except Exception as e:
-            log.error(f"[Workspace] 保存工位内参失败 ({p}): {e}")
-            return False
 
     # ------------------------------ 外参建图标定专区 (calibration/) ------------------------------
     @property
@@ -234,10 +155,8 @@ class Workspace:
 
     # ------------------------------ 多用途通用辅助 ------------------------------
     def get_raw_images_dir(self, purpose: str = "calibration") -> str:
-        """根据用途获取对应原始相册目录 ('intrinsics' | 'calibration' | 'production')"""
-        if purpose == "intrinsics":
-            return self.intrinsics_raw_images_dir
-        elif purpose == "production":
+        """根据用途获取对应原始相册目录 ('calibration' | 'production')"""
+        if purpose == "production":
             return self.prod_raw_images_dir
         return self.calib_raw_images_dir
 
@@ -253,10 +172,8 @@ class Workspace:
         return count
 
     def ensure_directories(self):
-        """确保工位顶层及三大图集核心子目录就绪"""
+        """确保工位顶层及两大业务图集核心子目录就绪"""
         os.makedirs(self.workspace_dir, exist_ok=True)
-        os.makedirs(self.intrinsics_raw_images_dir, exist_ok=True)
-        os.makedirs(self.intrinsics_reports_dir, exist_ok=True)
         os.makedirs(self.calib_raw_images_dir, exist_ok=True)
         os.makedirs(self.calib_reports_dir, exist_ok=True)
         os.makedirs(self.calib_visualized_dir, exist_ok=True)
@@ -301,13 +218,7 @@ class Workspace:
             prod_files.extend(glob.glob(os.path.join(self.prod_raw_images_dir, ext)))
         self.production_image_count = len(prod_files)
 
-        # 3. 相机内参标定图片数
-        intr_files = []
-        for ext in img_exts:
-            intr_files.extend(glob.glob(os.path.join(self.intrinsics_raw_images_dir, ext)))
-        self.intrinsics_image_count = len(intr_files)
-
-        # 4. 标定观测清单解析
+        # 3. 标定观测清单解析
         if os.path.exists(self.calib_manifest_path):
             try:
                 with open(self.calib_manifest_path, "r", encoding="utf-8") as f:
@@ -366,19 +277,17 @@ class Workspace:
             "description": self.description,
             "created_at": self.created_at or time.strftime("%Y-%m-%d %H:%M:%S"),
             "updated_at": self.updated_at or time.strftime("%Y-%m-%d %H:%M:%S"),
+            "camera_id": self.camera_id,
             "camera_type": self.camera_type,
             "camera_serial": self.camera_serial,
             "camera_resolution": list(self.resolution),
             "status": {
                 "calibration_image_count": self.calibration_image_count,
                 "production_image_count": self.production_image_count,
-                "intrinsics_image_count": self.intrinsics_image_count,
                 "calibration_active_image_count": self.calibration_active_image_count,
                 "ba_solved": self.ba_solved,
                 "global_rmse_px": self.global_rmse_px,
                 "valid_tag_ids": self.valid_tag_ids,
-
-
             },
             "production": self.production,
         }
@@ -412,6 +321,7 @@ class Workspace:
         desc = meta.get("description", "")
         created_at = meta.get("created_at", time.strftime("%Y-%m-%d %H:%M:%S"))
         updated_at = meta.get("updated_at", "")
+        camera_id = meta.get("camera_id", "")
         camera_type = meta.get("camera_type", "realsense")
         camera_serial = meta.get("camera_serial", "")
         camera_resolution = meta.get("camera_resolution", [1920, 1080])
@@ -420,13 +330,10 @@ class Workspace:
         status = meta.get("status", {})
         calibration_image_count = status.get("calibration_image_count", 0)
         production_image_count = status.get("production_image_count", 0)
-        intrinsics_image_count = status.get("intrinsics_image_count", 0)
         calibration_active_image_count = status.get("calibration_active_image_count", 0)
         ba_solved = status.get("ba_solved", False)
         global_rmse_px = status.get("global_rmse_px", 0.0)
         valid_tag_ids = status.get("valid_tag_ids", [])
-
-
 
         ws = cls(
             workspace_id=ws_id,
@@ -435,18 +342,16 @@ class Workspace:
             description=desc,
             created_at=created_at,
             updated_at=updated_at,
+            camera_id=camera_id,
             camera_type=camera_type,
             camera_serial=camera_serial,
             camera_resolution=camera_resolution,
             calibration_image_count=calibration_image_count,
             production_image_count=production_image_count,
-            intrinsics_image_count=intrinsics_image_count,
             calibration_active_image_count=calibration_active_image_count,
             ba_solved=ba_solved,
             global_rmse_px=global_rmse_px,
             valid_tag_ids=valid_tag_ids,
-
-
             production=production,
         )
 

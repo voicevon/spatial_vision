@@ -38,13 +38,16 @@ def resolve_camera_intrinsics(
     config_path: str = SYSTEM_CONFIG_PATH,
     actual_image_shape: Optional[Tuple[int, int]] = None,
     stream_profile: Optional[Any] = None,
-    workspace_dir: Optional[str] = None
+    workspace_dir: Optional[str] = None,
+    camera_id: Optional[str] = None,
+    cameras_root: Optional[str] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     自适应获取并校验相机内参 (具有防呆与分辨率自适应缩放能力)
     
     加载优先级:
-      1. 工位专属内参 (workspace_dir 下 intrinsics/camera_intrinsics.yaml)
+      1. 全局相机资产库内参 (data/cameras/<camera_id>/<WxH>/intrinsics.yaml；
+         支持直接传 camera_id 或从 workspace_dir/workspace_meta.yaml 解析绑定 camera_id)
       2. 硬件在线 profile 直读 (stream_profile 句柄可用时)
       3. 系统全局配置 (config.yaml)
       4. 工业默认参考出厂值 (D435 1080P)
@@ -52,7 +55,9 @@ def resolve_camera_intrinsics(
     :param config_path: config.yaml 路径
     :param actual_image_shape: 实际图像尺寸 (height, width)，用于校验与自适应缩放
     :param stream_profile: pyrealsense2 的 video_stream_profile 活体句柄 (若可用)
-    :param workspace_dir: 工位沙盒根目录 (可选)
+    :param workspace_dir: 工位沙盒根目录 (可选，用于读取工位绑定的 camera_id 与分辨率)
+    :param camera_id: 全局相机资产 ID (可选，优先级高于 workspace_dir 中的绑定)
+    :param cameras_root: 全局相机库根目录 (可选，默认 data/cameras/)
     :return: (camera_matrix 3x3, dist_coeffs 5x1, metadata_dict)
     """
     metadata = {
@@ -69,37 +74,43 @@ def resolve_camera_intrinsics(
     dist = np.zeros((5, 1), dtype=np.float64)
     ref_w, ref_h = 1920, 1080
 
-    # 1. 工位沙盒专属内参 (最高优先级，单一真理源为 intrinsics/camera_intrinsics.yaml)
-    if workspace_dir and os.path.exists(workspace_dir):
-        intr_path = os.path.join(workspace_dir, "intrinsics", "camera_intrinsics.yaml")
-        if os.path.exists(intr_path):
-            try:
-                ws_cfg = load_raw_config(intr_path)
-                if ws_cfg:
-                    if "camera_matrix" in ws_cfg and isinstance(ws_cfg["camera_matrix"], list):
-                        cm = np.array(ws_cfg["camera_matrix"], dtype=np.float64)
-                        if cm.shape == (3, 3):
-                            fx, fy = float(cm[0, 0]), float(cm[1, 1])
-                            cx, cy = float(cm[0, 2]), float(cm[1, 2])
-                    else:
-                        fx = float(ws_cfg.get("fx", fx))
-                        fy = float(ws_cfg.get("fy", fy))
-                        cx = float(ws_cfg.get("cx", cx))
-                        cy = float(ws_cfg.get("cy", cy))
+    # 1. 全局相机资产库内参 (最高优先级，单一真理源为 data/cameras/<camera_id>/<WxH>/intrinsics.yaml)
+    resolved_cam_id = (camera_id or "").strip()
+    ws_target_res: Optional[Tuple[int, int]] = None
+    if not resolved_cam_id and workspace_dir and os.path.exists(workspace_dir):
+        ws_meta_path = os.path.join(workspace_dir, "workspace_meta.yaml")
+        if os.path.exists(ws_meta_path):
+            ws_meta = load_raw_config(ws_meta_path)
+            resolved_cam_id = str(ws_meta.get("camera_id") or "").strip()
+            res_raw = ws_meta.get("camera_resolution")
+            if isinstance(res_raw, (list, tuple)) and len(res_raw) >= 2:
+                ws_target_res = (int(res_raw[0]), int(res_raw[1]))
 
-                    ref_w = int(ws_cfg.get("width", ref_w))
-                    ref_h = int(ws_cfg.get("height", ref_h))
-                    
-                    dist_raw = ws_cfg.get("dist_coeffs")
-                    if dist_raw is not None and isinstance(dist_raw, (list, tuple)):
-                        dist = np.array(list(dist_raw)[:5], dtype=np.float64).reshape((5, 1))
+    if resolved_cam_id:
+        try:
+            from src.cameras.camera_registry import CameraRegistry
+            registry = CameraRegistry(cameras_root=cameras_root)
+            target_res: Optional[Tuple[int, int]] = None
+            if actual_image_shape is not None:
+                target_res = (int(actual_image_shape[1]), int(actual_image_shape[0]))
+            elif ws_target_res is not None:
+                target_res = ws_target_res
 
-                    metadata["source"] = "workspace_intrinsics"
-                    metadata["intrinsics_file"] = intr_path
-                    metadata["base_resolution"] = (ref_h, ref_w)
-                    log.info(f"[GUARD] 命中工位专属相机内参: {intr_path} (基准: {ref_w}x{ref_h}, fx={fx:.2f})")
-            except Exception as e:
-                log.warning(f"[GUARD] 读取工位专属内参异常: {e}，回退至后续规则")
+            rec = registry.resolve_intrinsics_record(resolved_cam_id, target_resolution=target_res)
+            if rec is not None:
+                fx, fy = float(rec.fx), float(rec.fy)
+                cx, cy = float(rec.cx), float(rec.cy)
+                ref_w, ref_h = int(rec.width), int(rec.height)
+                dist = np.array(list(rec.dist_coeffs)[:5], dtype=np.float64).reshape((5, 1))
+                cam_prof = registry.get_camera(resolved_cam_id)
+                intr_path = cam_prof.intrinsics_path(rec.resolution_str) if cam_prof else ""
+                metadata["source"] = "camera_registry"
+                metadata["camera_id"] = resolved_cam_id
+                metadata["intrinsics_file"] = intr_path
+                metadata["base_resolution"] = (ref_h, ref_w)
+                log.info(f"[GUARD] 命中全局相机库内参: {resolved_cam_id} ({ref_w}x{ref_h}, fx={fx:.2f})")
+        except Exception as e:
+            log.warning(f"[GUARD] 读取全局相机库内参异常 ({resolved_cam_id}): {e}，回退至后续规则")
 
     # 2. 硬件活体在线直读
     if metadata["source"] == "default" and stream_profile is not None:

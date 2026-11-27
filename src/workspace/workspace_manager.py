@@ -238,6 +238,7 @@ class WorkspaceManager:
         camera_type: str = "realsense",
         camera_serial: str = "",
         camera_resolution: Optional[List[int]] = None,
+        camera_id: str = "",
     ) -> Workspace:
         """创建新工位 (包含工位专属相机硬件与分辨率规格定义)"""
         display_name = alias.strip() if alias and alias.strip() else "新建工位"
@@ -260,6 +261,7 @@ class WorkspaceManager:
             name=display_name,
             workspace_dir=ws_dir,
             description=description,
+            camera_id=camera_id or "",
             camera_type=camera_type or "realsense",
             camera_serial=camera_serial or "",
             camera_resolution=camera_resolution or [1920, 1080],
@@ -296,13 +298,16 @@ class WorkspaceManager:
         workspace_id: str,
         camera_type: str = "realsense",
         camera_serial: str = "",
-        camera_resolution: Optional[List[int]] = None
+        camera_resolution: Optional[List[int]] = None,
+        camera_id: Optional[str] = None,
     ) -> Tuple[bool, str]:
-        """将物理相机硬件类型、序列号及标定基准分辨率原子写穿绑定至工位沙盒"""
+        """将物理相机硬件类型、全局 camera_id、序列号及标定基准分辨率原子写穿绑定至工位沙盒"""
         ws = self.get_workspace_by_id(workspace_id)
         if not ws:
             return False, f"未找到工位: {workspace_id}"
 
+        if camera_id is not None:
+            ws.camera_id = str(camera_id).strip()
         ws.camera_type = str(camera_type).strip().lower() or "realsense"
         ws.camera_serial = str(camera_serial).strip()
         if camera_resolution and len(camera_resolution) == 2:
@@ -310,7 +315,7 @@ class WorkspaceManager:
             if w > 0 and h > 0:
                 ws.camera_resolution = [w, h]
         ws.save_meta()
-        return True, f"工位【{ws.name}】硬件配置已更新: {ws.camera_type} ({ws.camera_serial or '默认'}) @ {ws.resolution_str}"
+        return True, f"工位【{ws.name}】硬件配置已更新: {ws.camera_id or ws.camera_type} @ {ws.resolution_str}"
 
     def clone_workspace(self, src_ws_id: str, new_alias: str, description: str = "") -> Optional[Workspace]:
         """克隆已有工位数据至新工位"""
@@ -326,6 +331,7 @@ class WorkspaceManager:
         new_ws = self.create_workspace(
             alias=new_alias,
             description=new_desc,
+            camera_id=src_ws.camera_id,
             camera_type=src_ws.camera_type,
             camera_serial=src_ws.camera_serial,
             camera_resolution=list(src_ws.resolution),

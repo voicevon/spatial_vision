@@ -9,7 +9,7 @@
 
 ```mermaid
 flowchart TD
-    S1["阶段一：相机内参标定<br>intrinsics/raw_images/ (intr_XXXX.png)<br>CameraIntrinsicsCalibrator → camera_intrinsics.yaml"]
+    S1["阶段一：全局相机内参标定 (Camera Hub)<br>data/cameras/<camera_id>/<WxH>/raw_images/ (intr_XXXX.png)<br>calibrate_camera_profile → intrinsics.yaml"]
     S2["阶段二：多视角超精提取与共视守门<br>calibration/raw_images/ (calib_XXXX.png)<br>OfflineTagExtractor / TagSuperExtractor → CovisibilityGraph"]
     S3["阶段三：两阶段鲁棒 BA 空间平差<br>TagBAOptimizer (Cauchy 粗平差 → MAD 清洗 → LM 精平差)"]
     S4["阶段四：世界基准对齐 (Umeyama)<br>tag_whitelist.yaml (锚点 xyz_mm) → WorldDatumAligner → tags_map.yaml"]
@@ -25,7 +25,7 @@ flowchart TD
 
 | 模块路径 | 核心类 / 函数 | 职责与输入输出 |
 | :--- | :--- | :--- |
-| `src/calibration/solvers/camera_intrinsics_calibrator.py` | `CameraIntrinsicsCalibrator` | 标定板角点亚像素提取，求解内参矩阵 $K$、畸变系数 $D$ 与重投影误差，持久化至 `intrinsics/camera_intrinsics.yaml` |
+| `src/calibration/solvers/camera_intrinsics_calibrator.py` | `calibrate_camera_profile` / `detect_chessboard_corners` | 棋盘格角点实时检测与亚像素精化，求解内参矩阵 $K$、畸变系数 $D$、全局 RMSE 与逐帧误差，持久化至全局相机库 `data/cameras/<camera_id>/<WxH>/intrinsics.yaml` |
 | `src/calibration/offline_tag_extractor.py` / `tag_super_extractor.py` | `OfflineTagExtractor` / `TagSuperExtractor` | 离线多阈值网格 + 双尺度 CLAHE + 亚像素轮廓拟合（`CORNER_REFINE_CONTOUR`）极限召回暗光/反光标靶 |
 | `src/calibration/solvers/covisibility_graph.py` | `CovisibilityGraph` | 无外部依赖的图论拓扑守门：连通分量分析、割点检测，确保所有参与 BA 的帧与标靶属于同一刚体连通域 |
 | `src/calibration/solvers/ba_optimizer.py` | `TagBAOptimizer` | 两阶段 BA 联合优化多帧相机位姿与全部 Tag 6DoF 位姿（阶段一 Cauchy 鲁棒核粗平差 → MAD 离群清洗 → 阶段二精细收敛） |

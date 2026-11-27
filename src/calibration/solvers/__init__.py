@@ -6,11 +6,13 @@
 from .camera_intrinsics_calibrator import (
     IntrinsicsCalibrationResult,
     calibrate_camera_from_images,
-    calibrate_workspace_intrinsics,
+    calibrate_camera_profile,
+    detect_chessboard_corners,
 )
 
 __all__ = [
     "IntrinsicsCalibrationResult",
     "calibrate_camera_from_images",
-    "calibrate_workspace_intrinsics",
+    "calibrate_camera_profile",
+    "detect_chessboard_corners",
 ]

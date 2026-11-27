@@ -190,10 +190,38 @@ class AsparagusMeasureStudioRenderer:
 
         # 朝向切换按钮
         ori_label = dict(ORIENTATION_OPTIONS).get(app.measurer.config.orientation, "左根 → 右尖")
-        ori_w = int(150 * s)
-        ori_rect = (px + int(10 * s), r2_y1, px + int(10 * s) + ori_w, r2_y2)
+        ori_w = int(136 * s)
+        ori_x = px + int(8 * s)
+        ori_rect = (ori_x, r2_y1, ori_x + ori_w, r2_y2)
         cls._draw_btn(canvas, ori_rect, f"朝向: {ori_label}", app.mouse_pos, m["fs_sm"], active=True, accent=GuiTheme.ACCENT)
         buttons.append(("CYCLE_ORIENTATION", ori_rect, None))
+
+        # 4 标靶单应性拉正开关
+        rect_x = ori_rect[2] + int(8 * s)
+        rect_w = int(118 * s)
+        rect_btn = (rect_x, r2_y1, rect_x + rect_w, r2_y2)
+        rect_locked = bool(app.use_planar_rectify and app.rectifier is not None and app.rectifier.is_locked)
+        rect_accent = GuiTheme.OK if rect_locked else GuiTheme.GOLD
+        cls._draw_btn(
+            canvas, rect_btn, "4标靶拉正 [P]", app.mouse_pos, m["fs_sm"],
+            active=bool(app.use_planar_rectify), accent=rect_accent,
+        )
+        buttons.append(("TOGGLE_RECTIFY", rect_btn, None))
+
+        # 批量评测按钮（离线模式）
+        next_x = rect_btn[2] + int(8 * s)
+        if app.source_mode == "offline":
+            eval_w = int(96 * s)
+            eval_btn = (next_x, r2_y1, next_x + eval_w, r2_y2)
+            cls._draw_btn(canvas, eval_btn, "批量评测 [B]", app.mouse_pos, m["fs_sm"], active=(app.batch_eval is not None), accent=GuiTheme.ACCENT)
+            buttons.append(("RUN_BATCH_EVAL", eval_btn, None))
+            next_x = eval_btn[2] + int(8 * s)
+
+        # 导出产线 YAML 按钮
+        exp_w = int(110 * s)
+        exp_btn = (next_x, r2_y1, next_x + exp_w, r2_y2)
+        cls._draw_btn(canvas, exp_btn, "导出YAML [S]", app.mouse_pos, m["fs_sm"])
+        buttons.append(("EXPORT_STATION_YAML", exp_btn, None))
 
         # 右侧操作按钮 (实时抓拍 / 离线刷新 + 复位视口)
         act_w = int(96 * s)
@@ -373,17 +401,42 @@ class AsparagusMeasureStudioRenderer:
         # 状态信息区
         if res and res.valid:
             white_txt = "检测到白根 (已剔除白根段)" if res.has_white_root else "全绿无白根 (按根切口起算)"
-            scale_txt = SCALE_SOURCE_LABELS.get(res.scale_source, res.scale_source)
+            scale_txt = (
+                "机架4标靶单应性" if res.scale_source == "planar_homography"
+                else SCALE_SOURCE_LABELS.get(res.scale_source, res.scale_source)
+            )
             info_lines = [
                 (f"白根判定: {white_txt}", GuiTheme.TEXT),
                 (f"尺度来源: {scale_txt} ({res.mm_per_px:.3f} mm/px)", GuiTheme.TEXT_SUB),
                 (f"处理耗时: {res.elapsed_ms:.1f} ms", GuiTheme.TEXT_MUTED),
             ]
+            if app.grade_decision is not None:
+                gd = app.grade_decision
+                g_col = GuiTheme.OK if gd.matched else GuiTheme.GOLD
+                info_lines.insert(0, (f"预测分级: Grade {gd.grade} ({gd.name})", g_col))
+            gt_pair = app.current_sample_gt
+            if gt_pair is not None:
+                dl = res.effective_length_mm - gt_pair[0]
+                dd = res.diameter_mm - gt_pair[1]
+                info_lines.append((f"真值误差: ΔL={dl:+.1f}mm  ΔD={dd:+.1f}mm", GuiTheme.ACCENT))
             if res.warning:
                 info_lines.append((f"提示: {res.warning}", GuiTheme.GOLD))
         else:
             reason = res.reason if res else "等待图像输入"
             info_lines = [(f"状态: {reason}", GuiTheme.TEXT_MUTED)]
+
+        if app.use_planar_rectify and app.rectifier is not None:
+            st = app.rectifier.status
+            r_txt = f"4标靶拉正: 锁定 (err={st.reproj_err_px:.2f}px)" if st.locked else f"4标靶拉正: {st.reason}"
+            info_lines.append((r_txt, GuiTheme.OK if st.locked else GuiTheme.GOLD))
+
+        if app.batch_eval is not None:
+            be = app.batch_eval
+            if be.gt_matched_count > 0:
+                be_txt = f"批量({be.valid_count}/{be.total}): L-MAE={be.len_mae_mm:.1f} D-MAE={be.diam_mae_mm:.1f}mm"
+            else:
+                be_txt = f"批量评测: 有效 {be.valid_count}/{be.total} (无GT表)"
+            info_lines.append((be_txt, GuiTheme.ACCENT))
 
         for text, col in info_lines:
             draw_text(canvas, text, (x1 + pad, cy), m["fs_xs"], col)
@@ -425,7 +478,7 @@ class AsparagusMeasureStudioRenderer:
         y1 = H - m["bot_h"]
         cv2.rectangle(canvas, (0, y1), (W, H), (14, 17, 22), -1)
         cv2.line(canvas, (0, y1), (W, y1), GuiTheme.BORDER, 1)
-        msg = app.toast_text or "提示: 滚轮缩放画面 | 右键拖拽平移 | [D] 手动画框 ROI | [M] 切换离线/实时 | [ESC] 退出"
+        msg = app.toast_text or "提示: [P] 4标靶拉正 | [B] 批量评测 | [S] 导出产线YAML | [D] 画框ROI | [M] 离线/实时 | [ESC] 退出"
         draw_text(canvas, msg, (m["L"], y1 + int(8 * s)), m["fs_xs"], GuiTheme.TEXT_SUB)
 
     @classmethod

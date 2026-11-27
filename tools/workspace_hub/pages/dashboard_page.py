@@ -27,8 +27,8 @@ class DashboardPageRenderer:
     def render(self, canvas: np.ndarray, state: HubState, active_ws: Any):
         """渲染大盘看板主视图 (x: 340~960, y: 50~670)"""
         from tools.workspace_hub.hub_renderer import (
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_EDIT_DESC,
-            WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_DROPDOWN_CAMERA,
+            WS_BTN_EDIT_DESC, WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME
         )
 
         box_x, box_y, box_w, box_h = 340, 50, 620, 620
@@ -44,7 +44,7 @@ class DashboardPageRenderer:
 
         # ==== 1. 板块 #1: 工位核心元数据与管理卡片 (极简高雅内嵌按钮) ====
         c1_y = box_y + 10
-        c1_h = 168
+        c1_h = 190
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (25, 31, 42), -1)
         cv2.rectangle(canvas, (card_x, c1_y), (card_x + card_w, c1_y + c1_h), (45, 56, 78), 1)
 
@@ -77,14 +77,43 @@ class DashboardPageRenderer:
             theme_color=(0, 220, 200),
         )
 
-        # 行 4: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
+        # 行 4: 绑定全局相机下拉框 + 只读内参标定状态
+        draw_text(canvas, "相机:", (card_x + 16, c1_y + 96), font_size=12, color=(0, 230, 255), bold=True)
+        cam_id = getattr(active_ws, "camera_id", "") or ""
+        cam_prof = state.camera_registry.get_camera(cam_id) if cam_id else None
+        cam_label = f"{cam_prof.name} ({cam_prof.camera_id})" if cam_prof else (
+            f"{cam_id} (未在库)" if cam_id else f"未绑定 ({active_ws.camera_type} · {active_ws.resolution_str})"
+        )
+        if active_ws.is_hardware_locked:
+            cam_label = f"[锁] {cam_label}"
+        cd_x, cd_y, cd_w, cd_h = WS_DROPDOWN_CAMERA
+        draw_dropdown_button(
+            canvas,
+            (cd_x, cd_y, cd_x + cd_w, cd_y + cd_h),
+            cam_label,
+            is_open=(state.active_dropdown == "ws_camera"),
+            mouse_pos=mpos,
+            font_size=11,
+            theme_color=(90, 110, 130) if active_ws.is_hardware_locked else (0, 200, 240),
+        )
+        # 右侧只读内参状态徽章
+        intr_rec = state.camera_registry.resolve_intrinsics_record(cam_id, active_ws.resolution) if cam_id else None
+        if intr_rec is not None:
+            intr_badge = f"● 内参 RMSE {intr_rec.rmse:.2f}px"
+            intr_col = (0, 255, 180)
+        else:
+            intr_badge = "○ 内参未标定 (Camera Hub)"
+            intr_col = (180, 160, 110)
+        draw_text(canvas, intr_badge, (cd_x + cd_w + 10, c1_y + 96), font_size=11, color=intr_col)
+
+        # 行 5: 备注独立成行，右侧 [修改] 按钮 (方便随时查看与修改)
         desc_text = getattr(active_ws, "description", "") or "暂无备注"
         created_str = f"建于 {active_ws.created_at}" if active_ws.created_at else ""
-        draw_text(canvas, f"备注:  {desc_text}  {created_str}", (card_x + 16, c1_y + 95), font_size=12, color=(240, 215, 140))
+        draw_text(canvas, f"备注:  {desc_text}  {created_str}", (card_x + 16, c1_y + 123), font_size=12, color=(240, 215, 140))
         self.r._draw_button(canvas, WS_BTN_EDIT_DESC, "修改", mpos)
 
-        # 行 5: 分割线与底部纯净按钮栏
-        cv2.line(canvas, (card_x + 16, c1_y + 124), (card_x + card_w - 16, c1_y + 124), (38, 46, 62), 1)
+        # 行 6: 分割线与底部纯净按钮栏
+        cv2.line(canvas, (card_x + 16, c1_y + 148), (card_x + card_w - 16, c1_y + 148), (38, 46, 62), 1)
         self.r._draw_button(canvas, WS_BTN_SYNC_DATA, "更新元数据", mpos)
         self.r._draw_button(canvas, WS_BTN_CLONE, "克隆工位", mpos)
         self.r._draw_button(canvas, WS_BTN_DELETE, "删除", mpos, theme_color=(180, 60, 60))
@@ -182,7 +211,7 @@ class DashboardPageRenderer:
         draw_text(canvas, f"• 3D ROI 空间物件集合  : {roi_desc}", (card_x + 18, c4_y + 114), font_size=12, color=roi_col, bold=True)
         draw_text(canvas, f"• 标定核心求解与剪枝   : Ceres/Levenberg-Marquardt 两阶段优化 (Huber 稳健核函数)", (card_x + 18, c4_y + 137), font_size=12, color=(140, 155, 175))
 
-        # ==== 5. 工作流下拉菜单浮层 (置顶渲染，防止被下方卡片遮挡) ====
+        # ==== 5. 下拉菜单浮层 (置顶渲染，防止被下方卡片遮挡) ====
         if state.active_dropdown == "ws_prod_mode":
             dd_x, dd_y, dd_w, dd_h = WS_DROPDOWN_PROD_MODE
             anchor_rect = (dd_x, dd_y, dd_x + dd_w, dd_y + dd_h)
@@ -200,4 +229,22 @@ class DashboardPageRenderer:
                 min_width=dd_w,
                 mouse_pos=mpos,
                 font_size=12,
+            )
+        elif state.active_dropdown == "ws_camera":
+            cd_x, cd_y, cd_w, cd_h = WS_DROPDOWN_CAMERA
+            anchor_rect = (cd_x, cd_y, cd_x + cd_w, cd_y + cd_h)
+            cams = state.camera_registry.list_cameras()
+            options = [("", "未绑定 (解除关联)")] + [
+                (c.camera_id, f"{c.name} ({c.camera_id} · {c.camera_type})")
+                for c in cams
+            ]
+            render_dropdown_popup(
+                canvas,
+                anchor_rect,
+                options,
+                getattr(active_ws, "camera_id", "") or "",
+                item_h=28,
+                min_width=cd_w,
+                mouse_pos=mpos,
+                font_size=11,
             )

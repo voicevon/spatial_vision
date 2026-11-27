@@ -265,27 +265,19 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(state.gallery.view_mode, HubState.VIEW_STANDARD)
         self.assertEqual(state.active_tab, HubState.TAB_FRAME_POSE_TAGS)
 
-    def test_four_tabs_header_clicks(self):
-        """测试鼠标点击顶部 Header 工位三页签 Tab 胶囊直接切换页签 (Dashboard / 标定相册 / ★ 生产相册)"""
+    def test_three_tabs_header_clicks(self):
+        """测试鼠标点击顶部 Header 工位三页签 Tab 胶囊直接切换页签 (大盘看板 / 外参建图 / 生产图集)"""
         app = WorkspaceHubApp(settings_file=os.path.join(self.test_root, "test_hub_settings.json"))
         app.win_mgr.canvas_w = 960
         app.win_mgr.canvas_h = 720
+        tabs_layout = app.renderer.hit_tester.get_tabs_layout(app.state)
+        self.assertEqual([k for k, _, _ in tabs_layout], [
+            HubState.TAB_REPORT, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES
+        ])
 
-        # 点击 Tab 0: Dashboard (x: 348~428, 测试点 390, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 390, 25, 0, None)
-        self.assertEqual(app.state.active_tab, HubState.TAB_REPORT)
-
-        # 点击 Tab 1: 相机&内参 (x: 438~524, 测试点 480, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 480, 25, 0, None)
-        self.assertEqual(app.state.active_tab, HubState.TAB_INTRINSICS_IMAGES)
-
-        # 点击 Tab 2: 外参建图 (x: 534~614, 测试点 570, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 570, 25, 0, None)
-        self.assertEqual(app.state.active_tab, HubState.TAB_CALIB_IMAGES)
-
-        # 点击 Tab 3: 生产相册 (x: 624~728, 测试点 670, 25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
-        self.assertEqual(app.state.active_tab, HubState.TAB_PROD_IMAGES)
+        for expected_key, _, (tx, ty, tw, th) in tabs_layout:
+            app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, tx + tw // 2, ty + th // 2, 0, None)
+            self.assertEqual(app.state.active_tab, expected_key)
 
         # 点击 Header 页签后仍处于标准页签看板 (非全宽大图)
         self.assertEqual(app.state.gallery.view_mode, HubState.VIEW_STANDARD)
@@ -433,19 +425,12 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(state.gallery.calib_grid_offset, HubState.GRID_COLS, "滚轮下翻应前进一行")
 
         # 5. 测试点击 Header 页签 Tab 切换动态区内容 (左栏保持稳定)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
-        self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
-
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 390, 25, 0, None)
-        self.assertEqual(state.active_tab, HubState.TAB_REPORT)
-
-        # Tab 1: 相机&内参 (x=480, y=25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 480, 25, 0, None)
-        self.assertEqual(state.active_tab, HubState.TAB_INTRINSICS_IMAGES)
-
-        # Tab 2: 标定外参建图 (x=570, y=25)
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 570, 25, 0, None)
-        self.assertEqual(state.active_tab, HubState.TAB_CALIB_IMAGES)
+        app.renderer.render(state)
+        tabs_layout = dict((k, r) for k, _, r in app.renderer.hit_tester.get_tabs_layout(state))
+        for tab_key in (HubState.TAB_PROD_IMAGES, HubState.TAB_REPORT, HubState.TAB_CALIB_IMAGES):
+            tx, ty, tw, th = tabs_layout[tab_key]
+            app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, tx + tw // 2, ty + th // 2, 0, None)
+            self.assertEqual(state.active_tab, tab_key)
 
         # 6. 验证在相册页签下触发真实页面渲染，防止 GRID 属性缺失引发 AttributeError
         canvas = app.render()
@@ -453,7 +438,8 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(canvas.shape, (720, 960, 3))
 
         # 切换生产相册并渲染
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 670, 25, 0, None)
+        px, py, pw, ph = tabs_layout[HubState.TAB_PROD_IMAGES]
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, px + pw // 2, py + ph // 2, 0, None)
         self.assertEqual(state.active_tab, HubState.TAB_PROD_IMAGES)
         canvas_prod = app.render()
         self.assertIsNotNone(canvas_prod)
@@ -677,24 +663,25 @@ class TestWorkspaceHub(unittest.TestCase):
         self.assertEqual(rendered.shape, (720, 960, 3))
 
     def test_report_embedded_buttons_hit_test_and_actions(self):
-        """测试体检报告卡片1内嵌的 5 个操作按钮 hit_test 判定 (960宽紧凑右对齐)"""
+        """测试体检报告卡片1内嵌的操作按钮与全局相机下拉框 hit_test 判定"""
         state = HubState(self.workspace_mgr)
         state.active_tab = HubState.TAB_REPORT
         renderer = HubRenderer()
 
-        # 验证 5 个内嵌按钮的命中 (x: 864~938 / 776~854)
         # 1. 重命名 (x: 864~938, y: 68~94)
         self.assertEqual(renderer.hit_tester.hit_test(900, 80, state), "ws_rename")
         # 2. 打开 (x: 864~938, y: 96~122)
         self.assertEqual(renderer.hit_tester.hit_test(900, 110, state), "ws_open_dir")
-        # 3. 修改 (x: 864~938, y: 152~178)
-        self.assertEqual(renderer.hit_tester.hit_test(900, 165, state), "ws_edit_desc")
-        # 4. 更新元数据 (移至卡片1底栏左侧, x: 372~504, y: 190~220)
-        self.assertEqual(renderer.hit_tester.hit_test(430, 205, state), "ws_sync_data")
-        # 5. 克隆 (x: 512~592, y: 190~220)
-        self.assertEqual(renderer.hit_tester.hit_test(550, 205, state), "ws_clone")
-        # 6. 删除 (x: 600~678, y: 190~220)
-        self.assertEqual(renderer.hit_tester.hit_test(630, 205, state), "ws_delete")
+        # 3. 绑定全局相机下拉框 (x: 426~762, y: 152~178)
+        self.assertEqual(renderer.hit_tester.hit_test(500, 165, state), ("dropdown_toggle", "ws_camera"))
+        # 4. 修改备注 (x: 864~938, y: 180~206)
+        self.assertEqual(renderer.hit_tester.hit_test(900, 192, state), "ws_edit_desc")
+        # 5. 更新元数据 (x: 372~504, y: 214~242)
+        self.assertEqual(renderer.hit_tester.hit_test(430, 226, state), "ws_sync_data")
+        # 6. 克隆 (x: 512~592, y: 214~242)
+        self.assertEqual(renderer.hit_tester.hit_test(550, 226, state), "ws_clone")
+        # 7. 删除 (x: 600~674, y: 214~242)
+        self.assertEqual(renderer.hit_tester.hit_test(630, 226, state), "ws_delete")
 
     def test_data_consistency_sync(self):
         """测试工位元数据记录与物理磁盘不一致时的自愈与同步刷新"""
@@ -707,9 +694,9 @@ class TestWorkspaceHub(unittest.TestCase):
         ws.save_meta()
         self.assertEqual(ws.calibration_image_count, 22)
 
-        # 触发 [更新元数据] 按钮 (卡片1底栏左侧, x=430, y=205)
+        # 触发 [更新元数据] 按钮 (卡片1底栏左侧, x=430, y=226)
         app.state.active_tab = HubState.TAB_REPORT
-        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 430, 205, 0, None)
+        app._on_mouse_event(cv2.EVENT_LBUTTONDOWN, 430, 226, 0, None)
 
         # 验证自动核验自愈：已同步至物理真实照片数，且元数据已更新
         self.assertEqual(ws.calibration_image_count, ws.get_image_count("calibration"))

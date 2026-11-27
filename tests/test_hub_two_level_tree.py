@@ -98,13 +98,12 @@ class TestHubTwoLevelTree(unittest.TestCase):
             # -------------------------------------------------------------
             # 3. 验证点击上下文联动 (工位级 vs 坐标系级 Tab 切换)
             # -------------------------------------------------------------
-            # 3.1 初始为工位选中
+            # 3.1 初始为工位选中 (大盘看板 / 外参建图 / 生产图集)
             assert state.selected_tree_item[0] == "workspace"
             tabs_ws = state.get_current_tabs()
-            assert len(tabs_ws) == 4
+            assert len(tabs_ws) == 3
             assert [t[0] for t in tabs_ws] == [
                 HubState.TAB_REPORT,
-                HubState.TAB_INTRINSICS_IMAGES,
                 HubState.TAB_CALIB_IMAGES,
                 HubState.TAB_PROD_IMAGES,
             ]

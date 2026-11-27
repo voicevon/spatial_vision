@@ -15,11 +15,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from src.control.grading_engine import GradeDecision, GradingEngine
 from src.devices.camera_service import CameraService
 from src.ui.base_cv_app import BaseCvApp
 from src.ui.canvas_viewport_interactor import CanvasViewportInteractor
 from src.utils.image_io import imread_unicode, imwrite_unicode
 from src.utils.logger import get_logger
+from src.vision.planar_rectifier import PlanarRectifier, PlanarRigConfig
 from src.vision.single_asparagus_measurer import (
     MeasureConfig,
     ORIENTATION_OPTIONS,
@@ -33,11 +35,17 @@ from tools.asparagus_measure_studio.data_io import (
     APP_ID,
     BASE_H,
     BASE_W,
+    BatchEvalSummary,
     DEFAULT_DIR,
+    SORTER_STATION_CONFIG_PATH,
     WINDOW_KEY,
     load_camera_intrinsics_cfg,
+    load_ground_truth_csv,
     load_measure_settings,
+    load_sorter_station_yaml,
     project_workspace_roi_to_2d,
+    run_batch_evaluation,
+    save_measure_config_to_station_yaml,
     save_measure_settings,
     scan_samples,
 )
@@ -54,6 +62,7 @@ class AsparagusMeasureStudioApp(BaseCvApp):
         sample_dir: Optional[str] = None,
         settings_file: Optional[str] = None,
         camera_service: Optional[CameraService] = None,
+        station_config_path: Optional[str] = None,
     ):
         super().__init__(
             app_id=APP_ID,
@@ -101,6 +110,15 @@ class AsparagusMeasureStudioApp(BaseCvApp):
         )
 
         # 运行模式与 ROI 状态
+        self.station_config_path: str = station_config_path or SORTER_STATION_CONFIG_PATH
+        self.use_planar_rectify: bool = bool(self._persisted.get("use_planar_rectify", False))
+        self.rectifier: Optional[PlanarRectifier] = None
+        self.grading_engine: Optional[GradingEngine] = None
+        self.grade_decision: Optional[GradeDecision] = None
+        self.ground_truth: Dict[str, Tuple[float, float]] = {}
+        self.batch_eval: Optional[BatchEvalSummary] = None
+        self._load_station_assets()
+
         self.source_mode: str = "offline"     # "offline" | "live"
         self.selected_roi_id: str = str(self._persisted.get("selected_roi_id", ""))
         saved_manual = self._persisted.get("manual_roi")
@@ -179,7 +197,38 @@ class AsparagusMeasureStudioApp(BaseCvApp):
             "fallback_mm_per_px": cfg.fallback_mm_per_px,
             "selected_roi_id": self.selected_roi_id,
             "manual_roi": list(self.manual_roi) if self.manual_roi is not None else None,
+            "use_planar_rectify": self.use_planar_rectify,
         }, settings_file=self.settings_file)
+
+    def _load_station_assets(self):
+        """从 sorter_station.yaml 加载机架 4 标靶单应性拉正器与分级规则引擎"""
+        station_cfg = load_sorter_station_yaml(self.station_config_path)
+        rig = station_cfg.get("rig") or {}
+        raw_tags = rig.get("fixed_tags_mm") or {}
+        if raw_tags:
+            fixed_tags = {int(k): (float(v[0]), float(v[1])) for k, v in raw_tags.items()}
+            roi = rig.get("roi_mm") or [20.0, 15.0, 300.0, 105.0]
+            rig_cfg = PlanarRigConfig(
+                tag_size_mm=float(rig.get("tag_size_mm", 30.0)),
+                fixed_tags_mm=fixed_tags,
+                roi_mm=(float(roi[0]), float(roi[1]), float(roi[2]), float(roi[3])),
+                px_per_mm=float(rig.get("px_per_mm", 4.0)),
+                max_reproj_err_px=float(rig.get("max_reproj_err_px", 1.5)),
+                shift_threshold_px=float(rig.get("shift_threshold_px", 1.0)),
+                use_tag_corners=bool(rig.get("use_tag_corners", False)),
+            )
+            self.rectifier = PlanarRectifier(rig_cfg)
+        else:
+            self.rectifier = None
+
+        grading_cfg = station_cfg.get("grading")
+        self.grading_engine = GradingEngine.from_config(grading_cfg) if grading_cfg else None
+
+    @property
+    def current_sample_gt(self) -> Optional[Tuple[float, float]]:
+        if self.source_mode != "offline" or not (0 <= self.sel_idx < len(self.samples)):
+            return None
+        return self.ground_truth.get(self.samples[self.sel_idx]["name"])
 
     def _on_camera_intrinsics(self, K: np.ndarray, dist: np.ndarray):
         try:
@@ -259,6 +308,8 @@ class AsparagusMeasureStudioApp(BaseCvApp):
 
     def rescan(self, auto_load: bool = False):
         self.samples = scan_samples(self.sample_dir)
+        self.ground_truth = load_ground_truth_csv(self.sample_dir)
+        self.batch_eval = None
         self.sel_idx = -1
         self.scroll_off = 0
         if auto_load and self.samples:
@@ -267,6 +318,7 @@ class AsparagusMeasureStudioApp(BaseCvApp):
             self.current_color = None
             self.current_depth = None
             self.measurement = None
+            self.grade_decision = None
             self.error_msg = f"样本目录为空: {self.sample_dir}"
 
     def _select_sample(self, idx: int):
@@ -291,20 +343,114 @@ class AsparagusMeasureStudioApp(BaseCvApp):
         self.error_msg = ""
         self.run_measurement()
 
+    def _measure_single_frame(
+        self,
+        color_bgr: np.ndarray,
+        depth_mm: Optional[np.ndarray] = None,
+    ) -> Tuple[SingleAsparagusMeasurement, Optional[GradeDecision]]:
+        """执行单帧测量与分级（统一供当前帧展示与离线批量评测调用）"""
+        if self.use_planar_rectify and self.rectifier is not None:
+            st = self.rectifier.update(color_bgr, force_recompute=True)
+            if not st.locked:
+                meas = SingleAsparagusMeasurement(valid=False, reason=f"4标靶拉正失锁: {st.reason}")
+                dec = (
+                    self.grading_engine.evaluate(valid=False, effective_length_mm=0.0, diameter_mm=0.0)
+                    if self.grading_engine is not None else None
+                )
+                return meas, dec
+            warped = self.rectifier.warp_roi(color_bgr)
+            if warped is None:
+                meas = SingleAsparagusMeasurement(valid=False, reason="4标靶拉正输出为空")
+                dec = (
+                    self.grading_engine.evaluate(valid=False, effective_length_mm=0.0, diameter_mm=0.0)
+                    if self.grading_engine is not None else None
+                )
+                return meas, dec
+            saved_scale = self.measurer.config.fallback_mm_per_px
+            try:
+                self.measurer.config.fallback_mm_per_px = self.rectifier.mm_per_px
+                meas = self.measurer.measure(
+                    color_bgr=warped,
+                    roi_rect=self.manual_roi,
+                    depth_mm=None,
+                    intrinsics=None,
+                    tag_localizer=None,
+                )
+                if meas.valid:
+                    meas.scale_source = "planar_homography"
+            finally:
+                self.measurer.config.fallback_mm_per_px = saved_scale
+        else:
+            h, w = color_bgr.shape[:2]
+            intr = self._get_intrinsics(w, h)
+            roi_rect = self._resolve_active_roi(color_bgr, intr)
+            meas = self.measurer.measure(
+                color_bgr=color_bgr,
+                roi_rect=roi_rect,
+                depth_mm=depth_mm,
+                intrinsics=intr,
+                tag_localizer=self.tag_localizer,
+            )
+
+        dec = None
+        if self.grading_engine is not None:
+            dec = self.grading_engine.evaluate(
+                valid=meas.valid,
+                effective_length_mm=meas.effective_length_mm,
+                diameter_mm=meas.diameter_mm,
+                has_white_root=meas.has_white_root,
+            )
+        return meas, dec
+
     def run_measurement(self):
         if self.current_color is None:
             self.measurement = None
+            self.grade_decision = None
             return
-        h, w = self.current_color.shape[:2]
-        intr = self._get_intrinsics(w, h)
-        roi_rect = self._resolve_active_roi(self.current_color, intr)
-        self.measurement = self.measurer.measure(
-            color_bgr=self.current_color,
-            roi_rect=roi_rect,
-            depth_mm=self.current_depth,
-            intrinsics=intr,
-            tag_localizer=self.tag_localizer,
+        self.measurement, self.grade_decision = self._measure_single_frame(
+            self.current_color, self.current_depth
         )
+
+    def toggle_planar_rectify(self):
+        if self.rectifier is None:
+            self.set_toast("未找到 sorter_station.yaml 中的 rig.fixed_tags_mm 配置")
+            return
+        self.use_planar_rectify = not self.use_planar_rectify
+        self._save_state()
+        self.run_measurement()
+        self.set_toast("已启用机架 4 标靶单应性拉正" if self.use_planar_rectify else "已关闭 4 标靶单应性拉正")
+
+    def export_to_station_yaml(self) -> bool:
+        ok = save_measure_config_to_station_yaml(self.measurer.config, self.station_config_path)
+        if ok:
+            self.set_toast(f"已导出测量参数至 {os.path.basename(self.station_config_path)}", duration=3.5)
+        else:
+            self.set_toast("导出产线 YAML 失败，请检查日志", duration=3.5)
+        return ok
+
+    def run_offline_batch_eval(self) -> Optional[BatchEvalSummary]:
+        if not self.samples:
+            self.set_toast("当前目录无离线样本可评测")
+            return None
+        self.ground_truth = load_ground_truth_csv(self.sample_dir)
+        summary = run_batch_evaluation(
+            samples=self.samples,
+            measure_fn=self._measure_single_frame,
+            ground_truth=self.ground_truth,
+        )
+        self.batch_eval = summary
+        if summary.gt_matched_count > 0:
+            self.set_toast(
+                f"批量评测完成: 有效 {summary.valid_count}/{summary.total} | "
+                f"真值({summary.gt_matched_count}) L-MAE={summary.len_mae_mm:.2f}mm D-MAE={summary.diam_mae_mm:.2f}mm",
+                duration=5.0,
+            )
+        else:
+            self.set_toast(
+                f"批量评测完成: 有效 {summary.valid_count}/{summary.total} (未发现 ground_truth.csv)",
+                duration=4.0,
+            )
+        return summary
 
     def toggle_source_mode(self):
         """切换离线样本 / 实时相机模式"""
@@ -544,6 +690,12 @@ class AsparagusMeasureStudioApp(BaseCvApp):
             self.set_toast(f"已刷新样本 ({len(self.samples)} 帧)")
         elif btn_id == "CAPTURE_LIVE":
             self.capture_live_snapshot()
+        elif btn_id == "TOGGLE_RECTIFY":
+            self.toggle_planar_rectify()
+        elif btn_id == "RUN_BATCH_EVAL":
+            self.run_offline_batch_eval()
+        elif btn_id == "EXPORT_STATION_YAML":
+            self.export_to_station_yaml()
 
     def on_key(self, raw_key: int) -> bool:
         if raw_key == 27 and self.is_drawing_roi:
@@ -559,6 +711,15 @@ class AsparagusMeasureStudioApp(BaseCvApp):
             return True
         if raw_key in (ord('o'), ord('O')):
             self.cycle_orientation()
+            return True
+        if raw_key in (ord('p'), ord('P')):
+            self.toggle_planar_rectify()
+            return True
+        if raw_key in (ord('b'), ord('B')) and self.source_mode == "offline":
+            self.run_offline_batch_eval()
+            return True
+        if raw_key in (ord('s'), ord('S')):
+            self.export_to_station_yaml()
             return True
         if raw_key == ord(' ') and self.source_mode == "live":
             self.capture_live_snapshot()

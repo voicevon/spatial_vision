@@ -62,17 +62,12 @@ WS_BTN_RENAME = (864, 68, 74, 26)
 WS_BTN_OPEN_DIR = (864, 96, 74, 26)
 WS_DROPDOWN_PROD_MODE = (426, 124, 512, 26)
 WS_BTN_TOGGLE_PROD_MODE = WS_DROPDOWN_PROD_MODE
-WS_BTN_EDIT_DESC = (864, 152, 74, 26)
-WS_BTN_SYNC_DATA = (372, 192, 132, 28)
-WS_BTN_CLONE = (512, 192, 80, 28)
-WS_BTN_DELETE = (600, 192, 74, 28)
-WS_BTN_NEW_FRAME = (682, 192, 130, 28)
-
-# 【相机&内参】TAB 页签原位交互控件几何常量 (固定双行卡片, 界面零晃动)
-INTR_BTN_REFRESH_DEV = (862, 66, 80, 24)
-INTR_BTN_EDIT_CONFIG = (862, 100, 80, 24)
-INTR_BTN_CAPTURE = (734, 154, 98, 28)
-INTR_BTN_CALIB = (838, 154, 98, 28)
+WS_DROPDOWN_CAMERA = (426, 152, 336, 26)
+WS_BTN_EDIT_DESC = (864, 180, 74, 26)
+WS_BTN_SYNC_DATA = (372, 214, 132, 28)
+WS_BTN_CLONE = (512, 214, 80, 28)
+WS_BTN_DELETE = (600, 214, 74, 28)
+WS_BTN_NEW_FRAME = (682, 214, 130, 28)
 
 
 # ==================== 白名单芯片矩阵编辑器几何常量 (渲染与命中测试单源共用) ====================
@@ -394,8 +389,6 @@ class HubRenderer:
             self.frames_rois_page.render_frame_pose_tags(canvas, state, ws)
         elif state.active_tab == HubState.TAB_FRAME_ROIS:
             self.frames_rois_page.render_frame_rois(canvas, state, ws)
-        elif state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
-            self.gallery_page.render_intrinsics_images(canvas, state, ws)
         elif state.active_tab == HubState.TAB_PROD_IMAGES:
             self.gallery_page.render_prod_images(canvas, state, ws)
         else:

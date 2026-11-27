@@ -1,0 +1,50 @@
+# 项目 1：单根绿芦笋视觉测量分拣工位单一配置文件 (SSOT)
+# 启动命令: python tools/sorter_runtime.py [--sim] [--headless]
+
+camera:
+  device_index: 0
+  width: 1280
+  height: 720
+  fps: 30
+
+rig:
+  tag_size_mm: 30.0
+  use_tag_corners: false         # false=按标靶中心求解(抗粘贴旋转, 需>=4靶); true=按4角点求解(支持3靶抗遮挡)
+  # 机架固定 AprilTag 16h5 标靶中心 CAD 物理坐标 (mm)，与芦笋测量平面共面
+  fixed_tags_mm:
+    0: [0.0, 0.0]
+    1: [320.0, 0.0]
+    2: [320.0, 120.0]
+    3: [0.0, 120.0]
+  # 鸟瞰拉正后的物理测量 ROI [x_min, y_min, x_max, y_max] (mm)
+  roi_mm: [20.0, 15.0, 300.0, 105.0]
+  px_per_mm: 4.0                 # 严格 0.25 mm/px
+  recheck_interval_s: 1.0        # 空闲巡检标靶抗碰歪周期 (秒)
+  max_reproj_err_px: 1.5
+  shift_threshold_px: 1.0
+
+measure:
+  orientation: "left_to_right"   # 根 -> 尖固定方向: left_to_right / right_to_left / top_to_bottom / bottom_to_top
+  diameter_offset_mm: 20.0
+  green_h_low: 25
+  green_h_high: 95
+  green_s_min: 35
+  green_v_min: 30
+  white_s_max: 65
+  white_v_min: 135
+  green_ratio_threshold: 0.55
+  min_white_root_mm: 3.0
+  min_area_px: 200
+
+serial:
+  port: "COM3"
+  baudrate: 115200
+  timeout_ms: 50
+
+grading:
+  default_reject_grade: 0
+  rules:
+    - { grade: 1, name: "特级粗", min_len_mm: 220.0, min_diam_mm: 14.0 }
+    - { grade: 2, name: "一级中", min_len_mm: 200.0, min_diam_mm: 10.0 }
+    - { grade: 3, name: "二级细", min_len_mm: 180.0, min_diam_mm: 7.0 }
+    - { grade: 4, name: "短粗级", min_len_mm: 150.0, min_diam_mm: 10.0 }

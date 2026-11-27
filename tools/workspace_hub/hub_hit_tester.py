@@ -100,9 +100,8 @@ class HubHitTester:
             GEOM_MODAL_CLOSE, GEOM_MODAL_SAVE, GEOM_MODAL_CANCEL,
             HELP_MODAL_W, HELP_MODAL_H,
             BTN_EXIT_X0, BTN_EXIT_Y0, BTN_EXIT_W, BTN_EXIT_H,
-            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
+            WS_BTN_RENAME, WS_BTN_OPEN_DIR, WS_DROPDOWN_PROD_MODE, WS_DROPDOWN_CAMERA, WS_BTN_TOGGLE_PROD_MODE, WS_BTN_EDIT_DESC,
             WS_BTN_SYNC_DATA, WS_BTN_CLONE, WS_BTN_DELETE, WS_BTN_NEW_FRAME,
-            INTR_BTN_REFRESH_DEV, INTR_BTN_EDIT_CONFIG, INTR_BTN_CAPTURE, INTR_BTN_CALIB,
             FRAME_DELETE_BTN, FRAME_EDIT_POSE_BTN, FRAME_ADD_ROI_BTN, FRAME_TAG_EDIT_SIZE_BTN,
             FRAME_ROI_PREV_BTN, FRAME_ROI_NEXT_BTN, FRAME_ROI_SCROLL_TRACK,
             frame_tag_chip_rect, frame_roi_edit_btn, frame_roi_del_btn,
@@ -380,8 +379,28 @@ class HubHitTester:
                     return ("dropdown_toggle", "ws_prod_mode")
                 return "dropdown_dismiss"
 
+            if state.active_dropdown == "ws_camera":
+                cd_x, cd_y, cd_w, cd_h = WS_DROPDOWN_CAMERA
+                pop_x1, pop_y1 = cd_x, cd_y + cd_h + 2
+                pop_w = max(cd_w, 210)
+                pop_x2 = pop_x1 + pop_w
+                item_h = 28
+                cams = state.camera_registry.list_cameras()
+                options = [("", "未绑定 (解除关联)")] + [
+                    (c.camera_id, c.name) for c in cams
+                ]
+                pop_y2 = pop_y1 + len(options) * item_h + 6
+                if pop_x1 <= mx <= pop_x2 and pop_y1 <= my <= pop_y2:
+                    opt_idx = min(len(options) - 1, max(0, (my - (pop_y1 + 3)) // item_h))
+                    return ("dropdown_select", "ws_camera", options[opt_idx][0])
+                if point_in_rect(mx, my, WS_DROPDOWN_CAMERA):
+                    return ("dropdown_toggle", "ws_camera")
+                return "dropdown_dismiss"
+
             if point_in_rect(mx, my, WS_DROPDOWN_PROD_MODE):
                 return ("dropdown_toggle", "ws_prod_mode")
+            if point_in_rect(mx, my, WS_DROPDOWN_CAMERA):
+                return ("dropdown_toggle", "ws_camera")
             if point_in_rect(mx, my, WS_BTN_RENAME):
                 return "ws_rename"
             if point_in_rect(mx, my, WS_BTN_OPEN_DIR):
@@ -447,28 +466,9 @@ class HubHitTester:
                     if point_in_rect(mx, my, frame_roi_del_btn(i)):
                         return ("frame_roi_delete", r.roi_id)
 
-        # 图片卡片网格墙卡片 Hover 与按钮检测 (三大图集通用)
-        if state.active_tab in (HubState.TAB_INTRINSICS_IMAGES, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
-            if state.active_tab == HubState.TAB_INTRINSICS_IMAGES:
-                # 硬件操作按钮
-                if point_in_rect(mx, my, INTR_BTN_REFRESH_DEV):
-                    return "intr_refresh_devices"
-                if point_in_rect(mx, my, INTR_BTN_EDIT_CONFIG):
-                    return "intr_edit_config"
-
-                # 标定与采图操作按钮
-                if point_in_rect(mx, my, INTR_BTN_CAPTURE):
-                    return "run_capture_intrinsics"
-                if point_in_rect(mx, my, INTR_BTN_CALIB):
-                    return "run_intrinsics_calib"
-
-                # 空状态居中 [+ 打开相机采集]
-                if not state.gallery.intrinsics_images and point_in_rect(mx, my, (570, 260, 160, 36)):
-                    return "run_capture_intrinsics"
-                cell_idx = grid_hit_test(mx, my, y_offset=158)
-                if cell_idx is not None:
-                    return ("grid_item", state.gallery.intrinsics_grid_offset + cell_idx)
-            elif state.active_tab == HubState.TAB_PROD_IMAGES:
+        # 图片卡片网格墙卡片 Hover 与按钮检测 (外参 + 生产两大图集通用)
+        if state.active_tab in (HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES):
+            if state.active_tab == HubState.TAB_PROD_IMAGES:
                 # 右上角 [+ 采集相片]
                 if point_in_rect(mx, my, (835, 56, 110, 32)):
                     return "run_capture_prod"

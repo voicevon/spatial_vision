@@ -10,36 +10,39 @@
 每个工位自包含全部标定与生产资产，位于 `data/workspaces/<workspace_id>/`：
 
 ```text
-data/workspaces/<workspace_id>/
-├── workspace_meta.yaml          # 工位元数据（ID、名称、绑定相机、锁定分辨率、图集计数与 BA 指标缓存）
+data/cameras/<camera_id>/        # 【全局多相机资产库】(Camera Hub 管理，跨工位共享)
+├── camera_meta.yaml             #   物理标识 (rs_<serial> / usb_<uuid8>)、类型与别名
+└── <width>x<height>/            #   分辨率子档案
+    ├── raw_images/              #     棋盘格标定原图 (intr_XXXX.png)
+    └── intrinsics.yaml          #     内参矩阵 K、畸变系数 D、RMSE 与逐帧误差
+
+data/workspaces/<workspace_id>/  # 【工位沙盒目录】(Workspace Hub 管理)
+├── workspace_meta.yaml          # 工位元数据（ID、名称、绑定 camera_id、锁定分辨率、图集计数与 BA 指标缓存）
 ├── tag_whitelist.yaml           # 【唯一真理源】标靶准入、物理边长 tag_default_size_mm 与世界锚点 xyz_mm
 ├── spatial_scene.yaml           # 【唯一真理源】多坐标系树 (frames) 与 3D Smart ROI 物件 (rois)
 ├── tags_map.yaml                # 【工位顶层产物】空间立体几何地图 T_world_from_tag（供标定与生产消费）
-├── intrinsics/                  # 【专区一：相机内参】
-│   ├── raw_images/              #   棋盘格/标定板原图 (intr_XXXX.png)
-│   ├── camera_intrinsics.yaml   #   工位专属内参矩阵 K、畸变系数 D 与锁定分辨率
-│   └── reports/                 #   内参标定评估报告
-├── calibration/                 # 【专区二：外参建图】
+├── calibration/                 # 【专区一：外参建图】
 │   ├── raw_images/              #   AprilTag 多视角原图 (calib_XXXX.png)
 │   ├── tag_observations.yaml    #   离线观测清单与剔除标记
 │   ├── reports/                 #   BA 平差与盲测质检报告
 │   └── visualized/              #   重投影残差与棱柱可视化图
-└── production/                  # 【专区三：生产采样】
+└── production/                  # 【专区二：生产采样】
     ├── raw_images/              #   现场工件采图样本 (prod_XXXX.png)
     └── reports/                 #   生产质检报告
 ```
 
 ### 1.1 硬件绑定与分辨率锁定 (SSOT)
-- 分辨率解析优先级：`intrinsics/camera_intrinsics.yaml` 中的 `(width, height)` $\rightarrow$ `workspace_meta.yaml` 中的 `camera_resolution` $\rightarrow$ 缺省 `1920x1080`。
-- **硬件锁定保护 (`is_hardware_locked`)**：工位一旦存在任意历史照片（`total_image_count > 0`），即锁定物理相机类型（`realsense` / `usb` / `mock`）与分辨率。
+- 全局相机内参由 `Camera Hub` (`tools/camera_hub/`) 独立管理在 `data/cameras/<camera_id>/<WxH>/intrinsics.yaml`，工位仅通过 `workspace_meta.yaml` 中的 `camera_id` 引用；
+- 分辨率解析唯一来源：`workspace_meta.yaml` 中的 `camera_resolution` $\rightarrow$ 缺省 `1920x1080`。
+- **硬件锁定保护 (`is_hardware_locked`)**：工位一旦存在任意历史照片（`total_image_count > 0`），即锁定绑定的 `camera_id`、物理相机类型与分辨率。
 - **防呆校验 (`validate_image_resolution`)**：传入图像尺寸与工位锁定规格不符时直接拒绝，杜绝跨分辨率内参错配。
 
-### 1.2 三大图集命名契约与防覆盖
+### 1.2 图集命名契约与防覆盖
 | 图集专区 | 存储目录 | 命名格式 | 说明 |
 | :--- | :--- | :--- | :--- |
-| 相机内参 | `intrinsics/raw_images/` | `intr_XXXX.png` | 4 位补零，从 `0001` 起始 |
-| 外参建图 | `calibration/raw_images/` | `calib_XXXX.png` | 4 位补零，从 `0001` 起始 |
-| 生产采样 | `production/raw_images/` | `prod_XXXX.png` | 4 位补零，从 `0001` 起始 |
+| 相机内参（全局相机库） | `data/cameras/<camera_id>/<WxH>/raw_images/` | `intr_XXXX.png` | 4 位补零，从 `0001` 起始，由 Camera Hub 管理 |
+| 外参建图（工位内） | `calibration/raw_images/` | `calib_XXXX.png` | 4 位补零，从 `0001` 起始 |
+| 生产采样（工位内） | `production/raw_images/` | `prod_XXXX.png` | 4 位补零，从 `0001` 起始 |
 
 - 采图向导（`tools/capture/`）与 Hub 原地采图必须解析对应用途已有最大序列号后自增，**严禁**使用 `len(glob)` 计数导致删帧后覆盖旧图。
 - 所有图像读写统一走 `src/utils/image_io.py`（`imread_unicode` / `imwrite_unicode`）。
@@ -110,6 +113,6 @@ tags:
 - 启动：`python -m tools.workspace_hub`（或 Dashboard `[1]`）。
 - 架构：960×720 左右两栏 + 自适应动态页签区，遵循 `BaseCvApp` + 只读 `Renderer` + 子状态机（`states/gallery_state.py`、`whitelist_state.py`、`geometry_state.py`）。
   - **左栏**：工位树导航（工位根节点 + 机构坐标系子节点）+ 新建工位。
-  - **右栏（工位宏观视图）**：Dashboard（运维条与健康大屏）、相机&内参（3×3 图集墙 + 一键内参求解）、外参建图（图集 + 采图向导 + 直通 Spatial Mapping Studio）、生产图集。
+  - **右栏（工位宏观视图）**：Dashboard（运维条、全局相机绑定与健康大屏）、外参建图（图集 + 采图向导 + 直通 Spatial Mapping Studio）、生产图集。
   - **右栏（机构微观视图）**：Tags 标靶与位姿（外参配置 + 标靶边长 + 10-Slot 放行矩阵）、ROI 物件（3D OBB 增删改查）。
 - 性能优化：命中区缓存跳过静态帧重绘；`Workspace.load()` 优先信任元数据缓存；局部 Patch 贴图渲染中文。

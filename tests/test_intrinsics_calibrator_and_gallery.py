@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-相机内参标定求解器与三大图集架构单元测试
-======================================
-基于标准库 unittest 验证：
-1. 单目棋盘格内参标定求解 (OpenCV calibrateCamera + RMSE)
-2. 工位沙盒内参持久化与加载 (workspace.save_camera_intrinsics / load_camera_intrinsics)
-3. Workspace Hub 状态机四大 Tab 顺序与三大独立图集 (intrinsics / calibration / production)
-4. 相册抓拍分类归档与命中测试
+相机内参标定求解器与两大图集架构单元测试
+========================================
+1. 单目棋盘格内参标定求解 (OpenCV calibrateCamera + RMSE + 逐帧误差)
+2. 全局相机档案内参持久化与读取 (calibrate_camera_profile)
+3. Workspace Hub 状态机三大 Tab 顺序与两大业务图集 (calibration / production)
 """
 
 import os
@@ -16,14 +14,13 @@ import unittest
 import cv2
 import numpy as np
 
-from src.workspace.workspace_manager import WorkspaceManager, Workspace
+from src.cameras.camera_registry import CameraRegistry
+from src.workspace.workspace_manager import WorkspaceManager
 from src.calibration.solvers.camera_intrinsics_calibrator import (
     calibrate_camera_from_images,
-    calibrate_workspace_intrinsics,
+    calibrate_camera_profile,
 )
 from tools.workspace_hub.hub_state import HubState
-from tools.workspace_hub.hub_renderer import HubRenderer, grid_hit_test
-from tools.workspace_hub.hub_hit_tester import HubHitTester
 
 
 def generate_synthetic_chessboard_images(
@@ -81,7 +78,7 @@ def generate_synthetic_chessboard_images(
         M = cv2.getPerspectiveTransform(src_pts, dst_pts)
         warped = cv2.warpPerspective(base_img, M, (w_out, h_out), borderValue=(255, 255, 255))
 
-        filepath = os.path.join(output_dir, f"intr_{i:04d}.png")
+        filepath = os.path.join(output_dir, f"intr_{i + 1:04d}.png")
         cv2.imwrite(filepath, warped)
         image_paths.append(filepath)
 
@@ -89,142 +86,80 @@ def generate_synthetic_chessboard_images(
 
 
 class TestIntrinsicsCalibratorAndGallery(unittest.TestCase):
-    """测试相机内参标定求解与三大图集管理"""
+    """测试相机内参标定求解与两大业务图集管理"""
 
     def test_camera_intrinsics_solver(self):
-        """测试单目相机棋盘格内参标定求解器"""
+        """测试单目相机棋盘格内参标定求解器及逐帧误差输出"""
         temp_dir = tempfile.mkdtemp(prefix="test_intr_solver_")
         try:
             paths = generate_synthetic_chessboard_images(temp_dir, num_images=5, pattern_size=(9, 6), square_size_mm=25.0)
             self.assertEqual(len(paths), 5)
 
-            # 运行求解
             res = calibrate_camera_from_images(paths, pattern_size=(9, 6), square_size_mm=25.0)
             self.assertTrue(res.success, f"标定失败: {res.message}")
             self.assertGreaterEqual(res.valid_images_count, 3)
+            self.assertEqual(len(res.per_image_errors), 5)
+            self.assertTrue(all(e["detected"] and e["error_px"] is not None for e in res.per_image_errors))
             self.assertGreater(res.fx, 200.0)
             self.assertGreater(res.fy, 200.0)
-            self.assertGreater(res.cx, 100.0)
-            self.assertGreater(res.cy, 100.0)
             self.assertLess(res.rmse, 2.0)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def test_workspace_intrinsics_save_and_load(self):
-        """测试工位沙盒内参的持久化与读取"""
-        temp_root = tempfile.mkdtemp(prefix="test_ws_intr_")
+    def test_camera_profile_intrinsics_save_and_load(self):
+        """测试全局相机档案棋盘格标定与持久化读取"""
+        temp_root = tempfile.mkdtemp(prefix="test_cam_prof_intr_")
         try:
-            mgr = WorkspaceManager(workspaces_dir=temp_root)
-            ws = mgr.create_workspace("ws_intr_test", "内参测试工位")
+            reg = CameraRegistry(cameras_root=temp_root)
+            cam = reg.register_camera("测试D435", camera_type="realsense", hardware_serial="SN_INTR_01")
 
-            # 验证三图集与内参路径
-            self.assertTrue(os.path.isdir(ws.intrinsics_raw_images_dir))
-            self.assertTrue(os.path.isdir(ws.calib_raw_images_dir))
-            self.assertTrue(os.path.isdir(ws.prod_raw_images_dir))
-            self.assertTrue(ws.camera_intrinsics_path.endswith("camera_intrinsics.yaml"))
+            self.assertIsNone(cam.load_intrinsics("640x480"))
+            generate_synthetic_chessboard_images(cam.raw_images_dir("640x480"), num_images=4)
+            self.assertEqual(len(cam.list_images("640x480")), 4)
 
-            # 初始状态未标定
-            initial_intr = ws.load_camera_intrinsics()
-            self.assertIsNone(initial_intr)
-
-            # 生成棋盘格照片并进行工位标定
-            generate_synthetic_chessboard_images(ws.intrinsics_raw_images_dir, num_images=4)
-            ws.refresh_stats()
-            self.assertEqual(ws.intrinsics_image_count, 4)
-
-            # 自动标定并写穿至工位沙盒
-            calib_res = calibrate_workspace_intrinsics(ws, pattern_size=(9, 6), square_size_mm=25.0, save_to_workspace=True)
+            calib_res = calibrate_camera_profile(cam, "640x480", pattern_size=(9, 6), square_size_mm=25.0)
             self.assertTrue(calib_res.success, f"标定失败: {calib_res.message}")
 
-            # 验证工位内参持久化文件已创建并加载正确
-            self.assertTrue(os.path.exists(ws.camera_intrinsics_path))
-            saved_intr = ws.load_camera_intrinsics()
-            self.assertIsNotNone(saved_intr)
-            self.assertTrue(saved_intr["calibrated"])
-            self.assertEqual(saved_intr["rmse"], calib_res.rmse)
-            self.assertAlmostEqual(saved_intr["fx"], calib_res.fx, places=4)
+            saved = cam.load_intrinsics("640x480")
+            self.assertIsNotNone(saved)
+            self.assertAlmostEqual(saved.rmse, calib_res.rmse, places=4)
+            self.assertAlmostEqual(saved.fx, calib_res.fx, places=4)
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 
-    def test_hub_state_four_tabs_and_three_galleries(self):
-        """测试 HubState 树形组织：工位 -> 内参 -> 三大独立图集"""
+    def test_hub_state_three_tabs_and_two_galleries(self):
+        """测试 HubState 树形组织：大盘看板 + 外参/生产两大独立图集 (不含相机内参页签)"""
         temp_root = tempfile.mkdtemp(prefix="test_hub_tabs_")
         try:
             mgr = WorkspaceManager(workspaces_dir=temp_root)
-            ws = mgr.create_workspace("ws_alpha", "测试工位Alpha")
+            mgr.create_workspace("ws_alpha", "测试工位Alpha")
 
             hub_state = HubState(workspace_mgr=mgr)
             self.assertEqual(hub_state.WS_TAB_ORDER, (
                 HubState.TAB_REPORT,
-                HubState.TAB_INTRINSICS_IMAGES,
                 HubState.TAB_CALIB_IMAGES,
                 HubState.TAB_PROD_IMAGES,
             ))
 
-            # 验证 Tab 标签
             tab_keys = [t.key for t in hub_state.tab_bar.items]
-            self.assertIn(HubState.TAB_INTRINSICS_IMAGES, tab_keys)
-            self.assertIn(HubState.TAB_CALIB_IMAGES, tab_keys)
-            self.assertIn(HubState.TAB_PROD_IMAGES, tab_keys)
+            self.assertEqual(tab_keys, [HubState.TAB_REPORT, HubState.TAB_CALIB_IMAGES, HubState.TAB_PROD_IMAGES])
 
-            # 向三个图集各写入一张图片
             dummy_img = np.zeros((100, 100, 3), dtype=np.uint8)
-            hub_state.gallery.save_capture_frame(dummy_img, purpose="intrinsics")
             hub_state.gallery.save_capture_frame(dummy_img, purpose="calibration")
             hub_state.gallery.save_capture_frame(dummy_img, purpose="production")
 
-            self.assertEqual(len(hub_state.gallery.intrinsics_images), 1)
             self.assertEqual(len(hub_state.gallery.calib_images), 1)
             self.assertEqual(len(hub_state.gallery.prod_images), 1)
 
-            # 切换到相机内参页签
-            hub_state.set_tab(HubState.TAB_INTRINSICS_IMAGES)
-            imgs, idx, name = hub_state.gallery.get_active_images_and_index()
-            self.assertEqual(name, "内参图集")
-            self.assertEqual(len(imgs), 1)
-
-            # 切换到生产相册页签
             hub_state.set_tab(HubState.TAB_PROD_IMAGES)
             imgs, idx, name = hub_state.gallery.get_active_images_and_index()
             self.assertEqual(name, "生产图集")
             self.assertEqual(len(imgs), 1)
 
-            # 删除内参图片
-            hub_state.set_tab(HubState.TAB_INTRINSICS_IMAGES)
             del_ok = hub_state.gallery.delete_selected_image()
             self.assertTrue(del_ok)
-            self.assertEqual(len(hub_state.gallery.intrinsics_images), 0)
-            # 外参和生产图集不受任何影响
+            self.assertEqual(len(hub_state.gallery.prod_images), 0)
             self.assertEqual(len(hub_state.gallery.calib_images), 1)
-            self.assertEqual(len(hub_state.gallery.prod_images), 1)
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
-
-    def test_hub_hit_tester_and_intrinsics_calib_button(self):
-        """测试命中检测：相机&内参只读状态与原位编辑模式交互"""
-        temp_root = tempfile.mkdtemp(prefix="test_hit_")
-        try:
-            mgr = WorkspaceManager(workspaces_dir=temp_root)
-            mgr.create_workspace("ws_hit", "命中测试工位")
-
-            hub_state = HubState(workspace_mgr=mgr)
-            hub_state.set_tab(HubState.TAB_INTRINSICS_IMAGES)
-
-            renderer = HubRenderer()
-            hit_tester = HubHitTester(renderer)
-
-            # 1. 顶部固定双行控制卡片按钮命中 (零晃动)
-            self.assertEqual(hit_tester.hit_test(890, 75, hub_state), "intr_refresh_devices")
-            self.assertEqual(hit_tester.hit_test(890, 110, hub_state), "intr_edit_config")
-
-            # 2. 板块B：采图与标定内参按钮测试
-            self.assertEqual(hit_tester.hit_test(750, 165, hub_state), "run_capture_intrinsics")
-            self.assertEqual(hit_tester.hit_test(850, 165, hub_state), "run_intrinsics_calib")
-
-            # 3. grid_hit_test 带固定 y_offset=158 验证 (高度恒定零晃动)
-            self.assertEqual(grid_hit_test(360, 90, y_offset=0), 0)
-            self.assertIsNone(grid_hit_test(360, 140, y_offset=158))
-            self.assertIsNotNone(grid_hit_test(360, 250, y_offset=158))
         finally:
             shutil.rmtree(temp_root, ignore_errors=True)
 

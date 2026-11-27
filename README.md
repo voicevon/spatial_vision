@@ -35,12 +35,14 @@ python tools/gui_launcher.py
 
 | 类别 | 工具 | 命令 | 说明 |
 | :--- | :--- | :--- | :--- |
-| **工位中枢** | Workspace Hub | `python -m tools.workspace_hub` | 工位 CRUD、硬件锁定、三大图集、坐标系树与 3D ROI |
-| **采图标定** | 图像采集向导 | `python -m tools.capture` | 内参 (`intr_`) / 外参 (`calib_`) / 生产 (`prod_`) 采集 |
+| **资产中枢** | Workspace Hub | `python -m tools.workspace_hub` | 工位 CRUD、全局相机绑定、两大图集、坐标系树与 3D ROI |
+| **资产中枢** | Camera Hub | `python -m tools.camera_hub` | 全局多相机资产库、棋盘格实时角点采图与逐帧内参标定 |
+| **采图标定** | 图像采集向导 | `python -m tools.capture` | 外参 (`calib_`) / 生产 (`prod_`) 双用途快速采集 |
 | **采图标定** | 空间建图工作站 | `python -m tools.spatial_mapping_studio` | 样本审核、两阶段 BA 平差、残差剪枝与地图落盘 |
 | **采图标定** | AprilTag 图纸生成 | `python tools/generate_apriltags.py` | 生成 16h5 (ID 0~29) 标靶高清图与 A4 排版 PDF |
 | **视觉验证** | 顶层抓取位姿工作室 | `python -m tools.asparagus_pose_studio` | 堆叠顶层抓取位姿与纯 2D 多算法管线对比 |
 | **视觉验证** | 单根芦笋测量工作室 | `python -m tools.asparagus_measure_studio` | ROI 内单根芦笋绿色有效长度与 20mm 处直径测量 |
+| **生产运行** | 单根分拣运行时 | `python tools/sorter_runtime.py` | 2D 机架 4 标靶自动拉正、硬触发测量分级与串口闭环（支持 `--sim`/`--headless`） |
 | **生产运行** | SCARA 抓取生产 | `python -m tools.scara_production` | Smart ROI 进料感知、分选调度与 SCARA 抓取闭环 |
 | **生产运行** | 分离轮生产工作台 | `python -m tools.isolate_wheels_production` | 8 通道分离轮自动循环出料与 PPM 效能监控 |
 | **硬件调试** | Robot 在线跟踪 | `python -m tools.tracker` | 实时 Tag 世界坐标解算与 SCARA 联动校偏 |

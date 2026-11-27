@@ -105,33 +105,54 @@ class ToolCardMeta:
 
 
 def build_tools_catalog() -> List[ToolCardMeta]:
-    """构建全系统核心工具目录：14 张卡片，三大功能分组 (A环境场景→B 标定建图与生产验证→D 硬件调试与系统运维)"""
+    """构建全系统核心工具目录：15 张卡片，三大功能分组 (A 资产中枢→B 标定建图与生产验证→D 硬件调试与系统运维)"""
 
-    COLOR_A = (195, 155, 45)   # A 环境场景  : 琥珀金 (Amber)
+    COLOR_A = (195, 155, 45)   # A 资产中枢  : 琥珀金 (Amber)
     COLOR_B = (65,  175, 160)  # B Tag标定   : 精密工业深青 (Teal)
     COLOR_D = (90,  140, 195)  # D 生产调试  : 钢蓝 (Steel Blue)
 
     catalog = [
-        # ===== A — Workspace =====
+        # ===== A — 资产中枢 (双列: Workspace + Camera Hub) =====
         ToolCardMeta(
             key_id="workspace_hub",
             shortcut="1",
             title="Workspace",
-            subtitle="列表，白名单，评估",
-            category="A — Workspace",
+            subtitle="工位、白名单、空间场景",
+            category="A — 资产中枢",
             is_gui=True,
             command=[sys.executable, "-m", "tools.workspace_hub"],
             tag_color=COLOR_A,
-            summary="工业视觉 Workspace 统一数据中枢，支持多工位沙盒隔离、Tag 白名单管理与精度体检评估。",
+            summary="工业视觉 Workspace 统一数据中枢，支持多工位沙盒隔离、相机绑定、Tag 白名单与空间场景管理。",
             details=[
                 "列表管理：多 Workspace 沙盒创建、重命名、克隆与物理隔离",
+                "相机引用：按工位绑定全局相机资产 (camera_id) 并查看内参状态",
                 "白名单管理：各 Workspace 独立维护 tag_whitelist.yaml 白名单配置与同步",
-                "精度与几何评估：全局立体地图 (tags_map.yaml) 与残差质量体检",
-                "生产原子发布：平差解算成果一键原子发布至生产运行基准"
+                "空间场景：多坐标系树与 3D Smart ROI 物件管理"
             ],
-            inputs=["data/workspaces/ 工位目录"],
-            outputs=["workspace_meta.yaml、tag_whitelist.yaml、工位顶层 tags_map.yaml"],
-            quick_tips="快捷键: [1] 启动 | 中枢内 [⏎] 激活 | [P] 发布生产 | [W] 编辑白名单 | [S] 进Studio",
+            inputs=["data/workspaces/ 工位目录", "data/cameras/ 全局相机库"],
+            outputs=["workspace_meta.yaml、tag_whitelist.yaml、spatial_scene.yaml"],
+            quick_tips="快捷键: [1] 启动 | 中枢内支持大盘看板、外参建图图集与生产图集",
+        ),
+
+        ToolCardMeta(
+            key_id="camera_hub",
+            shortcut="C",
+            title="Camera Hub",
+            subtitle="[C] 多相机资产与棋盘格内参",
+            category="A — 资产中枢",
+            is_gui=True,
+            command=[sys.executable, "-m", "tools.camera_hub"],
+            tag_color=COLOR_A,
+            summary="全局多相机资产与棋盘格内参标定中枢，按物理相机 UUID/序列号与分辨率独立建档并供全部工位共享。",
+            details=[
+                "多相机资产库：自动探测本机 RealSense (序列号) 与 USB (UUID) 相机并独立建档",
+                "实时引导采图：实时画面叠加棋盘格角点检测反馈，空格一键抓拍",
+                "图集与误差审核：3×3 缩略图墙展示逐帧重投影误差，支持一键剔除无效/高误差帧",
+                "跨工位共享：标定内参持久化至 data/cameras/<camera_id>/<WxH>/intrinsics.yaml"
+            ],
+            inputs=["本机直连 RealSense D435 / USB 摄像头", "标准棋盘格标定板"],
+            outputs=["data/cameras/<camera_id>/<WxH>/intrinsics.yaml 与棋盘格原图集"],
+            quick_tips="快捷键: [C] 启动 | 中枢内 [Space] 抓拍 | [B] 标定求解 | [Del] 删帧",
         ),
 
         # ===== B — 标定建图与生产验证流水线 =====
@@ -632,28 +653,30 @@ class GuiLauncherApp:
             return
 
         # 方向键：将卡片索引映射到 (row, col) 坐标后导航
-        # row 0: idx 0 (A Workspace，全宽)
-        # rows 1-3: idx 1-6 (B 区 6张: 2+2+2)
-        # rows 4-7: idx 7-13 (D 区 7张: 2+2+2+1)
+        # row 0: idx 0-1 (A 资产中枢: Workspace + Camera Hub 双列)
+        # rows 1-3: idx 2-7 (B 区 6张: 2+2+2)
+        # rows 4-7: idx 8-14 (D 区 7张: 2+2+2+1)
         def idx_to_rc(i: int) -> Tuple[int, int]:
             if i <= 0:
                 return (0, 0)
-            if 1 <= i <= 6:   # B 区 6张 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5, 6)
-                b = i - 1
+            if i == 1:
+                return (0, 1)
+            if 2 <= i <= 7:   # B 区 6张 (row1: idx 2, 3; row2: idx 4, 5; row3: idx 6, 7)
+                b = i - 2
                 return (b // 2 + 1, b % 2)
-            d = i - 7         # D 区 7张 (row4: idx 7, 8; row5: idx 9, 10; row6: idx 11, 12; row7: idx 13)
+            d = i - 8         # D 区 7张 (row4: idx 8, 9; row5: idx 10, 11; row6: idx 12, 13; row7: idx 14)
             return (d // 2 + 4, d % 2)
 
         def rc_to_idx(r: int, c: int) -> int:
             if r == 0:
-                return 0
-            if 1 <= r <= 3:   # B 区 (row1: idx 1, 2; row2: idx 3, 4; row3: idx 5, 6)
+                return 0 if c == 0 else 1
+            if 1 <= r <= 3:   # B 区
                 base_b = (r - 1) * 2
-                return min(1 + base_b + c, 6)
-            if 4 <= r <= 7:   # D 区 (row4: idx 7, 8; row5: idx 9, 10; row6: idx 11, 12; row7: idx 13)
+                return min(2 + base_b + c, 7)
+            if 4 <= r <= 7:   # D 区
                 base_d = (r - 4) * 2
-                return min(7 + base_d + c, 13)
-            return 13
+                return min(8 + base_d + c, 14)
+            return 14
 
         row, col = idx_to_rc(self.selected_tool_idx)
 
@@ -712,6 +735,7 @@ class GuiLauncherApp:
 
         shortcut_map = {
             '1': "workspace_hub",             # A Workspace 工作空间中枢
+            'c': "camera_hub",                # A Camera Hub 多相机资产与内参中枢
             '2': "tag_wizard",                # B 图像采集 (双用途)
             '3': "spatial_mapping_studio",    # B 空间建图工作站
             '4': "asparagus_offline",         # B 顶层抓取位姿工作室
@@ -739,10 +763,10 @@ class GuiLauncherApp:
     def _get_card_rect(self, idx: int) -> Tuple[int, int, int, int]:
         """返回第 idx 张卡片的 (x, y, w, h)，与渲染布局严格保持一致
 
-        布局 (8行，3分组，共 14 张卡片):
-          row 0     A Workspace (1张全宽: idx 0)
-          rows 1-3  B 标定建图与生产验证流水线 (6张: 2+2+2, idx 1~6)
-          rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 7~13)
+        布局 (8行，3分组，共 15 张卡片):
+          row 0     A 资产中枢 (2张双列: Workspace idx 0, Camera Hub idx 1)
+          rows 1-3  B 标定建图与生产验证流水线 (6张: 2+2+2, idx 2~7)
+          rows 4-7  D 硬件调试与系统运维 (7张: 2+2+2+1, idx 8~14)
         """
         s = self.win_mgr.scale_pct / 100.0
         LH = max(14, int(20 * s))
@@ -753,18 +777,17 @@ class GuiLauncherApp:
         GY = max(16, int(40 * s))
         X0 = max(8, int(15 * s))
         Y0 = max(40, int(66 * s))
-        FW = CW * 2 + SX
 
-        if idx == 0:          # A: 顶部全宽卡片 (Workspace)
-            return X0, Y0 + LH, FW, CH
+        if idx in (0, 1):     # A: 顶部双列资产中枢 (Workspace + Camera Hub)
+            return X0 + idx * (CW + SX), Y0 + LH, CW, CH
 
-        if 1 <= idx <= 6:     # B: 6张 (2+2+2, 3行: idx 1~6)
-            b = idx - 1
+        if 2 <= idx <= 7:     # B: 6张 (2+2+2, 3行: idx 2~7)
+            b = idx - 2
             base_y = Y0 + LH + CH + GY + LH
             return X0 + (b % 2) * (CW + SX), base_y + (b // 2) * (CH + SY), CW, CH
 
-        # D: 7张 (2+2+2+1, 4行: idx 7~13)
-        d = idx - 7
+        # D: 7张 (2+2+2+1, 4行: idx 8~14)
+        d = idx - 8
         base_y = Y0 + LH + CH + GY + LH + 3 * (CH + SY) + GY + LH
         return X0 + (d % 2) * (CW + SX), base_y + (d // 2) * (CH + SY), CW, CH
 
@@ -1013,9 +1036,9 @@ class GuiLauncherApp:
 
         HEADER_TEXT = (192, 206, 222)
         group_headers = [
-            (self._get_card_rect(0)[1] - LH,  FW, "A  Workspace",                                 (195, 155,  45)),
-            (self._get_card_rect(1)[1] - LH,  FW, "B  标定建图与生产验证 (Pipelines)",           ( 65, 175, 160)),
-            (self._get_card_rect(7)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
+            (self._get_card_rect(0)[1] - LH,  FW, "A  资产中枢 (Workspace & Camera Hub)",       (195, 155,  45)),
+            (self._get_card_rect(2)[1] - LH,  FW, "B  标定建图与生产验证 (Pipelines)",           ( 65, 175, 160)),
+            (self._get_card_rect(8)[1] - LH,  FW, "D  硬件调试与系统运维 (Hardware & System)",   ( 90, 140, 195)),
         ]
         for hy, hw, label, accent in group_headers:
             cv2.rectangle(canvas, (X0, hy), (X0 + hw, hy + LH - max(1, int(2 * s))), (18, 22, 30), -1)

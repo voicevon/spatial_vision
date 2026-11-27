@@ -102,7 +102,7 @@ class TestImageCaptureApp(unittest.TestCase):
         self.assertEqual(root[APP_ID]["viewer_state"]["purpose"], "production")
 
         # 模拟重启: 恢复采集用途设置
-        wiz.purpose = "intrinsics"
+        wiz.purpose = "calibration"
         wiz._load_viewer_state()
         self.assertEqual(wiz.purpose, "production")
 
@@ -166,13 +166,12 @@ class TestImageCaptureApp(unittest.TestCase):
 
 
 
-    def test_switch_purpose_three_datasets(self):
-        """测试三大图集用途切换 (intrinsics / calibration / production)"""
+    def test_switch_purpose_two_datasets(self):
+        """测试两大业务图集用途切换 (calibration / production)，不再支持 intrinsics"""
         wiz = ImageCaptureApp(output_dir=None)
-        # 切换到相机内参
+        # 尝试切换已移除的 intrinsics 应被忽略
         wiz.switch_purpose("intrinsics")
-        self.assertEqual(wiz.purpose, "intrinsics")
-        self.assertIn("intrinsics", wiz.output_dir.replace("\\", "/"))
+        self.assertEqual(wiz.purpose, "calibration")
 
         # 切换到生产采样
         wiz.switch_purpose("production")

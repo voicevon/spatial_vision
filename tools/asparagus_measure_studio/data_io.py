@@ -5,16 +5,20 @@
 ========================================================
 """
 
+import csv
 import glob
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import yaml
 
+from src.utils.image_io import imread_unicode
 from src.utils.logger import get_logger
+from src.vision.single_asparagus_measurer import MeasureConfig
 from src.workspace.coordinate_manager import CoordinateTreeManager
 from src.workspace.roi_manager import RoiSpaceManager
 
@@ -22,6 +26,7 @@ log = get_logger(__name__)
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "config.yaml")
+SORTER_STATION_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config", "sorter_station.yaml")
 DEFAULT_DIR = os.path.join(PROJECT_ROOT, "data", "snapshots")
 GUI_SETTINGS_FILE = os.path.join(PROJECT_ROOT, "config", "gui_settings.json")
 
@@ -166,3 +171,167 @@ def project_workspace_roi_to_2d(
     if x2 - x1 < 8 or y2 - y1 < 8:
         return None
     return (x1, y1, x2 - x1, y2 - y1)
+
+
+# ------------------------------ 项目 1 产线配置同步与批量真值评测 ------------------------------
+
+
+@dataclass
+class BatchEvalSummary:
+    """离线图集批量测量与卡尺真值对照汇总"""
+    total: int = 0
+    valid_count: int = 0
+    gt_matched_count: int = 0
+    len_mae_mm: Optional[float] = None
+    len_max_err_mm: Optional[float] = None
+    diam_mae_mm: Optional[float] = None
+    diam_max_err_mm: Optional[float] = None
+    grade_counts: Dict[int, int] = field(default_factory=dict)
+    per_sample: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+def load_sorter_station_yaml(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """读取项目 1 分拣工位单一配置文件 (sorter_station.yaml)"""
+    path = config_path or SORTER_STATION_CONFIG_PATH
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception as exc:
+        log.warning("读取 sorter_station.yaml 失败: %s", exc)
+        return {}
+
+
+def save_measure_config_to_station_yaml(
+    cfg: MeasureConfig,
+    config_path: Optional[str] = None,
+) -> bool:
+    """将 Studio 调好的测量参数原子写回 sorter_station.yaml 的 measure 节（保留其余配置）"""
+    path = config_path or SORTER_STATION_CONFIG_PATH
+    try:
+        data = load_sorter_station_yaml(path)
+        measure_sec = dict(data.get("measure") or {})
+        measure_sec.update({
+            "orientation": str(cfg.orientation),
+            "diameter_offset_mm": round(float(cfg.diameter_offset_mm), 2),
+            "green_h_low": int(cfg.green_h_low),
+            "green_h_high": int(cfg.green_h_high),
+            "green_s_min": int(cfg.green_s_min),
+            "green_v_min": int(cfg.green_v_min),
+            "white_s_max": int(cfg.white_s_max),
+            "white_v_min": int(cfg.white_v_min),
+            "green_ratio_threshold": round(float(cfg.green_ratio_threshold), 3),
+            "min_white_root_mm": round(float(cfg.min_white_root_mm), 2),
+            "min_area_px": int(cfg.min_area_px),
+        })
+        data["measure"] = measure_sec
+
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp_path = f"{path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as exc:
+        log.warning("导出测量参数至 sorter_station.yaml 失败: %s", exc)
+        return False
+
+
+def load_ground_truth_csv(sample_dir: str) -> Dict[str, Tuple[float, float]]:
+    """
+    从样本目录加载可选的卡尺真值表 `ground_truth.csv`。
+    支持列名: filename, true_len_mm, true_diam_mm（容忍 UTF-8 BOM 与大小写）。
+    返回: {basename: (true_len_mm, true_diam_mm)}
+    """
+    if not sample_dir or not os.path.isdir(sample_dir):
+        return {}
+    csv_path = os.path.join(sample_dir, "ground_truth.csv")
+    if not os.path.exists(csv_path):
+        return {}
+
+    gt: Dict[str, Tuple[float, float]] = {}
+    try:
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames:
+                return {}
+            norm_map = {name.strip().lower(): name for name in reader.fieldnames if name}
+            fn_col = norm_map.get("filename") or norm_map.get("file") or norm_map.get("name")
+            len_col = norm_map.get("true_len_mm") or norm_map.get("length_mm") or norm_map.get("len_mm")
+            dia_col = norm_map.get("true_diam_mm") or norm_map.get("diameter_mm") or norm_map.get("diam_mm")
+            if not (fn_col and len_col and dia_col):
+                return {}
+            for row in reader:
+                fname = (row.get(fn_col) or "").strip()
+                if not fname:
+                    continue
+                try:
+                    t_len = float(row[len_col])
+                    t_dia = float(row[dia_col])
+                    gt[os.path.basename(fname)] = (t_len, t_dia)
+                except (TypeError, ValueError):
+                    continue
+    except Exception as exc:
+        log.warning("读取 ground_truth.csv 失败: %s", exc)
+    return gt
+
+
+def run_batch_evaluation(
+    samples: List[Dict[str, Any]],
+    measure_fn: Callable[[np.ndarray, Optional[np.ndarray]], Tuple[Any, Optional[Any]]],
+    ground_truth: Optional[Dict[str, Tuple[float, float]]] = None,
+) -> BatchEvalSummary:
+    """
+    对离线样本集执行批量测量与可选真值误差统计。
+    :param measure_fn: callable(color_bgr, depth_mm) -> (SingleAsparagusMeasurement, Optional[GradeDecision])
+    """
+    gt = ground_truth or {}
+    summary = BatchEvalSummary(total=len(samples))
+    len_errs: List[float] = []
+    diam_errs: List[float] = []
+
+    for smp in samples:
+        name = smp["name"]
+        color = imread_unicode(smp["color_path"])
+        if color is None:
+            summary.per_sample[name] = {"valid": False, "reason": "读取失败"}
+            continue
+        depth = None
+        if smp.get("depth_path") and os.path.exists(smp["depth_path"]):
+            try:
+                depth = np.load(smp["depth_path"]).astype(np.float32)
+            except Exception:
+                depth = None
+
+        meas, grade_dec = measure_fn(color, depth)
+        entry: Dict[str, Any] = {
+            "valid": bool(meas and meas.valid),
+            "length_mm": float(meas.effective_length_mm) if (meas and meas.valid) else 0.0,
+            "diameter_mm": float(meas.diameter_mm) if (meas and meas.valid) else 0.0,
+            "grade": int(grade_dec.grade) if grade_dec is not None else None,
+        }
+        if meas and meas.valid:
+            summary.valid_count += 1
+            if grade_dec is not None:
+                summary.grade_counts[grade_dec.grade] = summary.grade_counts.get(grade_dec.grade, 0) + 1
+            if name in gt:
+                true_l, true_d = gt[name]
+                dl = abs(meas.effective_length_mm - true_l)
+                dd = abs(meas.diameter_mm - true_d)
+                len_errs.append(dl)
+                diam_errs.append(dd)
+                entry["len_err_mm"] = round(meas.effective_length_mm - true_l, 2)
+                entry["diam_err_mm"] = round(meas.diameter_mm - true_d, 2)
+        summary.per_sample[name] = entry
+
+    summary.gt_matched_count = len(len_errs)
+    if len_errs:
+        summary.len_mae_mm = round(float(np.mean(len_errs)), 2)
+        summary.len_max_err_mm = round(float(np.max(len_errs)), 2)
+        summary.diam_mae_mm = round(float(np.mean(diam_errs)), 2)
+        summary.diam_max_err_mm = round(float(np.max(diam_errs)), 2)
+    return summary

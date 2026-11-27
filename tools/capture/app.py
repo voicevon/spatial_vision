@@ -37,6 +37,7 @@ if sys.platform == "win32":
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, PROJECT_ROOT)
 
+from src.cameras.camera_registry import CameraRegistry
 from src.workspace.workspace_manager import WorkspaceManager, Workspace
 from src.devices.camera_service import CameraService
 from src.utils.text_rendering import draw_text
@@ -68,12 +69,12 @@ class ImageCaptureApp(BaseCvApp):
             responsive=True,
         )
         self.ws_mgr = workspace_mgr or WorkspaceManager()
+        self.camera_registry = CameraRegistry()
         self.workspaces = self.ws_mgr.list_workspaces()
 
-        # 采集用途: intrinsics (相机内参) | calibration (外参建图) | production (生产采样)
-        self.purpose = purpose if purpose in ("intrinsics", "calibration", "production") else "calibration"
+        # 采集用途: calibration (外参建图) | production (生产采样)
+        self.purpose = purpose if purpose in ("calibration", "production") else "calibration"
         self.purpose_options = [
-            ("intrinsics",  "内参标定 (Intrinsics)"),
             ("calibration", "外参建图 (Calibration)"),
             ("production",  "生产采样 (Production)"),
         ]
@@ -132,10 +133,8 @@ class ImageCaptureApp(BaseCvApp):
 
     @property
     def image_prefix(self) -> str:
-        """根据当前采集用途确定文件命名前缀 (intr_ / calib_ / prod_)"""
-        if self.purpose == "intrinsics":
-            return "intr_"
-        elif self.purpose == "production":
+        """根据当前采集用途确定文件命名前缀 (calib_ / prod_)"""
+        if self.purpose == "production":
             return "prod_"
         return "calib_"
 
@@ -210,8 +209,8 @@ class ImageCaptureApp(BaseCvApp):
             self._start_camera()
 
     def switch_purpose(self, purpose_key: str):
-        """实时切换采集用途 (内参 intrinsics / 外参建图 calibration / 生产 production)"""
-        if purpose_key not in ("intrinsics", "calibration", "production"):
+        """实时切换采集用途 (外参建图 calibration / 生产 production)"""
+        if purpose_key not in ("calibration", "production"):
             return
         if purpose_key == self.purpose:
             return
@@ -230,7 +229,7 @@ class ImageCaptureApp(BaseCvApp):
             with open(GUI_SETTINGS_FILE, "r", encoding="utf-8") as f:
                 root = json.load(f)
             state = (root.get(APP_ID) or {}).get("viewer_state") or {}
-            if state.get("purpose") in ("intrinsics", "calibration", "production"):
+            if state.get("purpose") in ("calibration", "production"):
                 self.purpose = state["purpose"]
                 self._update_output_dir()
         except Exception as e:
@@ -300,8 +299,27 @@ class ImageCaptureApp(BaseCvApp):
             return self._cam_srv.read_frame(timeout_ms=2500)
         return None
 
+    def _resolve_active_camera_id(self) -> str:
+        """获取当前打开物理相机对应的全局 camera_id（不存在时自动登记）"""
+        serial = str(self.camera_serial or "").strip()
+        if self.camera_type == "realsense":
+            prof = self.camera_registry.find_by_hardware("realsense", hardware_serial=serial)
+            if prof is None:
+                name = f"RealSense ({serial})" if serial else "RealSense D435"
+                prof = self.camera_registry.register_camera(
+                    name=name, camera_type="realsense", hardware_serial=serial
+                )
+            return prof.camera_id
+        usb_idx = int(serial) if serial.isdigit() else 0
+        prof = self.camera_registry.find_by_hardware("usb", usb_index=usb_idx)
+        if prof is None:
+            prof = self.camera_registry.register_camera(
+                name=f"USB Camera #{usb_idx}", camera_type="usb", usb_index=usb_idx
+            )
+        return prof.camera_id
+
     def save_image(self, raw_frame: np.ndarray) -> str:
-        """保存采图快照：严格执行物理分辨率防呆校验，无标注原始帧存至对应目录"""
+        """保存采图快照：执行物理分辨率与工位绑定 camera_id 校验，无标注原始帧存至对应目录"""
         h, w = raw_frame.shape[:2]
         if self.current_workspace:
             ok, err = self.current_workspace.validate_image_resolution(w, h)
@@ -309,6 +327,18 @@ class ImageCaptureApp(BaseCvApp):
                 self.set_toast(err)
                 log.error(f"[CAPTURE] 拒绝保存: {err}")
                 return ""
+
+            # 仅在写入工位目录时执行工位级 camera_id 记录与校验
+            ws_cam_id = getattr(self.current_workspace, "camera_id", "") or ""
+            if self.pipeline_running and not self._custom_output_dir:
+                active_cam_id = self._resolve_active_camera_id()
+                if ws_cam_id and self.current_workspace.is_hardware_locked and active_cam_id != ws_cam_id:
+                    err_cam = f"当前相机 ({active_cam_id}) 与工位绑定相机 ({ws_cam_id}) 不一致，拒绝保存！"
+                    self.set_toast(err_cam)
+                    log.error(f"[CAPTURE] {err_cam}")
+                    return ""
+                if not ws_cam_id:
+                    self.current_workspace.camera_id = active_cam_id
 
         self.image_count += 1
         raw_filename = f"{self.image_prefix}{self.image_count:04d}.png"
@@ -466,7 +496,7 @@ class ImageCaptureApp(BaseCvApp):
 def main():
     parser = argparse.ArgumentParser(description="多视角采图向导 (纯预览 + 保存)")
     parser.add_argument("--workspace", dest="workspace", type=str, default="", help="指定初始归档工位 ID")
-    parser.add_argument("--purpose", type=str, default="calibration", choices=["intrinsics", "calibration", "production"], help="采集用途: intrinsics 内参标定 / calibration 外参建图 / production 生产采样")
+    parser.add_argument("--purpose", type=str, default="calibration", choices=["calibration", "production"], help="采集用途: calibration 外参建图 / production 生产采样")
     parser.add_argument("--dir", "--output-dir", "--output_dir", dest="dir", type=str, default=None, help="自定义保存目录路径")
     args = parser.parse_args()
 

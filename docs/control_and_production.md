@@ -94,3 +94,15 @@ flowchart LR
   - **MQTT 发现与远控**：订阅 `camera/+/state`，向 `camera/{id}/cmd` 下发 JSON 控制（推流启停、前后摄切换、变焦、拍照、录像、移动侦测）；
   - **RTSP 拉流预览**：依据 `state` 上报 IP 通过 TCP 交错拉取 `rtsp://{ip}:8554/live` 实时画面。
 - 用于空间标定时，务必遵守 [多摄变焦与标定稳定性机理.md](knowledge/多摄变焦与标定稳定性机理.md) 中的镜头与变焦锁定规范。
+
+---
+
+## 6. 单根分拣极简生产闭环 (`SorterRuntime`)
+
+面向 2D 定焦相机 + 外部硬触发 + USB 串口/RS485 下位机的单根芦笋测量分拣产线：
+
+- **核心模块**：
+  - `src/vision/planar_rectifier.py`（`PlanarRectifier`）：基于机架固定 4 枚 AprilTag 16h5 求解单应矩阵 $H$，输出严格等比鸟瞰 ROI，并在空闲巡检发现相机被碰歪时自动热更新恢复，失锁时熔断拦截；
+  - `src/control/grading_engine.py`（`GradingEngine`）：按配置顺序将有效长度/直径映射至分拣等级槽位（未命中或无效返回剔除等级 `0`）；
+  - `src/devices/sorter_serial.py`（`SorterSerialLink`）：线程安全串口文本行协议（`TRIG,<seq>` / `RES,<seq>,<grade>,<len_mm>,<diam_mm>,<status>` / `PING` ↔ `PONG,<ready>`）；
+  - `tools/sorter_runtime.py` + `config/sorter_station.yaml`：极简单一生产主程序，支持单屏监控、`--sim` 无串口仿真联调及 `--headless` 无界面服务模式。

@@ -10,19 +10,22 @@ description: Reference guide and data contract for spatial_vision workspace dire
 ## 1. 工位根目录结构 (`data/workspaces/<workspace_id>/`)
 
 ```text
-data/workspaces/<workspace_id>/
-├── workspace_meta.yaml         # 工位元数据 (ID, 名称, 创建时间, 锁定相机类型与分辨率)
-├── tag_whitelist.yaml          # 【标靶准入与世界锚点唯一真理源】
-├── spatial_scene.yaml          # 【空间场景多坐标系树与 ROI 物件真理源】
-├── tags_map.yaml               # 【工位顶层产物】标靶 3D 姿态与世界坐标地图 (ManifestRepository.save_map 唯一写者)
-├── intrinsics/                 # 【图集一：相机内参专区】
-│   ├── raw_images/             # 内参标定原始采图 (intr_XXXX.png)
-│   └── camera_intrinsics.yaml  # 工位内参报告 (fx, fy, cx, cy, k1, k2, p1, p2, k3)
-├── calibration/                # 【图集二：外参建图专区】
-│   ├── raw_images/             # 多视角外参采图 (calib_XXXX.png)
-│   └── visualized/             # BA 平差与重投影可视化结果
-└── production/                 # 【图集三：生产业务专区】
-    └── raw_images/             # 现场采图样本 (prod_XXXX.png)
+data/cameras/<camera_id>/        # 【全局多相机资产库】(Camera Hub 管理，跨工位共享)
+├── camera_meta.yaml             # 物理标识 (rs_<serial> / usb_<uuid8>)、类型与别名
+└── <width>x<height>/
+    ├── raw_images/              # 棋盘格内参原图 (intr_XXXX.png)
+    └── intrinsics.yaml          # K, D, RMSE 与逐帧重投影误差
+
+data/workspaces/<workspace_id>/  # 【工位沙盒目录】(Workspace Hub 管理)
+├── workspace_meta.yaml          # 工位元数据 (ID, 名称, 绑定 camera_id 与锁定分辨率)
+├── tag_whitelist.yaml           # 【标靶准入与世界锚点唯一真理源】
+├── spatial_scene.yaml           # 【空间场景多坐标系树与 ROI 物件真理源】
+├── tags_map.yaml                # 【工位顶层产物】标靶 3D 姿态与世界坐标地图 (ManifestRepository.save_map 唯一写者)
+├── calibration/                 # 【图集一：外参建图专区】
+│   ├── raw_images/              # 多视角外参采图 (calib_XXXX.png)
+│   └── visualized/              # BA 平差与重投影可视化结果
+└── production/                  # 【图集二：生产业务专区】
+    └── raw_images/              # 现场采图样本 (prod_XXXX.png)
 ```
 
 ## 2. 标靶准入与世界锚点契约 (`tag_whitelist.yaml`)
